@@ -1,17 +1,19 @@
-# Radiology Right Click v1.04
-
-(c) 2024, GitHub user Magnetron85
+# Radiology Right Click v1.08
 
 ## Description
 
-Radiology Right Click v1.04 is a radiologist's quantitative companion, designed to enhance quantitative radiology and streamline workflow. This AutoHotkey script provides a suite of tools accessible via right-click in PowerScribe at the point of dictation, offering quick calculations and reference information for various radiological measurements and assessments. The script is easily modifiable for non-PowerScribe environments.
+Radiology Right Click v1.08 is a radiologist's quantitative companion, designed to enhance quantitative radiology and streamline workflow. This AutoHotkey script provides a suite of tools accessible via right-click in PowerScribe at the point of dictation, offering quick calculations and reference information for various radiological measurements and assessments. The script is easily modifiable for non-PowerScribe environments. 
+
+## UPDATES
+- Removed OCR as it never worked well.
+- Allow user to custom sort the right click context menu. 
 
 Key features:
 - Works by highlighting text in PowerScribe360 or NotePad (for troubleshooting)
 - Customizable right-click menu with various useful functions
 - Pause feature to access the default right-click menu
 - User-configurable calculator visibility
-- Optional OCR for coronary calcium scoring (requires Vis2 OCR for AHK)
+- Can sort right click menu
 
 ## Author
 
@@ -162,16 +164,8 @@ Below are detailed descriptions of each available function, along with example i
     - Sorts measurements in descending order.
     - Handles multiple sets of measurements in a single input.
 
-14. **OCR for Coronary Calcium Scoring (BETA)**
-    Description: Captures and processes coronary calcium scores from images.
-    Notes:
-    - Requires Vis2 OCR for AHK.
-    - Tested with syngo.via.
-    - Attempts to correct for common OCR errors.
-    - User can define the coordinates of their syngo.via table (x and y pixel values at top left of table) and size (width and height of table in pixel values) in preferences. 
-    - Note: leave monitor set to 1 if coordinates are global (this is often the case if using Windows Spy to get the coordinate).
 
-15. **Fleischner 2017 Recommendations**
+14. **Fleischner 2017 Recommendations**
     Description: Provides Fleischner Society 2017 recommendations for pulmonary nodules.
     Example input:
     ```
@@ -182,13 +176,13 @@ Below are detailed descriptions of each available function, along with example i
     - Accounts for patient risk factors.
     - Provides follow-up dates based on current date.
 
-16. **Contrast Premedication Calculator**
+15. **Contrast Premedication Calculator**
     Description: Calculates contrast premedication schedule based on scan time.
     Notes:
     - Provides options for prednisone and methylprednisolone protocols.
     - Includes optional diphenhydramine dosing.
 
-17. **NASCET Calculator**
+16. **NASCET Calculator**
     Description: Calculates the North American Symptomatic Carotid Endarterectomy Trial (NASCET) value for carotid artery stenosis.
     Example inputs:
     ```
