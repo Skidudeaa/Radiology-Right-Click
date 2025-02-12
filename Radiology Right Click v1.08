@@ -1,6 +1,6 @@
 ; ==========================================
 ; Radiologist's Helper Script (No OCR)
-; Version: 1.05
+; Version: 1.08
 ; Description: This AutoHotkey script provides various calculation tools and utilities
 ;              for radiologists, including volume calculations, date estimations,
 ;              and other analyses, **without** OCR dependencies.
@@ -44,15 +44,7 @@ global g_FunctionFrequency := {}  ; stores usage frequency per function
 
 ; Some global variables used throughout
 global g_SelectedText := ""
-global TargetApps := [
-    "ahk_class Notepad",
-    "ahk_exe notepad.exe",
-    "ahk_class PowerScribe",
-    "ahk_exe PowerScribe.exe",
-    "ahk_class PowerScribe360",
-    "ahk_exe Nuance.PowerScribe360.exe",
-    "ahk_class PowerScribe | Reporting"
-]
+global TargetApps := ["ahk_class Notepad", "ahk_exe notepad.exe", "ahk_class PowerScribe", "ahk_exe PowerScribe.exe", "ahk_class PowerScribe360", "ahk_exe Nuance.PowerScribe360.exe", "ahk_class PowerScribe | Reporting"]
 global ResultText
 global InvisibleControl
 global originalMouseX, originalMouseY
@@ -227,10 +219,8 @@ IsTargetApp() {
     WinGet, windowExe, ProcessName, ahk_id %windowUnderCursor%
 
     for index, app in TargetApps {
-        if (
-            windowClass == StrReplace(app, "ahk_class ", "") 
-            || windowExe == StrReplace(app, "ahk_exe ", "")
-        ) {
+        if (windowClass == StrReplace(app, "ahk_class ", "")
+         || windowExe   == StrReplace(app, "ahk_exe ",   "")) {
             return true
         }
     }
@@ -287,130 +277,28 @@ BuildMenuItemsArray() {
     global ShowFleischnerCriteria, ShowNASCETCalculator, g_FunctionFrequency
 
     items := []
-
     ; Each entry => {title, command, freq, show, customKey}
-    ; 'command' must match label name for "IncrementFunctionFrequency"
+    ; customKey is used to see how it matches in the CustomMenuOrder
+    ; 'command' must match our label name exactly for the "IncrementFunctionFrequency"
 
-    items.Push({
-        title: "Compare Measurement Sizes",
-        command: "CompareNoduleSizes",
-        freq: g_FunctionFrequency["CompareNoduleSizes"]+0,
-        show: true,
-        customKey: "CompareNoduleSizes"
-    })
-    items.Push({
-        title: "Sort Measurement Sizes",
-        command: "SortNoduleSizes",
-        freq: g_FunctionFrequency["SortNoduleSizes"]+0,
-        show: true,
-        customKey: "SortNoduleSizes"
-    })
+    items.Push({title: "Compare Measurement Sizes", command: "CompareNoduleSizes", freq: g_FunctionFrequency["CompareNoduleSizes"]+0, show: true,  customKey: "CompareNoduleSizes"})
+    items.Push({title: "Sort Measurement Sizes", command: "SortNoduleSizes", freq: g_FunctionFrequency["SortNoduleSizes"]+0, show: true,  customKey: "SortNoduleSizes"})
 
-    items.Push({
-        title: "Calculate Calcium Score Percentile",
-        command: "CalculateCalciumScorePercentile",
-        freq: g_FunctionFrequency["CalculateCalciumScorePercentile"]+0,
-        show: ShowCalciumScorePercentile,
-        customKey: "CalculateCalciumScorePercentile"
-    })
-    items.Push({
-        title: "Calculate Ellipsoid Volume",
-        command: "CalculateEllipsoidVolume",
-        freq: g_FunctionFrequency["CalculateEllipsoidVolume"]+0,
-        show: ShowEllipsoidVolume,
-        customKey: "CalculateEllipsoidVolume"
-    })
-    items.Push({
-        title: "Calculate Bullet Volume",
-        command: "CalculateBulletVolume",
-        freq: g_FunctionFrequency["CalculateBulletVolume"]+0,
-        show: ShowBulletVolume,
-        customKey: "CalculateBulletVolume"
-    })
-    items.Push({
-        title: "Calculate PSA Density",
-        command: "CalculatePSADensity",
-        freq: g_FunctionFrequency["CalculatePSADensity"]+0,
-        show: ShowPSADensity,
-        customKey: "CalculatePSADensity"
-    })
-    items.Push({
-        title: "Calculate Pregnancy Dates",
-        command: "CalculatePregnancyDates",
-        freq: g_FunctionFrequency["CalculatePregnancyDates"]+0,
-        show: ShowPregnancyDates,
-        customKey: "CalculatePregnancyDates"
-    })
-    items.Push({
-        title: "Calculate Menstrual Phase",
-        command: "CalculateMenstrualPhase",
-        freq: g_FunctionFrequency["CalculateMenstrualPhase"]+0,
-        show: ShowMenstrualPhase,
-        customKey: "CalculateMenstrualPhase"
-    })
-    items.Push({
-        title: "Calculate Adrenal Washout",
-        command: "CalculateAdrenalWashout",
-        freq: g_FunctionFrequency["CalculateAdrenalWashout"]+0,
-        show: ShowAdrenalWashout,
-        customKey: "CalculateAdrenalWashout"
-    })
-    items.Push({
-        title: "Calculate Thymus Chemical Shift",
-        command: "CalculateThymusChemicalShift",
-        freq: g_FunctionFrequency["CalculateThymusChemicalShift"]+0,
-        show: ShowThymusChemicalShift,
-        customKey: "CalculateThymusChemicalShift"
-    })
-    items.Push({
-        title: "Calculate Hepatic Steatosis",
-        command: "CalculateHepaticSteatosis",
-        freq: g_FunctionFrequency["CalculateHepaticSteatosis"]+0,
-        show: ShowHepaticSteatosis,
-        customKey: "CalculateHepaticSteatosis"
-    })
-    items.Push({
-        title: "MRI Liver Iron Content",
-        command: "CalculateIronContent",
-        freq: g_FunctionFrequency["CalculateIronContent"]+0,
-        show: ShowMRILiverIron,
-        customKey: "CalculateIronContent"
-    })
-    items.Push({
-        title: "Calculate Statistics",
-        command: "Statistics",
-        freq: g_FunctionFrequency["Statistics"]+0,
-        show: ShowStatistics,
-        customKey: "Statistics"
-    })
-    items.Push({
-        title: "Calculate Number Range",
-        command: "Range",
-        freq: g_FunctionFrequency["Range"]+0,
-        show: ShowNumberRange,
-        customKey: "Range"
-    })
-    items.Push({
-        title: "Calculate Contrast Premedication",
-        command: "CalculateContrastPremedication",
-        freq: g_FunctionFrequency["CalculateContrastPremedication"]+0,
-        show: ShowContrastPremedication,
-        customKey: "CalculateContrastPremedication"
-    })
-    items.Push({
-        title: "Calculate Fleischner Criteria",
-        command: "CalculateFleischnerCriteria",
-        freq: g_FunctionFrequency["CalculateFleischnerCriteria"]+0,
-        show: ShowFleischnerCriteria,
-        customKey: "CalculateFleischnerCriteria"
-    })
-    items.Push({
-        title: "Calculate NASCET",
-        command: "CalculateNASCET",
-        freq: g_FunctionFrequency["CalculateNASCET"]+0,
-        show: ShowNASCETCalculator,
-        customKey: "CalculateNASCET"
-    })
+    items.Push({title: "Calculate Calcium Score Percentile", command: "CalculateCalciumScorePercentile", freq: g_FunctionFrequency["CalculateCalciumScorePercentile"]+0, show: ShowCalciumScorePercentile, customKey: "CalculateCalciumScorePercentile"})
+    items.Push({title: "Calculate Ellipsoid Volume", command: "CalculateEllipsoidVolume", freq: g_FunctionFrequency["CalculateEllipsoidVolume"]+0, show: ShowEllipsoidVolume, customKey: "CalculateEllipsoidVolume"})
+    items.Push({title: "Calculate Bullet Volume", command: "CalculateBulletVolume", freq: g_FunctionFrequency["CalculateBulletVolume"]+0, show: ShowBulletVolume, customKey: "CalculateBulletVolume"})
+    items.Push({title: "Calculate PSA Density", command: "CalculatePSADensity", freq: g_FunctionFrequency["CalculatePSADensity"]+0, show: ShowPSADensity, customKey: "CalculatePSADensity"})
+    items.Push({title: "Calculate Pregnancy Dates", command: "CalculatePregnancyDates", freq: g_FunctionFrequency["CalculatePregnancyDates"]+0, show: ShowPregnancyDates, customKey: "CalculatePregnancyDates"})
+    items.Push({title: "Calculate Menstrual Phase", command: "CalculateMenstrualPhase", freq: g_FunctionFrequency["CalculateMenstrualPhase"]+0, show: ShowMenstrualPhase, customKey: "CalculateMenstrualPhase"})
+    items.Push({title: "Calculate Adrenal Washout", command: "CalculateAdrenalWashout", freq: g_FunctionFrequency["CalculateAdrenalWashout"]+0, show: ShowAdrenalWashout, customKey: "CalculateAdrenalWashout"})
+    items.Push({title: "Calculate Thymus Chemical Shift", command: "CalculateThymusChemicalShift", freq: g_FunctionFrequency["CalculateThymusChemicalShift"]+0, show: ShowThymusChemicalShift, customKey: "CalculateThymusChemicalShift"})
+    items.Push({title: "Calculate Hepatic Steatosis", command: "CalculateHepaticSteatosis", freq: g_FunctionFrequency["CalculateHepaticSteatosis"]+0, show: ShowHepaticSteatosis, customKey: "CalculateHepaticSteatosis"})
+    items.Push({title: "MRI Liver Iron Content", command: "CalculateIronContent", freq: g_FunctionFrequency["CalculateIronContent"]+0, show: ShowMRILiverIron, customKey: "CalculateIronContent"})
+    items.Push({title: "Calculate Statistics", command: "Statistics", freq: g_FunctionFrequency["Statistics"]+0, show: ShowStatistics, customKey: "Statistics"})
+    items.Push({title: "Calculate Number Range", command: "Range", freq: g_FunctionFrequency["Range"]+0, show: ShowNumberRange, customKey: "Range"})
+    items.Push({title: "Calculate Contrast Premedication", command: "CalculateContrastPremedication", freq: g_FunctionFrequency["CalculateContrastPremedication"]+0, show: ShowContrastPremedication, customKey: "CalculateContrastPremedication"})
+    items.Push({title: "Calculate Fleischner Criteria", command: "CalculateFleischnerCriteria", freq: g_FunctionFrequency["CalculateFleischnerCriteria"]+0, show: ShowFleischnerCriteria, customKey: "CalculateFleischnerCriteria"})
+    items.Push({title: "Calculate NASCET", command: "CalculateNASCET", freq: g_FunctionFrequency["CalculateNASCET"]+0, show: ShowNASCETCalculator, customKey: "CalculateNASCET"})
 
     return items
 }
@@ -545,16 +433,13 @@ ShowResult(Result) {
     CoordMode, Mouse, Screen
     MouseGetPos, originalMouseX, originalMouseY
 
-    ; Determine which monitor
+    ; Which monitor are we on?
     SysGet, monitorCount, MonitorCount
-    Loop, %monitorCount% {
+    Loop, %monitorCount%
+    {
         SysGet, monArea, Monitor, %A_Index%
-        if (
-            originalMouseX >= monAreaLeft
-            && originalMouseX <= monAreaRight
-            && originalMouseY >= monAreaTop
-            && originalMouseY <= monAreaBottom
-        ) {
+        if (originalMouseX >= monAreaLeft && originalMouseX <= monAreaRight
+         && originalMouseY >= monAreaTop  && originalMouseY <= monAreaBottom) {
             activeMonitor := A_Index
             break
         }
@@ -565,7 +450,7 @@ ShowResult(Result) {
     monitorWidth := workAreaRight - workAreaLeft
     monitorHeight := workAreaBottom - workAreaTop
 
-    ; Measure text first in a hidden GUI
+    ; We'll measure text first
     maxWidth := monitorWidth * 0.5
     maxHeight := monitorHeight * 0.5
 
@@ -613,7 +498,7 @@ ShowResult(Result) {
     Gui, ResultBox:Show, x%xPos% y%yPos% w%guiWidth% h%guiHeight%, Result
     GuiControl, Focus, InvisibleControl
 
-    ; Move mouse over close button for convenience
+    ; Move mouse over close button to make it easy for user
     GuiControlGet, ClosePos, ResultBox:Pos, Close
     MouseMove, % xPos + ClosePosX + (ClosePosW / 2), % yPos + ClosePosY + (ClosePosH / 2), 0
 
@@ -1015,11 +900,9 @@ CalculateEllipsoidVolume(input) {
         dimensions := SortDimensions(dimensions)
 
         ; mm vs cm check
-        isMillimeters := (
-            (InStr(dimensions[1], ".") = 0)
-         && (InStr(dimensions[2], ".") = 0)
-         && (InStr(dimensions[3], ".") = 0)
-        )
+        isMillimeters := ((InStr(dimensions[1], ".") = 0)
+                       && (InStr(dimensions[2], ".") = 0)
+                       && (InStr(dimensions[3], ".") = 0))
         if (isMillimeters) {
             dimensions[1] := dimensions[1] / 10
             dimensions[2] := dimensions[2] / 10
@@ -1028,7 +911,6 @@ CalculateEllipsoidVolume(input) {
 
         volume := (1/6) * 3.141592653589793 * dimensions[1] * dimensions[2] * dimensions[3]
         volumeRounded := (volume < 1) ? Round(volume, 3) : Round(volume, 1)
-
         result := input . " (" . volumeRounded . (DisplayUnits ? " cc" : "") . ")"
         return result
     } else {
@@ -1045,11 +927,9 @@ CalculateBulletVolume(input) {
         dimensions := [match1, match2, match3]
         dimensions := SortDimensions(dimensions)
 
-        isMillimeters := (
-            (InStr(dimensions[1], ".") = 0)
-         && (InStr(dimensions[2], ".") = 0)
-         && (InStr(dimensions[3], ".") = 0)
-        )
+        isMillimeters := ((InStr(dimensions[1], ".") = 0)
+                       && (InStr(dimensions[2], ".") = 0)
+                       && (InStr(dimensions[3], ".") = 0))
         if (isMillimeters) {
             dimensions[1] := dimensions[1] / 10
             dimensions[2] := dimensions[2] / 10
@@ -1161,26 +1041,21 @@ CalculateMenstrualPhase(input) {
 ; 6) Compare / sort nodule sizes
 ; -------------------------------------------------------------
 CompareNoduleSizes(input) {
-    static RegExNeedle := "i)(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?.*?(?:(?:previous|prior|before|old).*?(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?)"
-
+    static RegExNeedle := "i)(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?.*?(?:previous(?:ly)?|prior|before|old|initial).*?(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?(?:\s*(?:on|dated?)\s*(\d{1,2}/\d{1,2}/\d{2,4}))?"
+    
     if (!RegExMatch(input, RegExNeedle, match)) {
-        ; alternate approach
-        RegExNeedleAlt := "i)(?:previous.*?(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?.*?(?:now|current).*?(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?)"
-        if (!RegExMatch(input, RegExNeedleAlt, matchAlt)) {
-            return "Invalid format. Provide current and previous measurements."
+        RegExNeedle := "i)(?:previous(?:ly)?|prior|before|old|initial).*?(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?(?:\s*(?:on|dated?)\s*(\d{1,2}/\d{1,2}/\d{2,4}))?.*?(?:now|current(?:ly)?|present|new|recent(?:ly)?|follow[- ]?up).*?(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?"
+        if (!RegExMatch(input, RegExNeedle, match)) {
+            return "Invalid input format. Please provide both current and previous measurements."
         }
-        current := matchAlt4 . " " . matchAlt5
-        currentDate := matchAlt3
-        previous := matchAlt2 . " " . matchAlt3
-        previousDate := matchAlt1
-        return CompareMeasurements(previous, current, previousDate, currentDate, input)
+        current := match6 . " " . match7, previous := match2 . " " . match3
+        currentDate := match5, previousDate := match1 ? match1 : match4
     } else {
-        current := match2 . " " . match3
-        currentDate := match1
-        previous := match5 . " " . match6
-        previousDate := match4
-        return CompareMeasurements(previous, current, previousDate, currentDate, input)
+        current := match2 . " " . match3, previous := match5 . " " . match6
+        currentDate := match1, previousDate := match4 ? match4 : match7
     }
+    
+    return CompareMeasurements(previous, current, previousDate, currentDate, input)
 }
 
 ProcessAllNoduleSizes(input) {
@@ -1376,147 +1251,183 @@ CalculateRange(input) {
 ; 9) Adrenal Washout
 ; -------------------------------------------------------------
 CalculateAdrenalWashout(input) {
-    global ShowCitations
-    RegExNeedle := "i)(?:(?:unenhanced|non-?enhanced|pre-?contrast|baseline|native)(?:\s+CT)?[\s:]*(-?\d+(?:\.\d+)?)(?:\s*HU)?).*?(?:(?:enhanced|post-?contrast|arterial|portal|venous?)(?:\s+CT)?[\s:]*(-?\d+(?:\.\d+)?)(?:\s*HU)?).*?(?:(?:delayed|late|10-?15\s*min|15\s*min)(?:\s+CT)?[\s:]*(-?\d+(?:\.\d+)?)(?:\s*HU)?)"
+	global ShowCitations
+	
+    RegExNeedle := "i)(?:(?:unenhanced|non-?enhanced|intrinsic|pre-?contrast|baseline|native)(?:\s+CT)?(?:\s+density|\s+HU|\s+hounsfield\s+units?)?[\s:]*(-?\d+(?:\.\d+)?)\s*(?:HU|hounsfield\s+units?)?).*?(?:(?:enhanced|post-?contrast|arterial|portal\s+venous?|60-?75\s*(?:second|sec)|1-?2\s*min(?:ute)?)(?:\s+CT)?(?:\s+density|\s+HU|\s+hounsfield\s+units?)?[\s:]*(-?\d+(?:\.\d+)?)\s*(?:HU|hounsfield\s+units?)?).*?(?:(?:delayed|late|15\s*min(?:ute)?|10-?15\s*min(?:ute)?|post-?contrast)(?:\s+CT)?(?:\s+density|\s+HU|\s+hounsfield\s+units?)?[\s:]*(-?\d+(?:\.\d+)?)\s*(?:HU|hounsfield\s+units?)?)"
+
     if (RegExMatch(input, RegExNeedle, match)) {
-        unenhanced := match1+0
-        enhanced := match2+0
-        delayed := match3+0
+        unenhanced := match1
+        enhanced := match2
+        delayed := match3
 
         absoluteWashout := ((enhanced - delayed) / (enhanced - unenhanced)) * 100
         relativeWashout := ((enhanced - delayed) / enhanced) * 100
 
         result := input . "`n`n"
-        result .= "Absolute Washout: " . Round(absoluteWashout,1) . "% (adenoma ≥60%)`n"
-        result .= "Relative Washout: " . Round(relativeWashout,1) . "% (adenoma ≥40%)`n`n"
-
-        if (ShowCitations=1) {
-            result .= "Reference: Mayo-Smith WW, et al. Management of Incidental Adrenal Masses: ACR White Paper. J Am Coll Radiol. 2017."
-        }
-        result .= "`n`n" . InterpretAdrenalWashout(absoluteWashout, relativeWashout, unenhanced, enhanced, delayed)
+        result .= "Absolute Washout: " . Round(absoluteWashout, 1) . "% ... (Ref adenomas: >=60%)" . "`n"
+        result .= "Relative Washout: " . Round(relativeWashout, 1) . "% ... (Ref adenomas: >=40%)" . "`n`n"
+		
+		if(ShowCitations=1){
+				result .= "`nMayo-Smith WW, Song JH, Boland GL, Francis IR, Israel GM, Mazzaglia PJ, Berland LL, Pandharipande PV. Management of Incidental Adrenal Masses: A White Paper of the ACR Incidental Findings Committee. J Am Coll Radiol. 2017 Aug;14(8):1038-1044.`n`n"
+		}
+		
+        result .= InterpretAdrenalWashout(absoluteWashout, relativeWashout, unenhanced, enhanced, delayed)
         return result
     } else {
-        ; second pattern if unenhanced is missing
-        RegExNeedle2 := "i)(?:(?:enhanced|post-?contrast|arterial|portal|venous?)(?:\s+CT)?[\s:]*(\d+(?:\.\d+)?)(?:\s*HU)?).*?(?:(?:delayed|late|10-?15\s*min|15\s*min)(?:\s+CT)?[\s:]*(\d+(?:\.\d+)?)(?:\s*HU)?)"
-        if (RegExMatch(input, RegExNeedle2, match2)) {
-            enhanced := match21+0
-            delayed := match22+0
-            relativeWashout := ((enhanced - delayed) / enhanced)*100
+        RegExNeedle := "i)(?:(?:enhanced|post-?contrast|arterial|portal\s+venous?|60-?75\s*(?:second|sec)|1-?2\s*min(?:ute)?)(?:\s+CT)?(?:\s+density|\s+HU|\s+hounsfield\s+units?)?[\s:]*(-?\d+(?:\.\d+)?)\s*(?:HU|hounsfield\nits?)?).*?(?:(?:delayed|late|15\s*min(?:ute)?|10-?15\s*min(?:ute)?|post-?contrast)(?:\s+CT)?(?:\s+density|\s+HU|\s+hounsfield\s+units?)?[\s:]*(-?\d+(?:\.\d+)?)\s*(?:HU|hounsfield\s+units?)?)"
+
+        if (RegExMatch(input, RegExNeedle, match)) {
+            enhanced := match1
+            delayed := match2
+
+            relativeWashout := ((enhanced - delayed) / enhanced) * 100
 
             result := input . "`n`n"
-            result .= "Relative Washout: " . Round(relativeWashout,1) . "%`n`n"
-            if (ShowCitations=1) {
-                result .= "Reference: Mayo-Smith WW, et al. Management of Incidental Adrenal Masses: ACR White Paper. J Am Coll Radiol. 2017."
-            }
-            result .= "`n`n" . InterpretAdrenalWashout(0, relativeWashout, "", enhanced, delayed)
+            result .= "Relative Washout: " . Round(relativeWashout, 1) . "%`n`n"
+            result .= InterpretAdrenalWashout(0, relativeWashout, unenhanced, enhanced, delayed)
+			
+			if(ShowCitations=1){
+				result .= "`n`n`nMayo-Smith WW, Song JH, Boland GL, Francis IR, Israel GM, Mazzaglia PJ, Berland LL, Pandharipande PV. Management of Incidental Adrenal Masses: A White Paper of the ACR Incidental Findings Committee. J Am Coll Radiol. 2017 Aug;14(8):1038-1044.`n`n"
+			}
             return result
         } else {
-            return "Invalid adrenal washout format.`nExample: Unenh: 10 HU, Enh: 80 HU, Delayed: 40 HU"
+            return "Invalid input format for adrenal washout calculation.`nSample syntax: Unenhanced: 10 HU, Enhanced: 80 HU, Delayed: 40 HU"
         }
     }
 }
 
 InterpretAdrenalWashout(absoluteWashout, relativeWashout, unenhanced, enhanced, delayed) {
     result := ""
-    isUnenhAvailable := (unenhanced != "")
-    if (isUnenhAvailable) {
-        unenh := unenhanced+0
-        e := enhanced+0
-        d := delayed+0
 
-        if (unenh <= 10) {
-            result .= "Unenhanced HU ≤10 suggests benign adenoma. "
-        } else if (unenh > 43) {
-            result .= "Unenhanced HU >43 is suspicious for malignancy. "
-        }
-
-        enhancedChange := e - unenh
-        delayedChange := d - unenh
-        if (Abs(enhancedChange) < 10 && Abs(delayedChange) < 10) {
-            result .= "Minimal enhancement change (<10 HU). Could be cyst, hemorrhage, or other non-enhancing lesion."
-        } else {
-            if (absoluteWashout>=60 || relativeWashout>=40) {
-                result .= "Washout consistent with a benign adenoma."
-            } else {
-                result .= "Indeterminate washout."
-            }
-        }
+    ; Check if unenhanced is null or empty
+    if (unenhanced = "" or unenhanced = "NULL") {
+        unenhanced := "N/A"
+        isUnenhancedAvailable := false
     } else {
-        if (relativeWashout>=40) {
-            result .= "Washout consistent with benign adenoma, but unenhanced HU not available."
-        } else {
-            result .= "Indeterminate without unenhanced HU."
-        }
+        isUnenhancedAvailable := true
+        unenhanced += 0  ; Convert to number
     }
-    return result
+
+    ; Check for enhancing mass
+    if (isUnenhancedAvailable) {
+        enhancedChange := CheckEnhancement(enhanced, unenhanced)
+        delayedChange := CheckEnhancement(delayed, unenhanced)
+		
+         ; Add interpretation based on unenhanced HU
+        if (unenhanced <= 10) {
+            result .= "Unenhanced HU less than 10 is typically suggestive of a benign adrenal adenoma. "
+        } else if (unenhanced > 43) {
+            result .= "Unenhanced HU >43 in a noncalcified, nonhemorrhagic lesion is suspicious for malignancy, regardless of washout characteristics. "
+        }
+		
+        if (Abs(enhancedChange) >= 10 or Abs(delayedChange) >= 10) {
+            if (enhancedChange < 0 or delayedChange < 0) {
+                result .= "The adrenal mass demonstrates unexpected de-enhancement (decrease in HU in enhanced or delayed phase). This is an atypical finding. "
+                result .= "Caution: Standard washout calculations may not be applicable in this case. "
+            } else {
+                result .= "The adrenal mass demonstrates enhancement. "
+                
+                ; Interpret washout only if there's positive enhancement
+                if (absoluteWashout >= 60 or relativeWashout >= 40) {
+                    result .= "Adrenal washout characteristics are suggestive of a benign adrenal adenoma. "
+                } else {
+                    result .= "Washout characteristics are indeterminate. "
+                }
+            }
+        } else {
+            result .= "The adrenal mass does not demonstrate significant enhancement (<10 HU change in both enhanced and delayed phases compared to unenhanced). This may represent a cyst, hemorrhage, or other non-enhancing lesion. Further characterization with additional imaging may be necessary. "
+        }
+
+    } else {
+        result .= "Unenhanced HU value is not available. "
+        
+        if (absoluteWashout >= 60 or relativeWashout >= 40) {
+            result .= "Based on the provided washout values alone, characteristics are suggestive of a benign adrenal adenoma. However, this interpretation is limited without the unenhanced HU value. "
+        } else {
+			result .= "Washout characteristics are indeterminate. "
+		}
+    }
+
+    return Trim(result)
+}
+; Function to check enhancement
+CheckEnhancement(value, baseline) {
+    if (value = "" or value = "NULL" or baseline = "N/A")
+        return 0
+    return (value - baseline)
 }
 
 ; -------------------------------------------------------------
 ; 10) Thymus Chemical Shift
 ; -------------------------------------------------------------
 CalculateThymusChemicalShift(input) {
-    RegExNeedle := "i)thymus.*?(?:in[- ]?phase|ip)\s*:\s*(\d+).*?(?:out[- ]?of[- ]?phase|op)\s*:\s*(\d+).*?(?:paraspinous|paraspinal).*?(?:in[- ]?phase|ip)\s*:\s*(\d+).*?(?:out[- ]?of[- ]?phase|op)\s*:\s*(\d+)"
+    RegExNeedle := "i)thymus.*?((?:in[- ]?phase|IP|T1IP)).*?(\d+).*?((?:out[- ]?of[- ]?phase|OP|OOP|T1OP)).*?(\d+)(?:.*?paraspinous.*?((?:in[- ]?phase|IP|T1IP)).*?(\d+).*?((?:out[- ]?of[- ]?phase|OP|OOP|T1OP)).*?(\d+))?"
+
     if (RegExMatch(input, RegExNeedle, match)) {
-        thymusIn := match1+0, thymusOut := match2+0
-        paraIn := match3+0, paraOut := match4+0
-        sii := ((thymusIn - thymusOut)/thymusIn)*100
+        thymusInPhase := match2
+        thymusOutOfPhase := match4
+        paraspinousInPhase := match6
+        paraspinousOutOfPhase := match8
 
-        outOfPhaseRatio := thymusOut / paraOut
-        inPhaseRatio := thymusIn / paraIn
-        chemicalShiftRatio := outOfPhaseRatio / inPhaseRatio
+        signalIntensityIndex := ((thymusInPhase-thymusOutOfPhase)/thymusInPhase)*100
 
-        result := input . "`n"
-        if (DisplayAllValues) {
-            result .= "`nChemical Shift Ratio: " . Round(chemicalShiftRatio,3) . " (hyperplasia <0.849)`n"
-            result .= "Signal Intensity Index: " . Round(sii,2) . "% (hyperplasia >8.92)`n"
+        result := input
+        if (paraspinousInPhase && paraspinousOutOfPhase) {
+            outOfPhaseSignalRatio := (thymusOutOfPhase) / paraspinousOutOfPhase
+            inPhaseSignalRatio := (thymusInPhase) / paraspinousInPhase
+            chemicalShiftRatio := outOfPhaseSignalRatio / inPhaseSignalRatio
+
+            if (DisplayAllValues) {
+                result .= "`n`nChemical Shift Ratio: " . Round(chemicalShiftRatio, 3) . " (hyperplasia < 0.849)`n"    
+                result .= "Thymus Signal Intensity Index (SII): " . round(signalIntensityIndex, 2) . "% (hyperplasia > 8.92)`n"
+            }
+            result .= "`n" . InterpretThymusChemicalShift(chemicalShiftRatio, signalIntensityIndex)
+        } else {
+            if (DisplayAllValues) {
+                result .= "`nThymus Signal Intensity Index (SII): " . round(signalIntensityIndex, 2) . "%`n"
+            }
+            result .= "`n" . InterpretThymusChemicalShift("", signalIntensityIndex)
         }
-        result .= "`n" . InterpretThymusChemicalShift(chemicalShiftRatio, sii)
         return result
     } else {
-        ; simpler pattern if no paraspinous
-        RegExNeedle2 := "i)thymus.*?(?:in[- ]?phase|ip)\s*:\s*(\d+).*?(?:out[- ]?of[- ]?phase|op)\s*:\s*(\d+)"
-        if (RegExMatch(input, RegExNeedle2, match2)) {
-            thymusIn := match21+0
-            thymusOut := match22+0
-            sii := ((thymusIn - thymusOut)/thymusIn)*100
-
-            result := input
-            if (DisplayAllValues) {
-                result .= "`nSignal Intensity Index: " . Round(sii,2) . "% (hyperplasia >8.92)`n"
-            }
-            result .= "`n" . InterpretThymusChemicalShift("", sii)
-            return result
-        }
-        return "Invalid format for thymus chemical shift.`nExample: Thymus IP:100, OP:80, Paraspinous IP:90, OP:85"
+        return "Invalid input format for thymus chemical shift calculation.`nSample syntax: Thymus IP: 100, OP: 80, Paraspinous IP: 90, OP: 85`nOr for thymus only: Thymus IP: 100, OP: 80"
     }
 }
 
-InterpretThymusChemicalShift(chemRatio, SII) {
+InterpretThymusChemicalShift(chemicalShiftRatio := "", signalIntensityIndex := "") {
     global ShowCitations
     result := ""
-    if (chemRatio!="" && SII!="") {
-        if (chemRatio <=0.849 && SII>8.92) {
-            result .= "Likely thymic hyperplasia (part dual-echo)."
-        } else if (chemRatio >0.849 && SII<=8.92) {
-            result .= "Not typical of hyperplasia (part dual-echo)."
-        } else {
-            result .= "Mixed findings or borderline values."
+
+    if (chemicalShiftRatio != "" && signalIntensityIndex != "") {
+        ; Both chemical shift ratio and signal intensity index are provided
+        if (chemicalShiftRatio > 0.849 && signalIntensityIndex > 8.92) {
+            result := "Interpretation: Chemical Shift Ratio is greater than 0.849 and Signal Intensity Index is greater than 8.92%. Calculations are in conflict and therefore indeterminate, though probably consistent with thymic hyperplasia with single dual echo technique.`n`n"
+        } else if (chemicalShiftRatio <= 0.849 && signalIntensityIndex > 8.92) {
+            result := "Interpretation: Chemical Shift Ratio is less than or equal to 0.849 and Signal Intensity Index is greater than 8.92%. Findings are consistent with thymic hyperplasia with single dual echo technique. `n`n"
+        } else if (chemicalShiftRatio > 0.849 && signalIntensityIndex <= 8.92) {
+            result := "Interpretation: Chemical Shift Ratio is greater than 0.849 and Signal Intensity Index is less than or equal to 8.92%. Findings are not consistent with with typical thymic hyperplasia with single dual echo technique.`n`n"
+        } else {  ; chemicalShiftRatio <= 0.849 && signalIntensityIndex <= 8.92
+            result := "Interpretation: Chemical Shift Ratio is less than or equal to 0.849 and Signal Intensity Index is less than or equal to 8.92%. Calculations are in conflict and therefore indeterminate, possibly thymic hyperplasia with single dual echo technique.`n`n"
         }
-    } else if (chemRatio!="") {
-        result .= (chemRatio<=0.849)
-                 ? "Chemical Shift Ratio <0.849: possible hyperplasia"
-                 : "Chemical Shift Ratio >0.849: less likely hyperplasia"
-    } else if (SII!="") {
-        result .= (SII>8.92)
-                 ? "Signal Intensity Index >8.92%: possible hyperplasia"
-                 : "SII ≤8.92%: not typical hyperplasia"
+    } else if (chemicalShiftRatio != "" && signalIntensityIndex == "") {
+        ; Only chemical shift ratio is provided
+        result := "Interpretation: Chemical Shift Ratio is " . (chemicalShiftRatio > 0.849 ? "greater than" : "less than or equal to") . " 0.849 with single dual echo technique.`n`n"
+    } else if (chemicalShiftRatio == "" && signalIntensityIndex != "") {
+        ; Only signal intensity index is provided
+        if (signalIntensityIndex > 8.92) {
+            result := "Interpretation: Signal Intensity Index is greater than 8.92%. This suggests thymic hyperplasia with single dual echo technique.`n`n"
+        } else {
+            result := "Interpretation: Signal Intensity Index is less than or equal to 8.92%. Findings are not consistent with typical thymic hyperplasia with single dual echo technique.`n`n"
+        }
     } else {
-        result := "No values to interpret."
+        ; Neither chemical shift ratio nor signal intensity index is provided
+        result := "Error: Both Chemical Shift Ratio and Signal Intensity Index are missing. At least one value is required for interpretation.`n`n"
     }
 
-    if (ShowCitations=1) {
-        result .= "`nCitation: Priola AM et al. Radiology. 2015;274(1):238-49."
+    if (ShowCitations = 1) {
+        result .= "Citation: Priola AM, Priola SM, Ciccone G, Evangelista A, Cataldi A, Gned D, Pazè F, Ducco L, Moretti F, Brundu M, Veltri A. Differentiation of rebound and lymphoid thymic hyperplasia from anterior mediastinal tumors with dual-echo chemical-shift MR imaging in adulthood: reliability of the chemical-shift ratio and signal intensity index. Radiology. 2015 Jan;274(1):238-49. doi: 10.1148/radiol.14132665. Epub 2014 Aug 7. PMID: 25105246.`n"
     }
+
     return result
 }
 
@@ -1525,78 +1436,88 @@ InterpretThymusChemicalShift(chemRatio, SII) {
 ; -------------------------------------------------------------
 CalculateHepaticSteatosis(inputText) {
     global ShowCitations
-    RegExNeedleLocal := "i)liver.*?((?:in[- ]?phase|ip)).*?(\d+).*?((?:out[- ]?of[- ]?phase|op)).*?(\d+)"
-    RegExNeedleSpleenLocal := "i)spleen.*?((?:in[- ]?phase|ip)).*?(\d+).*?((?:out[- ]?of[- ]?phase|op)).*?(\d+)"
-
+    RegExNeedleLocal := "i)liver.*?((?:in[- ]?phase|IP|T1IP)).*?(\d+).*?((?:out[- ]?of[- ]?phase|OP|OOP|T1OP)).*?(\d+)"
+    RegExNeedleSpleenLocal := "i)spleen.*?((?:in[- ]?phase|IP|T1IP)).*?(\d+).*?((?:out[- ]?of[- ]?phase|OP|OOP|T1OP)).*?(\d+)"
+    
     if (RegExMatch(inputText, RegExNeedleLocal, matchLocal)) {
-        liverIP := matchLocal2+0
-        liverOP := matchLocal4+0
-        ffLocal := 100*(liverIP - liverOP)/(2*liverIP)
-
-        resultLocal := inputText . " (Fat Fraction: " . Round(ffLocal,1) . "%)"
-        resultLocal .= "`nFat Fraction " . InterpretHepaticSteatosis(ffLocal) . "`n"
-
-        if (RegExMatch(inputText, RegExNeedleSpleenLocal, matchSpleen)) {
-            spleenIP := matchSpleen2+0
-            spleenOP := matchSpleen4+0
-            ratioIP := (liverIP / spleenIP)
-            ratioOP := (liverOP / spleenOP)
-            fatPercentageLocal := 100*((ratioIP - ratioOP)/(2*ratioIP))
-
-            resultLocal := StrReplace(resultLocal, ")", ", Fat Percentage: " . Round(fatPercentageLocal,1) . "%)")
+        liverInPhaseLocal := matchLocal2
+        liverOutOfPhaseLocal := matchLocal4
+        
+        ; Calculate Fat fraction
+        fatFractionLocal := 100 * (liverInPhaseLocal - liverOutOfPhaseLocal) / (2 * liverInPhaseLocal)
+        
+        resultLocal := inputText . " (Fat Fraction: " . Round(fatFractionLocal, 1) . "%)"
+        resultLocal .= "`n`nFat Fraction " . InterpretHepaticSteatosis(fatFractionLocal) . "`n"
+        
+        ; Check if spleen values are provided
+        if (RegExMatch(inputText, RegExNeedleSpleenLocal, matchSpleenLocal)) {
+            spleenInPhaseLocal := matchSpleenLocal2
+            spleenOutOfPhaseLocal := matchSpleenLocal4
+            
+            ; Calculate Fat percentage
+            fatPercentageLocal := 100 * ((liverInPhaseLocal / spleenInPhaseLocal) - (liverOutOfPhaseLocal / spleenOutOfPhaseLocal)) / (2 * (liverInPhaseLocal / spleenInPhaseLocal))
+            
+            resultLocal := StrReplace(resultLocal, ")", ", Fat Percentage: " . Round(fatPercentageLocal, 1) . "%)")
             resultLocal .= "Fat Percentage " . InterpretHepaticSteatosis(fatPercentageLocal) . "`n"
         }
-        if (ShowCitations=1) {
-            resultLocal .= "`nSirlin CB. Radiographics. 2009;29:1277-80 (invited commentary)."
+        
+        if (ShowCitations = 1) {
+            resultLocal .= "`n`nSirlin CB. Invited Commentary on Image-based quantification of hepatic fat: methods and clinical applications. Radiographics 2009; 29:1277-80`n"
         }
+        
         return resultLocal
     } else {
-        return "Invalid hepatic steatosis format.`nExample: Liver IP:100, OP:80, Spleen IP:90, OP:88"
+        return "Invalid input format for hepatic steatosis calculation.`nSample syntax: Liver IP: 100, OP: 80, Spleen IP: 90, OP: 88"
     }
 }
 
-InterpretHepaticSteatosis(fatFraction) {
-    if (fatFraction<5)
-        return ": No significant steatosis."
-    else if (fatFraction<15)
-        return ": Mild steatosis."
-    else if (fatFraction<30)
-        return ": Moderate steatosis."
-    else
-        return ": Severe steatosis."
+InterpretHepaticSteatosis(hepaticFatFraction) {
+    if (hepaticFatFraction < 5) {
+        return "Interpretation: No significant hepatic steatosis."
+    } else if (hepaticFatFraction < 15) {
+        return "Interpretation: Mild hepatic steatosis."
+    } else if (hepaticFatFraction < 30) {
+        return "Interpretation: Moderate hepatic steatosis."
+    } else {
+        return "Interpretation: Severe hepatic steatosis."
+    }
 }
-
 ; -------------------------------------------------------------
 ; 12) MRI Liver Iron Content
 ; -------------------------------------------------------------
 EstimateIronContent(input) {
-    global ShowCitations
+	global ShowCitations
 
-    RegExMatch(input, "i)(1[.,]?5|3[.,]?0)\s*T", fieldStrength)
+    RegExMatch(input, "i)(?:\b|^)(1[.,]5|3[.,]0|1\.5|3\.0)(?:\s*-?\s*)?T(?:esla)?", fieldStrength)
     if (!fieldStrength1) {
-        return "Error: Field strength (1.5T or 3.0T) not found."
+        return "Error: Magnetic field strength (1.5T or 3.0T) not found in the input."
     }
-    fieldStrengthVal := StrReplace(fieldStrength1,",",".")
+    fieldStrength1 := StrReplace(fieldStrength1, ",", ".")
 
-    R2StarPattern := "i)R2\*?\s*:\s*(\d+(?:\.\d+)?)(?:\s*(?:Hz|1/s))"
-    if (!RegExMatch(input, R2StarPattern, R2Star)) {
-        return "Error: R2* value not found. E.g.: '1.5T, R2*: 50 Hz'"
+    R2StarPattern := "i)R2\*?\s*(?:value|reading|measurement)?(?:[\s:=]+of)?\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(?:Hz|hertz|s(?:ec(?:ond)?)?Ã¢ÂÂ»Ã‚Â¹|1/s)"
+    RegExMatch(input, R2StarPattern, R2Star)
+    if (!R2Star1) {
+        return "Error: R2* value not found in the input.`nSample syntax: 1.5T, R2*: 50 Hz"
     }
-    R2StarValue := StrReplace(R2Star1, ",", ".")+0
+    R2StarValue := StrReplace(R2Star1, ",", ".")
+    R2StarValue += 0
 
-    if (fieldStrengthVal="1.5") {
-        ironContent := -0.04 + 2.62e-2 * R2StarValue
+    if (fieldStrength1 == "1.5") {
+		ironContent := -0.04 + 2.62 * 10 ** -2 * R2StarValue
     } else {
-        ironContent := 1.41e-2 * R2StarValue
+        ironContent := 1.41 * 10 ** -2 * R2StarValue
     }
-    result := input . " (" . Round(ironContent,2) . " mg Fe/g dry liver)"
+
+    result := input . " (" . Round(ironContent, 2) . " mg Fe/g dry liver)"
+	
     if (DisplayAllValues) {
-        result .= "`nField Strength: " . fieldStrengthVal . "T`n"
+        result .= "`nMagnetic Field Strength: " . fieldStrength1 . "T`n"
         result .= "R2* Value: " . R2StarValue . " Hz`n"
     }
-    if (ShowCitations=1) {
-        result .= "`nHernando D, et al. Eur Radiol. 2021."
-    }
+	
+	if (ShowCitations=1){
+		result .= "`nHernando D, Cook RJ, Qazi N, Longhurst CA, Diamond CA, Reeder SB. Complex confounder-corrected R2* mapping for liver iron quantification with MRI. Eur Radiol. 2021 Jan;31(1):264-275. doi: 10.1007/s00330-020-07123-x. Epub 2020 Aug 12. PMID: 32785766; PMCID: PMC7755713.`n"
+	}
     return result
 }
 
@@ -1787,16 +1708,16 @@ GetHoffPercentile(ageGroup, sex, score) {
 }
 
 DeterminePlaqueBurden(score) {
-    if (score=0)
-        return "None (very low CAD risk)."
-    else if (score<=10)
-        return "Minimal plaque."
-    else if (score<=100)
-        return "Mild plaque; mild CAD possible."
-    else if (score<=400)
-        return "Moderate plaque; significant narrowings possible."
+    if (score = 0)
+        return "None. Risk of coronary artery disease is very low, generally less than 5 percent."
+    else if (score > 0 && score <= 10)
+        return "Minimal identifiable plaque. Risk of coronary artery disease is very unlikely, less than 10 percent."
+    else if (score > 10 && score <= 100)
+        return "At least mild atherosclerotic plaque. Mild or minimal coronary narrowings likely."
+    else if (score > 100 && score <= 400)
+        return "At least moderate atherosclerotic plaque. Mild coronary artery disease highly likely, significant narrowings possible."
     else
-        return "Extensive plaque; high likelihood of significant stenosis."
+        return "Extensive atherosclerotic plaque. High likelihood of at least one significant coronary narrowing."
 }
 
 DetermineComparison(percentile) {
@@ -1891,12 +1812,14 @@ ParseDate(dateStr) {
         month := match1
         day := match2
         year := match3
-        if (StrLen(year)=2)
+        if (StrLen(year) == 2)
             year := "20" . year
-        if (month>12) {
-            temp := month, month := day, day := temp
+        if (month > 12) {
+            temp := month
+            month := day
+            day := temp
         }
-        if (day>31 || month>12)
+        if (day > 31 || month > 12)
             return "Invalid Date"
         month := SubStr("0" . month, -1)
         day := SubStr("0" . day, -1)
@@ -1909,54 +1832,51 @@ CalculateDatesFromLMP(LMPDate) {
     FormatTime, LMPFormatted, %LMPDate%, MM/dd/yyyy
     EDDDate := DateCalc(LMPDate, 280)
     FormatTime, EDDFormatted, %EDDDate%, MM/dd/yyyy
-
-    GA := A_Now
+    GA := DateCalc(A_Now, 0)
     GA -= LMPDate, days
-    GAweeks := Floor(GA/7)
-    GAdays := Mod(GA,7)
-
-    return "LMP: " . LMPFormatted . "`nEstimated Delivery: " . EDDFormatted
-        . "`nGestational Age (today): " . GAweeks . "w " . GAdays . "d"
+    GAWeeks := Floor(GA / 7)
+    GADays := Mod(GA, 7)
+    return % "LMP: " . LMPFormatted . "`n"
+        . "Estimated Delivery Date: " . EDDFormatted . "`n"
+        . "Current Gestational Age: " . GAWeeks . " weeks " . GADays . " days"
 }
 
 CalculateDatesFromGA(WeeksGA, DaysGA, ReferenceDate) {
-    daysSinceConception := (WeeksGA*7) + DaysGA
-    LMPDate := DateCalc(ReferenceDate, -daysSinceConception)
+    FetusAgeDays := (WeeksGA * 7) + DaysGA
+    LMPDate := DateCalc(ReferenceDate, -FetusAgeDays)
     FormatTime, LMPFormatted, %LMPDate%, MM/dd/yyyy
     EDDDate := DateCalc(LMPDate, 280)
     FormatTime, EDDFormatted, %EDDDate%, MM/dd/yyyy
-
-    currentGA := A_Now
-    currentGA -= LMPDate, days
-    cWeeks := Floor(currentGA/7)
-    cDays := Mod(currentGA,7)
-
-    FormatTime, ReferenceDateFmt, %ReferenceDate%, MM/dd/yyyy
-    return "LMP: " . LMPFormatted . "`nEstimated Delivery: " . EDDFormatted
-        . "`nGA as of " . ReferenceDateFmt . ": " . WeeksGA . "w " . DaysGA . "d"
-        . "`nCurrent GA: " . cWeeks . "w " . cDays . "d"
+    CurrentGA := DateCalc(A_Now, 0)
+    CurrentGA -= LMPDate, days
+    CurrentGAWeeks := Floor(CurrentGA / 7)
+    CurrentGADays := Mod(CurrentGA, 7)
+    FormatTime, ReferenceDateFormatted, %ReferenceDate%, MM/dd/yyyy
+    return % "LMP: " . LMPFormatted . "`n"
+        . "Estimated Delivery Date: " . EDDFormatted . "`n"
+        . "Gestational Age as of " . ReferenceDateFormatted . ": " . WeeksGA . " weeks " . DaysGA . " days`n"
+        . "Current Gestational Age: " . CurrentGAWeeks . " weeks " . CurrentGADays . " days"
 }
 
 DetermineMenstrualPhase(LMPDate) {
     DaysSinceLMP := A_Now
     DaysSinceLMP -= LMPDate, days
-    CycleDay := Mod(DaysSinceLMP,28)+1
-
-    FormatTime, LMPFmt, %LMPDate%, MM/dd/yyyy
-    result := "LMP: " . LMPFmt . "`nCycle Day: " . CycleDay . "`n"
-
-    if (CycleDay>=1 && CycleDay<=5) {
-        result .= "Menstrual Phase (1-5)."
-    } else if (CycleDay>=6 && CycleDay<=13) {
-        result .= "Early Proliferative (6-13)."
-    } else if (CycleDay=14) {
-        result .= "Ovulation (Day 14)."
-    } else if (CycleDay>=15 && CycleDay<=28) {
-        result .= "Secretory (15-28)."
+    CycleDay := Mod(DaysSinceLMP, 28) + 1
+    FormatTime, LMPFormatted, %LMPDate%, MM/dd/yyyy
+    Result := "LMP: " . LMPFormatted . "`n"
+    Result .= "Current Cycle Day: " . CycleDay . "/28`n`n"
+    if (CycleDay >= 1 && CycleDay <= 5) {
+        Result .= "Menstrual Phase`nExpected endometrial stripe thickness: 1-4 mm"
+    } else if (CycleDay >= 6 && CycleDay <= 13) {
+        Result .= "Early Proliferative Phase`nExpected endometrial stripe thickness: 5-7 mm"
+    } else if (CycleDay == 14) {
+        Result .= "Ovulation`nExpected endometrial appearance: Trilaminar, approximately 11 mm"
+    } else if (CycleDay >= 15 && CycleDay <= 28) {
+        Result .= "Secretory Phase`nExpected endometrial stripe thickness: 7-16 mm"
     } else {
-        result .= "`nError: invalid day."
+        Result .= "Error: Invalid cycle day calculated"
     }
-    return result
+    return Result
 }
 
 DateCalc(date, days) {
@@ -1968,432 +1888,406 @@ DateCalc(date, days) {
 ; -------------------------------------------------------------
 ; CompareMeasurements: single function to compare old vs new
 ; -------------------------------------------------------------
-CompareMeasurements(previous, current, previousDate, currentDate, fullText) {
+CompareMeasurements(previous, current, previousDate, currentDate, input) {
+    ; Process measurements
     prev := ProcessMeasurement(previous)
     curr := ProcessMeasurement(current)
-
+    
+    ; Check for dimension mismatch
     if (prev.dimensions.MaxIndex() != curr.dimensions.MaxIndex()) {
-        return "Mismatch in dimension count.`nPrev: " . previous . "`nCurrent: " . current
+        return "Error: Mismatch in number of dimensions between previous and current measurements.`nPrevious: " . previous . "`nCurrent: " . current
     }
 
-    result := fullText . "`n`nComparison:`n"
-    result .= "Previous Date: " . (previousDate ? previousDate : "N/A") . "`n"
-    result .= "Current Date: " . (currentDate ? currentDate : "Today") . "`n`n"
+    ; Initialize result string
+    result := input . "`n`n"
+    result .= "Previous Date: " . (previousDate ? previousDate : "Not provided") . "`n"
+    result .= "Current Date: " . (currentDate ? currentDate : "Assumed as today") . "`n`n"
 
-    prevLongest := 0
-    currLongest := 0
-
-    Loop, % prev.dimensions.MaxIndex() {
-        p := prev.dimensions[A_Index]
-        c := curr.dimensions[A_Index]
-        pCm := (prev.unit="mm") ? p/10 : p
-        cCm := (curr.unit="mm") ? c/10 : c
-
-        if (pCm>prevLongest)
-            prevLongest := pCm
-        if (cCm>currLongest)
-            currLongest := cCm
-
-        change := (cCm/pCm -1)*100
-        result .= "Dim " . A_Index . ": " . Round(p,2) . prev.unit . " -> " . Round(c,2) . curr.unit
-        result .= " (" . (change>=0 ? "+" : "") . Round(change,1) . "%)`n"
+    ; Process dimensions
+    prevLongestDim := 0
+    currLongestDim := 0
+    
+    Loop, % prev.dimensions.MaxIndex()
+    {
+        prevDim := prev.dimensions[A_Index]
+        currDim := curr.dimensions[A_Index]
+        
+        ; Convert to cm if necessary
+        prevDimCm := (prev.unit == "mm") ? prevDim / 10 : prevDim
+        currDimCm := (curr.unit == "mm") ? currDim / 10 : currDim
+        
+        ; Track longest dimension
+        prevLongestDim := (prevDimCm > prevLongestDim) ? prevDimCm : prevLongestDim
+        currLongestDim := (currDimCm > currLongestDim) ? currDimCm : currLongestDim
+        
+        ; Calculate change
+        change := (currDimCm / prevDimCm - 1) * 100
+        
+        ; Append to result
+        result .= "Dimension " . A_Index . ": " 
+                . Round(prevDim, 2) . " " . prev.unit 
+                . " -> " 
+                . Round(currDim, 2) . " " . curr.unit 
+                . " (" . (change >= 0 ? "+" : "") . Round(change, 1) . "%)`n"
     }
-
-    ldChange := (currLongest/prevLongest -1)*100
-    result .= "`nLongest dimension change: " . (ldChange>=0 ? "+" : "") . Round(ldChange,1) . "%`n"
-
-    prevVolume := CalculateVolume(prev.dimensions, prev.unit)
-    currVolume := CalculateVolume(curr.dimensions, curr.unit)
-    if (prevVolume!="Invalid input" && currVolume!="Invalid input") {
-        volChange := (currVolume/prevVolume -1)*100
-        result .= "Volume change: " . (volChange>=0 ? "+" : "") . Round(volChange,1) . "%`n"
-        result .= "Prev volume: " . FormatVolume(prevVolume) . "`n"
-        result .= "Curr volume: " . FormatVolume(currVolume) . "`n"
-
+    
+    ; Calculate longest dimension change
+    longestDimChange := (currLongestDim / prevLongestDim - 1) * 100
+    result .= "`nLongest dimension change: " . (longestDimChange >= 0 ? "+" : "") . Round(longestDimChange, 1) . "%`n"
+    
+    ; Calculate volumes
+    prevVolumeNum := CalculateVolume(prev.dimensions, prev.unit)
+    currVolumeNum := CalculateVolume(curr.dimensions, curr.unit)
+    
+    ; Process volume calculations if valid
+    if (prevVolumeNum != "Invalid input" and currVolumeNum != "Invalid input") {
+        volumeChange := (currVolumeNum / prevVolumeNum - 1) * 100
+        result .= "Volume change: " . (volumeChange >= 0 ? "+" : "") . Round(volumeChange, 1) . "%`n"
+        result .= "Previous volume: " . FormatVolume(prevVolumeNum) . "`n"
+        result .= "Current volume: " . FormatVolume(currVolumeNum) . "`n"
+        
+        ; Process dates and calculate time-based metrics
         if (previousDate) {
-            parsePrev := ParseDate(previousDate)
-            if (parsePrev="Invalid Date") {
+            parsedPreviousDate := ParseDate(previousDate)
+            if (parsedPreviousDate == "Invalid Date") {
                 return result . "`nError: Invalid previous date format."
             }
-            parseCurr := (currentDate!="") ? ParseDate(currentDate) : A_Now
-            if (parseCurr="Invalid Date") {
-                return result . "`nError: Invalid current date."
+            
+            if (!currentDate) {
+                FormatTime, currentDate, , MM/dd/yyyy
             }
-            timeDiff := DateDiff(parsePrev, parseCurr)/365.25
-            result .= "Time difference: " . Round(timeDiff,2) . " yrs`n"
-            if (timeDiff>0) {
-                doublingTime := CalculateDoublingTime(prevVolume, currVolume, timeDiff)
-                dtDays := doublingTime*365.25
-                result .= "Doubling time: "
-                result .= (doublingTime!="N/A") ? Round(dtDays,0) . " days`n" : "N/A`n"
-
-                growthRate := CalculateExponentialGrowth(prevVolume, currVolume, timeDiff)*100
-                result .= "Exponential Growth Rate: " . Round(growthRate,2) . "%/yr"
+            parsedCurrentDate := ParseDate(currentDate)
+            if (parsedCurrentDate == "Invalid Date") {
+                return result . "`nError: Invalid current date format."
+            }
+            
+            ; Calculate time difference
+            timeDiff := DateDiff(parsedPreviousDate, parsedCurrentDate) / 365.25
+            result .= "Time difference: " . Round(timeDiff, 2) . " years`n"
+            
+            ; Calculate growth metrics if time difference is positive
+            if (timeDiff > 0) {
+                ; Calculate doubling time in days
+                doublingTime := CalculateDoublingTime(prevVolumeNum, currVolumeNum, timeDiff)
+                doublingTimeDays := doublingTime * 365.25
+                result .= "Doubling time: " . (doublingTime != "N/A" ? Round(doublingTimeDays, 0) . " days" : doublingTime) . "`n"
+                
+                ; Calculate exponential growth rate in % per year
+                growthRate := CalculateExponentialGrowth(prevVolumeNum, currVolumeNum, timeDiff)
+                result .= "Exponential Growth Rate: " . Round(growthRate * 100, 2) . "% per year"
             } else {
-                result .= "Cannot calc doubling time with invalid date difference."
+                result .= "Note: Doubling time and Growth Rate not calculated due to invalid time difference."
             }
+        } else {
+            result .= "Note: Doubling time and Growth Rate not calculated due to missing previous date."
         }
     } else {
-        result .= "Volume calculation error."
+        result .= "Error: Unable to calculate volume for one or both measurements."
     }
+    
     return result
 }
 
 ProcessMeasurement(input) {
     dimensions := []
-    RegExMatch(input, "i)(\d+(?:\.\d+)?)(?:\s*(?:x|\*)\s*(\d+(?:\.\d+)?))?(?:\s*(?:x|\*)\s*(\d+(?:\.\d+)?))?(?=\s*(cm|mm)?)", m)
-    dimensions.Push(m1+0)
-    if (m2!="")
-        dimensions.Push(m2+0)
-    if (m3!="")
-        dimensions.Push(m3+0)
-
-    theUnit := (m4!="") ? m4 : ((InStr(m1,".")>0 || InStr(m2,".")>0 || InStr(m3,".")>0) ? "cm" : "mm")
-    return {dimensions: dimensions, unit: theUnit}
+    RegExMatch(input, "i)(\d+(?:\.\d+)?)(?:\s*(?:x|\*)\s*(\d+(?:\.\d+)?))?(?:\s*(?:x|\*)\s*(\d+(?:\.\d+)?))?(?=\s*(cm|mm)?)", match)
+    dimensions.Push(match1 + 0)  ; Convert to number to preserve all decimal places
+    if (match2 != "")
+        dimensions.Push(match2 + 0)
+    if (match3 != "")
+        dimensions.Push(match3 + 0)
+    unit := (match4 != "") ? match4 : ((InStr(match1, ".") > 0 || InStr(match2, ".") > 0 || InStr(match3, ".") > 0) ? "cm" : "mm")
+    return {dimensions: dimensions, unit: unit}
 }
 
 CalculateVolume(dimensions, unit) {
     static PI := 3.14159265358979
-
-    if (dimensions.MaxIndex()=1) {
-        ; sphere
-        vol := (4/3)*PI*((dimensions[1]/2)**3)
-    } else if (dimensions.MaxIndex()=2) {
-        ; assume 3rd dimension ~ average
-        avgDim := (dimensions[1]+dimensions[2])/2
-        vol := (4/3)*PI*((dimensions[1]/2)*(dimensions[2]/2)*(avgDim/2))
-    } else if (dimensions.MaxIndex()=3) {
-        ; ellipsoid
-        vol := (1/6)*PI*(dimensions[1]*dimensions[2]*dimensions[3])
-    } else {
+    
+    if (dimensions.MaxIndex() == 1)
+        volume := (4/3) * PI * (dimensions[1] / 2) ** 3  ; Sphere
+    else if (dimensions.MaxIndex() == 2)
+        volume := (4/3) * PI * (dimensions[1] / 2) * (dimensions[2] / 2) * ((dimensions[1] + dimensions[2]) / 4)  ; Ellipsoid with 3rd dim as average
+    else if (dimensions.MaxIndex() == 3)
+        volume := CalculateEllipsoidVolumeNumeric(dimensions[1] . " x " . dimensions[2] . " x " . dimensions[3], unit)
+    else
         return "Invalid input"
-    }
-    return (unit="mm") ? vol/1000 : vol
+    
+    return (unit == "mm") ? volume / 1000 : volume  ; Convert to cm³ if necessary
 }
 
 FormatVolume(volume) {
-    return (volume<1)
-        ? Round(volume*1000,1) . " mm³"
-        : Round(volume,1) . " cc"
+    return (volume < 1) ? Round(volume * 1000, 1) . " cu-mm" : Round(volume, 1) . " cc"
 }
 
-CalculateDoublingTime(v1, v2, time) {
-    if (v2<=v1)
-        return "N/A"
-    growthRate := (v2/v1)**(1/time)-1
-    return (growthRate>0) ? (Ln(2)/Ln(1+growthRate)) : "N/A"
+CalculateDoublingTime(initialVolume, finalVolume, time) {
+    growthRate := (finalVolume / initialVolume) ** (1 / time) - 1
+    return (growthRate > 0) ? (Ln(2) / Ln(1 + growthRate)) : "N/A"
 }
 
-CalculateExponentialGrowth(v1,v2,time) {
-    return Ln(v2/v1)/time
+CalculateExponentialGrowth(initialVolume, finalVolume, time) {
+    growthRate := Ln(finalVolume/initialVolume) / time
+    return growthRate  ; Return as a decimal, will be converted to percentage in the main function
 }
 
 DateDiff(date1, date2) {
-    EnvSub, date2, %date1%, days
+    EnvSub, date2, %date1%, Days
     return date2
 }
 
+CalculateEllipsoidVolumeNumeric(input, unit) {
+    RegExNeedle := "\s*(\d+(?:\.\d+)?)\s*[x,]\s*(\d+(?:\.\d+)?)\s*[x,]\s*(\d+(?:\.\d+)?)\s*"
+    if (RegExMatch(input, RegExNeedle, match)) {
+        dimensions := [match1 + 0, match2 + 0, match3 + 0]  ; Convert to numbers
+        dimensions := SortDimensions(dimensions)
+
+        volume := (1/6) * 3.14159265358979323846 * (dimensions[1]) * (dimensions[2]) * (dimensions[3])
+        return volume
+    } else {
+        return "Invalid input format"
+    }
+}
+JoinDimensions(dimensions) {
+    return Round(dimensions[1], 1) . (dimensions.Length() > 1 ? " x " . Round(dimensions[2], 1) : "") . (dimensions.Length() > 2 ? " x " . Round(dimensions[3], 1) : "")
+}
 ; -------------------------------------------------------------------------
 ; 15) Contrast Premedication
 ; -------------------------------------------------------------------------
 CalculateContrastPremedication() {
-    ; Show a small GUI for user to pick date/time and see premed schedule
-    defaultDateTime := A_Now
-    EnvAdd, defaultDateTime, 13, Hours
+    defaultDateTime := GetDefaultDateTime()
+    FormatTime, defaultDate, %defaultDateTime%, yyyyMMdd
+    FormatTime, defaultTime, %defaultDateTime%, HH:mm
 
-    FormatTime, hours, %defaultDateTime%, HH
-    FormatTime, minutes, %defaultDateTime%, mm
-    minutes := Ceil(minutes/5)*5
-    if (minutes=60) {
-        minutes := 0
-        hours++
-    }
-    if (hours>=24) {
-        hours := Mod(hours,24)
-        EnvAdd, defaultDateTime, 1, Days
-    }
-    formTime := Format("{:02d}{:02d}00", hours, minutes)
-    FormatTime, formDate, %defaultDateTime%, yyyyMMdd
-    combineDefault := formDate . formTime
-
-    ; Position near mouse
+    ; Get current mouse position (relative to the entire desktop)
     CoordMode, Mouse, Screen
-    MouseGetPos, mx, my
+    MouseGetPos, mouseX, mouseY
 
-    SysGet, monCount, MonitorCount
-    Loop, %monCount% {
-        SysGet, monA, Monitor, %A_Index%
-        if (mx>=monALeft && mx<=monARight && my>=monATop && my<=monABottom) {
+    ; Determine which monitor the mouse is on
+    SysGet, monitorCount, MonitorCount
+    Loop, %monitorCount%
+    {
+        SysGet, monArea, Monitor, %A_Index%
+        if (mouseX >= monAreaLeft && mouseX <= monAreaRight && mouseY >= monAreaTop && mouseY <= monAreaBottom)
+        {
             activeMonitor := A_Index
             break
         }
     }
-    SysGet, wArea, MonitorWorkArea, %activeMonitor%
-    monitorW := wAreaRight - wAreaLeft
-    monitorH := wAreaBottom - wAreaTop
 
-    guiW := 250
-    guiH := 160
-    xPos := mx+10
-    yPos := my+10
-    if (xPos+guiW>wAreaRight)
-        xPos := wAreaRight - guiW
-    if (yPos+guiH>wAreaBottom)
-        yPos := wAreaBottom - guiH
+    ; Get dimensions of the active monitor
+    SysGet, workArea, MonitorWorkArea, %activeMonitor%
+    monitorWidth := workAreaRight - workAreaLeft
+    monitorHeight := workAreaBottom - workAreaTop
 
-    Gui, Premed:New, +AlwaysOnTop
-    Gui, Premed:Add, Text, x10 y10, Scan Date:
-    Gui, Premed:Add, DateTime, x10 y30 w120 vScanDate Choose%formDate%
-    Gui, Premed:Add, Text, x140 y10, Scan Time:
-    Gui, Premed:Add, DropDownList, x140 y30 w100 vScanTime, % CreateTimeList(Format("{:02d}:{:02d}", hours, minutes))
-    Gui, Premed:Add, Radio, x10 y60 w200 vPremedProtocol Checked, Prednisone (13-7-1 hour)
-    Gui, Premed:Add, Radio, x10 y80 w200, Methylprednisolone (12-2 hour)
-    Gui, Premed:Add, Checkbox, x10 y100 w200 vIncludeDiphenhydramine Checked, Include Diphenhydramine
-    Gui, Premed:Add, Button, x10 y130 w100 gCalculatePremedTiming, Calculate
-    Gui, Premed:Add, Button, x120 y130 w100 gShowPremedDosages, Show Dosages
+    ; Calculate GUI dimensions and position
+    guiWidth := 250
+    guiHeight := 160
+    xPos := mouseX + 10
+    yPos := mouseY + 10
 
-    Gui, Premed:Show, x%xPos% y%yPos% w%guiW% h%guiH%, Contrast Premedication
+    ; Ensure the GUI doesn't go off-screen
+    if (xPos + guiWidth > workAreaRight)
+        xPos := workAreaRight - guiWidth
+    if (yPos + guiHeight > workAreaBottom)
+        yPos := workAreaBottom - guiHeight
+
+    ; Create GUI with AlwaysOnTop option and position it near the mouse
+    Gui, ContrastPremed:New, +AlwaysOnTop
+    Gui, ContrastPremed:Add, Text, x10 y10, Scan Date:
+    Gui, ContrastPremed:Add, DateTime, x10 y30 w120 vScanDate Choose%defaultDate%
+    Gui, ContrastPremed:Add, Text, x140 y10, Scan Time:
+    Gui, ContrastPremed:Add, DropDownList, x140 y30 w100 vScanTime, % CreateTimeList(defaultTime)
+    Gui, ContrastPremed:Add, Radio, x10 y60 w200 vPremedProtocol Checked, Prednisone (13-7-1 hour)
+    Gui, ContrastPremed:Add, Radio, x10 y80 w200, Methylprednisolone (12-2 hour)
+    Gui, ContrastPremed:Add, Checkbox, x10 y100 w200 vIncludeDiphenhydramine Checked, Include Diphenhydramine
+    Gui, ContrastPremed:Add, Button, x10 y130 w100 gCalculatePremedTiming, Calculate
+    Gui, ContrastPremed:Add, Button, x120 y130 w100 gShowPremedDosages, Show Dosages
+    Gui, ContrastPremed:Show, x%xPos% y%yPos% w%guiWidth% h%guiHeight%, Contrast Premedication
+
     return
+}
+
+GetDefaultDateTime() {
+    defaultDateTime := A_Now
+    EnvAdd, defaultDateTime, 13, Hours
+    
+    ; Extract hours and minutes
+    FormatTime, hours, %defaultDateTime%, HH
+    FormatTime, minutes, %defaultDateTime%, mm
+    
+    ; Round up to nearest 5 minutes
+    minutes := Ceil(minutes / 5) * 5
+    if (minutes = 60) {
+        minutes := 0
+        hours := hours + 1
+    }
+    
+    ; Handle day change if hours exceed 23
+    if (hours >= 24) {
+        hours := Mod(hours, 24)
+        EnvAdd, defaultDateTime, 1, Days
+    }
+    
+    ; Format the time back into the datetime
+    formattedTime := Format("{:02d}{:02d}00", hours, minutes)
+    FormatTime, formattedDate, %defaultDateTime%, yyyyMMdd
+    return formattedDate . formattedTime
 }
 
 CreateTimeList(defaultTime) {
     timeList := ""
     Loop, 24 {
-        hr := A_Index-1
+        hour := A_Index - 1
         Loop, 12 {
-            min := (A_Index-1)*5
-            t := Format("{:02d}:{:02d}", hr, min)
-            timeList .= t . "|"
+            minute := (A_Index - 1) * 5
+            time := Format("{:02d}:{:02d}", hour, minute)
+            timeList .= time . "|"
         }
     }
+    ; Remove the trailing pipe
     timeList := RTrim(timeList, "|")
-    if (defaultTime!="") {
+    
+    ; Set the default time
+    if (defaultTime) {
         timeList := StrReplace(timeList, defaultTime, defaultTime . "||")
     }
+    
     return timeList
 }
 
-CalculatePremedTiming:
-    Gui, Premed:Submit, NoHide
-    sdt := GetScanDateTime(ScanDate, ScanTime)
-    if (!sdt) {
-        MsgBox, 0, Error, Invalid date/time
-        return
-    }
-    DisplayPremedResult(sdt, PremedProtocol, IncludeDiphenhydramine)
-return
-
-ShowPremedDosages:
-    Gui, Premed:Submit, NoHide
-    ShowPremedDosages(PremedProtocol, IncludeDiphenhydramine)
-return
-
 GetScanDateTime(scanDate, scanTime) {
-    FormatTime, dt, %scanDate%, yyyyMMdd
-    formTime := StrReplace(scanTime,":")
-    full := dt . formTime . "00"
-    if (!IsValidDateTime(full)) {
-        return ""
+    if (scanDate = "" || scanTime = "") {
+        return GetDefaultDateTime()
     }
-    return full
+    return CombineDateTime(scanDate, scanTime)
 }
 
-IsValidDateTime(dt) {
+CalculatePremedTiming:
+    Gui, ContrastPremed:Submit, NoHide
+    scanDateTime := GetScanDateTime(ScanDate, ScanTime)
+    if (!scanDateTime) {
+        MsgBox, 0, Error, Please enter a valid date and time.
+        return
+    }
+    CalculateAndShowPremedResult(scanDateTime, PremedProtocol, IncludeDiphenhydramine)
+return
+
+CombineDateTime(scanDate, scanTime) {
+    FormatTime, formattedDate, %scanDate%, yyyyMMdd
+    formattedTime := StrReplace(scanTime, ":")
+    fullDateTime := formattedDate . formattedTime . "00"
+    
+    if (!IsValidDateTime(fullDateTime)) {
+        return false
+    }
+    
+    return fullDateTime
+}
+
+CalculateAndShowPremedResult(scanDateTime, premedProtocol, includeDiphenhydramine) {
+    FormatTime, scanDateTimeFormatted, %scanDateTime%, MM/dd/yyyy hh:mm tt
+    
+    result := "Scan time: " . scanDateTimeFormatted . " Contrast Premedication Schedule:`n`n"
+    
+    if (premedProtocol = 1) {
+        ; Prednisone-based protocol
+        result .= FormatPremedTime(scanDateTime, -13, "13", premedProtocol, includeDiphenhydramine)
+        result .= FormatPremedTime(scanDateTime, -7, "7", premedProtocol, includeDiphenhydramine)
+        result .= FormatPremedTime(scanDateTime, -1, "1", premedProtocol, includeDiphenhydramine)
+    } else {
+        ; Methylprednisolone-based protocol
+        result .= FormatPremedTime(scanDateTime, -12, "12", premedProtocol, includeDiphenhydramine)
+        result .= FormatPremedTime(scanDateTime, -2, "2", premedProtocol, includeDiphenhydramine)
+    }
+    
+    result .= "`nNote: Premedication regimens less than 4-5 hours in duration (oral or IV) have not been shown to be effective.`n"
+    result .= "If a patient is unable to take oral medication, 200 mg hydrocortisone IV may be substituted for each dose of oral prednisone in the 13-7-1 premedication regimen.`n"
+    
+    if (ShowCitations) {
+        result .= "`nCitation: ACR Manual on Contrast Media. 2023 American College of Radiology. https://www.acr.org/Clinical-Resources/Contrast-Manual`n"
+    }
+    
+    ShowResult(result)
+}
+
+FormatPremedTime(scanTime, hoursOffset, label, protocol, includeDiphenhydramine) {
+    premedTime := DateAdd(scanTime, hoursOffset, "hours")
+    FormatTime, premedTimeFormatted, %premedTime%, MM/dd/yyyy hh:mm tt
+    
+    medication := GetMedicationInfo(label, protocol, includeDiphenhydramine)
+    
+    return label . " hours before (" . premedTimeFormatted . "):`n" . medication . "`n`n"
+}
+
+GetMedicationInfo(label, protocol, includeDiphenhydramine) {
+    if (protocol = 1) {  ; Prednisone-based protocol
+        medication := "- Prednisone 50 mg PO"
+        if (label = "1" && includeDiphenhydramine) {
+            medication .= "`n- Diphenhydramine 50 mg IV, IM, or PO"
+        }
+    } else {  ; Methylprednisolone-based protocol
+        medication := "- Methylprednisolone 32 mg PO"
+        if (label = "2" && includeDiphenhydramine) {
+            medication .= "`n- Diphenhydramine 50 mg IV, IM, or PO"
+        }
+    }
+    return medication
+}
+
+IsValidDateTime(dateTimeStr) {
     try {
-        FormatTime, test, %dt%, yyyy-MM-dd HH:mm:ss
+        FormatTime, test, %dateTimeStr%, yyyy-MM-dd HH:mm:ss
         return true
     } catch {
         return false
     }
 }
 
-DisplayPremedResult(scanDateTime, protocol, useBenadryl) {
-    FormatTime, sdf, %scanDateTime%, MM/dd/yyyy hh:mm tt
-    res := "Scan: " . sdf . "`n"
+ShowPremedDosages:
+    Gui, ContrastPremed:Submit, NoHide
+    ShowPremedDosages(PremedProtocol, IncludeDiphenhydramine)
+return
 
-    if (protocol=1) {
-        res .= FormatPremedDose(scanDateTime, -13, "13", protocol, useBenadryl)
-        res .= FormatPremedDose(scanDateTime, -7, "7", protocol, useBenadryl)
-        res .= FormatPremedDose(scanDateTime, -1, "1", protocol, useBenadryl)
-    } else {
-        res .= FormatPremedDose(scanDateTime, -12, "12", protocol, useBenadryl)
-        res .= FormatPremedDose(scanDateTime, -2, "2", protocol, useBenadryl)
-    }
-    res .= "`nShorter regimens (<4-5 hr) not proven effective.`nIf patient cannot take PO, 200 mg hydrocortisone IV can replace each PO steroid dose.`n"
-    if (ShowCitations)
-        res .= "`nRef: ACR Manual on Contrast Media."
-    ShowResult(res)
-}
-
-FormatPremedDose(scanTime, offset, label, protocol, useBenadryl) {
-    st := DateAdd(scanTime, offset, "hours")
-    FormatTime, stFmt, %st%, MM/dd/yyyy hh:mm tt
-    txt := label . " hr before (" . stFmt . "):`n"
-
-    if (protocol=1) {
-        txt .= "- Prednisone 50 mg PO"
-        if (label="1" && useBenadryl) {
-            txt .= "`n- Diphenhydramine 50 mg IV/IM/PO"
+ShowPremedDosages(premedProtocol, includeDiphenhydramine) {
+    dosages := "Contrast Premedication Dosages:`n`n"
+    
+    if (premedProtocol = 1) {
+        dosages .= "Prednisone-based Protocol (13-7-1 hour):`n`n"
+        dosages .= "13 hours before:`n- Prednisone 50 mg PO`n`n"
+        dosages .= "7 hours before:`n- Prednisone 50 mg PO`n`n"
+        dosages .= "1 hour before:`n- Prednisone 50 mg PO`n"
+        if (includeDiphenhydramine) {
+            dosages .= "- Diphenhydramine 50 mg IV, IM, or PO`n"
         }
     } else {
-        txt .= "- Methylprednisolone 32 mg PO"
-        if (label="2" && useBenadryl) {
-            txt .= "`n- Diphenhydramine 50 mg IV/IM/PO"
+        dosages .= "Methylprednisolone-based Protocol (12-2 hour):`n`n"
+        dosages .= "12 hours before:`n- Methylprednisolone 32 mg PO`n`n"
+        dosages .= "2 hours before:`n- Methylprednisolone 32 mg PO`n"
+        if (includeDiphenhydramine) {
+            dosages .= "- Diphenhydramine 50 mg IV, IM, or PO`n"
         }
     }
-    txt .= "`n`n"
-    return txt
-}
-
-ShowPremedDosages(protocol, useBenadryl) {
-    dosages := "Contrast Premedication Dosages:`n"
-    if (protocol=1) {
-        dosages .= "`nPrednisone 13-7-1 hr:`n"
-        dosages .= "13 hr: Prednisone 50 mg PO`n"
-        dosages .= " 7 hr: Prednisone 50 mg PO`n"
-        dosages .= " 1 hr: Prednisone 50 mg PO"
-        if (useBenadryl) {
-            dosages .= "`n + Diphenhydramine 50 mg"
-        }
-    } else {
-        dosages .= "`nMethylprednisolone 12-2 hr:`n"
-        dosages .= "12 hr: Methylprednisolone 32 mg PO`n"
-        dosages .= " 2 hr: Methylprednisolone 32 mg PO"
-        if (useBenadryl) {
-            dosages .= "`n + Diphenhydramine 50 mg"
-        }
+    
+    dosages .= "`nNotes:`n"
+    dosages .= "- Premedication regimens less than 4-5 hours in duration (oral or IV) have not been shown to be effective.`n"
+    dosages .= "- If a patient is unable to take oral medication, 200 mg hydrocortisone IV may be substituted for each dose of oral prednisone in the 13-7-1 premedication regimen.`n"
+    dosages .= "- Diphenhydramine is considered optional. If a patient is allergic to diphenhydramine, an alternate anti-histamine without cross-reactivity may be considered, or the anti-histamine may be omitted.`n"
+    dosages .= "- These dosages are based on the ACR Manual on Contrast Media. Please consult with a healthcare professional for patient-specific recommendations.`n"
+    
+    if (ShowCitations) {
+        dosages .= "`nCitation: ACR Manual on Contrast Media. 2023 American College of Radiology. https://www.acr.org/Clinical-Resources/Contrast-Manual`n"
     }
-    dosages .= "`n`nLess than 4-5 hr premed is not proven. If unable to take oral meds, 200 mg hydrocortisone IV may replace each steroid dose."
-    if (ShowCitations)
-        dosages .= "`nRef: ACR Manual on Contrast Media."
+    
     ShowResult(dosages)
 }
 
-DateAdd(datetime, val, unit) {
-    EnvAdd, datetime, %val%, %unit%
+DateAdd(datetime, value, unit) {
+    EnvAdd, datetime, %value%, %unit%
     return datetime
 }
 
 ; -------------------------------------------------------------------------
 ; 16) Fleischner Code
 ; -------------------------------------------------------------------------
-InitializeRecommendations() {
-    global recommendations
-    ObjRawSet(recommendations, "single_solid_small", {low: "No routine follow-up.", high: "Optional CT @12mo."})
-    ObjRawSet(recommendations, "single_solid_medium", {low: "CT @6-12mo, consider CT @18-24mo.", high: "CT @6-12mo + 18-24mo."})
-    ObjRawSet(recommendations, "single_solid_large", {low: "Consider CT @3mo, PET/CT, or biopsy.", high: "Same as low-risk (aggressive)."})
-    ObjRawSet(recommendations, "multiple_solid_small", {low: "No routine follow-up.", high: "Optional CT @12mo."})
-    ObjRawSet(recommendations, "multiple_solid_medium", {low: "CT @3-6mo, consider CT @18-24mo.", high: "CT @3-6mo + 18-24mo."})
-    ObjRawSet(recommendations, "multiple_solid_large", {low: "CT @3-6mo, consider CT @18-24mo.", high: "CT @3-6mo + 18-24mo."})
-    ObjRawSet(recommendations, "single_gg_small", "No routine follow-up.")
-    ObjRawSet(recommendations, "single_gg_large", "CT @6-12mo to confirm, then q2yr up to 5yrs.")
-    ObjRawSet(recommendations, "single_ps_small", "No routine follow-up.")
-    ObjRawSet(recommendations, "single_ps_large", "CT @3-6mo to confirm. If stable & <6mm solid part: annual x5yrs.")
-    ObjRawSet(recommendations, "multiple_subsolid_small", "CT @3-6mo, if stable consider CT @2 & 4yrs.")
-    ObjRawSet(recommendations, "multiple_subsolid_large", "CT @3-6mo; follow highest suspicion nodule.")
-}
-
-ProcessNodules(text) {
-    result := ""
-    sentences := PreprocessTextNodules(text)
-    nodules := []
-    globalHighRisk := CheckHighRiskConditions(text)
-    isMultiple := false
-
-    for _, line in sentences {
-        multiProb := CalculateMultipleNodulesProbability(line)
-        isMultiple := (multiProb>=0.45) or isMultiple
-
-        noduleDescs := SplitNoduleDescriptions(line)
-        for _, desc in noduleDescs {
-            try {
-                n := new Nodule(desc)
-                n.GlobalHighRisk := globalHighRisk
-                n.Multiplicity := isMultiple ? "multiple" : "single"
-                nodules.Push(n)
-            } catch e {
-                ; skip
-            }
-        }
-    }
-
-    if (nodules.Length()=0) {
-        if (
-            InStr(text, "micronodule")
-            || InStr(text,"micronodules")
-            || (InStr(text,"multiple") && InStr(text,"nodule"))
-        ) {
-            n := new Nodule("Multiple nodules measuring up to 5 mm")
-            n.GlobalHighRisk := globalHighRisk
-            n.Multiplicity := "multiple"
-            nodules.Push(n)
-        } else {
-            return "Error: No valid nodules found."
-        }
-    }
-
-    mostSignificant := nodules[1]
-    for _, nd in nodules {
-        nd.UpdateMString()
-        if (
-            nd.Size()>mostSignificant.Size()
-            || (nd.Size()=mostSignificant.Size() && IsMoreSignificant(nd, mostSignificant))
-        ) {
-            mostSignificant := nd
-        }
-    }
-
-    if (nodules.Length()>1 || isMultiple || InStr(text,"multiple") || InStr(text,"micronodules")) {
-        mostSignificant.Multiplicity := "multiple"
-    }
-
-    result := text . "`n`nFleischner 2017 assessment:`n"
-    if (mostSignificant.Multiplicity="multiple") {
-        result .= "Multiple nodules. Most significant nodule:`n"
-    } else {
-        result .= "A single pulmonary nodule:`n"
-    }
-    result .= "- Location: " . (mostSignificant.Location!=""?mostSignificant.Location:"Not specified") . "`n"
-    result .= "- Size Extracted: " . mostSignificant.mString . "`n"
-    result .= "- ~Size mm: " . Format("{:.1f}", mostSignificant.Size()) . " mm`n"
-    result .= "- Composition: " . (mostSignificant.Composition!=""?mostSignificant.Composition:"solid") . "`n"
-
-    if (mostSignificant.Calcified)
-        result .= "- Calcification: Present`n"
-    if (mostSignificant.Morphology!="")
-        result .= "- Morphology: " . mostSignificant.Morphology . "`n"
-
-    result .= "`nRecommendation:`n"
-    if ((globalHighRisk || mostSignificant.Morphology="spiculated") && !mostSignificant.Calcified) {
-        mostSignificant.HighRisk := true
-        rec := mostSignificant.Recommendation()
-        result .= AddFollowUpDates(rec, A_Now)
-    } else {
-        if (!mostSignificant.Calcified && (mostSignificant.Composition="solid" || mostSignificant.Composition="")) {
-            lr := mostSignificant.Recommendation()
-            result .= "Low-risk: " . AddFollowUpDates(lr, A_Now) . "`n"
-
-            mostSignificant.HighRisk := true
-            hr := mostSignificant.Recommendation()
-            result .= "`nHigh-risk: " . AddFollowUpDates(hr, A_Now)
-        } else if (!mostSignificant.Calcified && (mostSignificant.Composition="part solid" || mostSignificant.Composition="ground glass")) {
-            rec := mostSignificant.Recommendation()
-            result .= AddFollowUpDates(rec, A_Now)
-        } else {
-            result .= "Calcified nodule => no routine follow-up."
-        }
-    }
-
-    if (globalHighRisk || mostSignificant.Morphology="spiculated")
-        result .= "`n`nNote: patient has risk factors or suspicious morphology."
-
-    global ShowCitations
-    if (ShowCitations)
-        result .= "`n`nCitation: MacMahon H, Naidich DP, Goo JM, et al. Radiology 2017;284(1):228-243."
-
-    return result
-}
-
 class Nodule {
     __New(nString) {
         this.Description := nString
@@ -2408,192 +2302,217 @@ class Nodule {
         this.Perifissural := false
         this.Morphology := ""
         this.GlobalHighRisk := false
+
         if (!this.ContainsNoduleReference(nString))
             throw Exception("No nodule reference", -1)
+        
         this.ParseNoduleProperties(nString)
         this.ExtractMeasurements(nString)
-        if (InStr(nString, "up to") && InStr(nString,"multiple")) {
+
+        ; Handle cases where only the largest measurement is given for multiple nodules
+        if (InStr(nString, "up to") and InStr(nString, "multiple")) {
             this.Multiplicity := "multiple"
         }
     }
 
     ContainsNoduleReference(nString) {
-        terms := ["nodule","nodules","mass","masses","opacity","opacities","lesion","lesions","micronodule","micronodules"]
-        for _, t in terms {
-            if (InStr(nString,t))
+        noduleTerms := ["nodule", "nodules", "mass", "masses", "opacity", "opacities", "lesion", "lesions", "micronodule", "micronodules"]
+        for _, term in noduleTerms {
+            if (InStr(nString, term))
                 return true
         }
         return false
     }
 
     ParseNoduleProperties(nString) {
-        words := StrSplit(nString," ")
-        Loop, % words.Length() {
-            w := words[A_Index]
-            if (this.IsMultiplicityWord(w))
+        words := StrSplit(nString, A_Space)
+        for index, word in words {
+            if (this.IsMultiplicityWord(word))
                 this.Multiplicity := "multiple"
-
-            if (this.FuzzyMatch(w,"solid")) {
-                if (this.Composition="")
+            
+            if (this.FuzzyMatch(word, "solid")) {
+                if (this.Composition = "")
                     this.Composition := "solid"
-                else if (this.Composition="ground glass")
+                else if (this.Composition = "ground glass")
                     this.Composition := "part solid"
             }
-            if (
-                this.FuzzyMatch(w,"ground")
-                && A_Index<words.Length()
-                && this.FuzzyMatch(words[A_Index+1],"glass")
-            ) {
-                if (this.Composition="")
+            
+            if (this.FuzzyMatch(word, "ground") and index < words.Length() and this.FuzzyMatch(words[index+1], "glass")) {
+                if (this.Composition = "")
                     this.Composition := "ground glass"
-                else if (this.Composition="solid")
+                else if (this.Composition = "solid")
                     this.Composition := "part solid"
             }
-            if (this.FuzzyMatch(w,"part-solid") || this.FuzzyMatch(w,"partsolid")) {
+            
+            if (this.FuzzyMatch(word, "groundglass")) {
+                if (this.Composition = "")
+                    this.Composition := "ground glass"
+                else if (this.Composition = "solid")
+                    this.Composition := "part solid"
+            }
+            
+            if ((this.FuzzyMatch(word, "part") and index < words.Length() and this.FuzzyMatch(words[index+1], "solid")) 
+                or this.FuzzyMatch(word, "part-solid") or this.FuzzyMatch(word, "partsolid")) {
                 this.Composition := "part solid"
             }
-            if (this.FuzzyMatch(w,"calcified") || this.FuzzyMatch(w,"calcification"))
+            
+            if (this.FuzzyMatch(word, "calcified") or this.FuzzyMatch(word, "calcification") or this.FuzzyMatch(word, "calcifications"))
                 this.Calcified := true
-            if (this.FuzzyMatch(w,"noncalcified") || this.FuzzyMatch(w,"non-calcified"))
+            
+            if (this.FuzzyMatch(word, "noncalcified") or this.FuzzyMatch(word, "non-calcified"))
                 this.Calcified := false
 
-            if (this.FuzzyMatch(w,"emphysema") || this.FuzzyMatch(w,"fibrosis"))
+            if (this.FuzzyMatch(word, "emphysema") or this.FuzzyMatch(word, "fibrosis"))
                 this.GlobalHighRisk := true
 
-            lobeKW := ["upper","middle","lower","lingula","apical","basal"]
-            for _, lkw in lobeKW {
-                if (this.FuzzyMatch(w,lkw)) {
-                    this.Location .= " " . w
+            lobeKeywords := ["upper", "middle", "lower", "lingula", "apical", "basal"]
+            for _, keyword in lobeKeywords {
+                if (this.FuzzyMatch(word, keyword)) {
+                    this.Location .= " " . word
                 }
             }
-            if (this.FuzzyMatch(w,"right") || this.FuzzyMatch(w,"left")) {
-                this.Location .= " " . w
+            if (this.FuzzyMatch(word, "right") or this.FuzzyMatch(word, "left")) {
+                this.Location .= " " . word
             }
 
-            if (this.FuzzyMatch(w,"perifissural") || this.FuzzyMatch(w,"fissure"))
+            if (this.FuzzyMatch(word, "perifissural") or this.FuzzyMatch(word, "fissure"))
                 this.Perifissural := true
 
-            morphKW := ["spiculated","lobulated","irregular","smooth"]
-            for _, mk in morphKW {
-                if (this.FuzzyMatch(w,mk)) {
-                    this.Morphology := mk
+            morphologyKeywords := ["spiculated", "lobulated", "irregular", "smooth"]
+            for _, keyword in morphologyKeywords {
+                if (this.FuzzyMatch(word, keyword)) {
+                    this.Morphology := keyword
                     break
                 }
             }
         }
         this.Location := Trim(this.Location)
-        if (InStr(nString,"multiple") || InStr(nString,"several") || InStr(nString,"numerous"))
+
+        if (InStr(nString, "multiple") or InStr(nString, "several") or InStr(nString, "numerous"))
             this.Multiplicity := "multiple"
     }
 
     IsMultiplicityWord(word) {
-        multiWords := ["nodules","multiple","several","few","numerous","masses","opacities","lesions","micronodules"]
-        for _, mw in multiWords {
-            if (this.FuzzyMatch(word,mw))
+        multiplicityWords := ["nodules", "multiple", "several", "few", "numerous", "masses", "opacities", "lesions", "micronodules"]
+        for _, w in multiplicityWords {
+            if (this.FuzzyMatch(word, w))
                 return true
         }
         return false
     }
 
-    FuzzyMatch(w1,w2, threshold:=2) {
-        return (LevenshteinDistance(w1,w2)<=threshold)
+    FuzzyMatch(word1, word2, threshold := 2) {
+        return (LevenshteinDistance(word1, word2) <= threshold)
     }
 
-    ExtractMeasurements(nString) {
-        needle := "i)(?:up to|~|approximately|about)?\s*((?:\d*\.)?\d+)\s*(?:x\s*((?:\d*\.)?\d+))?\s*(?:x\s*((?:\d*\.)?\d+))?\s*([cm]m)"
-        if (RegExMatch(nString, needle, match)) {
-            this.mString := match
-            this.Units := match4
-            Loop,3 {
-                if (match%A_Index%!="")
-                    this.Measurements.Push(match%A_Index%+0)
-            }
-        } else {
-            needle2 := "i)(?:up to|~|approximately|about)?\s*((?:\d*\.)?\d+)\s*([cm]m)"
-            if (RegExMatch(nString, needle2, m2)) {
-                this.mString := m2
-                this.Units := m22
-                this.Measurements.Push(m21+0)
-            } else if (InStr(nString,"micronodule") || InStr(nString,"micronodules")) {
-                this.mString := "5 mm"
-                this.Units := "mm"
-                this.Measurements.Push(5)
-            } else {
-                needle3 := "i)((?:\d*\.)?\d+)\s*([cm]m)"
-                if (RegExMatch(nString, needle3, m3)) {
-                    this.mString := m3
-                    this.Units := m32
-                    this.Measurements.Push(m31+0)
-                } else {
-                    throw Exception("No measurements found", -2)
-                }
-            }
-        }
-        this.OriginalMeasurements := this.Measurements.Clone()
-        this.OriginalUnits := this.Units
-    }
+	ExtractMeasurements(nString) {
+	needle := "i)(?:up to|approximately|about|~)?\s*((?:\d*\.)?\d+)\s*(?:x\s*((?:\d*\.)?\d+))?\s*(?:x\s*((?:\d*\.)?\d+))?\s*([cm]m)"
+		if (RegExMatch(nString, needle, match)) {
+			this.mString := match
+			this.Units := match4
+			Loop, 3 {
+				if (match%A_Index% != "")
+					this.Measurements.Push(match%A_Index%)
+			}
+		}
+		else {
+			needle := "i)(?:up to|approximately|about|~)?\s*((?:\d*\.)?\d+)\s*([cm]m)"
+			if (RegExMatch(nString, needle, match)) {
+				this.mString := match
+				this.Units := match2
+				this.Measurements.Push(match1)
+			}
+			else if (InStr(nString, "micronodule") or InStr(nString, "micronodules")) {
+				; Default size for micronodules when no measurement is given
+				this.mString := "5 mm"
+					this.Units := "mm"
+						this.Measurements.Push(5)
+				}
+				else {
+					; If no specific measurement found, look for any number followed by units
+					needle := "i)((?:\d*\.)?\d+)\s*([cm]m)"
+					if (RegExMatch(nString, needle, match)) {
+						this.mString := match
+						this.Units := match2
+						this.Measurements.Push(match1)
+					}
+					else {
+					throw Exception("No measurements found", -2)
+					}
+				}
+			}
+		; Store original measurements
+		this.OriginalMeasurements := this.Measurements.Clone()
+		this.OriginalUnits := this.Units
+	}
 
     Size() {
-        if (this.Measurements.Length()=0)
+        if (this.Measurements.Length() = 0)
             return 0
-        sum := 0
-        for _, val in this.Measurements {
-            sum += val
+        
+        totalSize := 0
+        for _, measurement in this.Measurements {
+            totalSize += measurement
         }
-        avg := sum/this.Measurements.Length()
-        if (this.Units="cm")
-            return avg*10
-        return avg
-    }
+        averageSize := totalSize / this.Measurements.Length()
 
+        ; Convert to mm if necessary
+        if (this.Units = "cm")
+            return averageSize * 10  ; Convert cm to mm
+        return averageSize  ; Already in mm
+    }
+	
     UpdateMString() {
-        if (this.OriginalMeasurements.Length()=0)
+        if (this.OriginalMeasurements.Length() = 0)
             return
+
         sizes := []
         for _, measurement in this.OriginalMeasurements {
-            sizes.Push(Format("{:.1f}",measurement))
+            sizes.Push(Format("{:.1f}", measurement))
         }
-        this.mString := Join(sizes," x ") . " " . this.OriginalUnits
+        
+        this.mString := Join(sizes, " x ") . " " . this.OriginalUnits
     }
 
     Category() {
-        s := this.Size()
-        if (this.Composition="solid" || this.Composition="") {
-            if (this.Multiplicity="multiple") {
-                if (s<6)
+        s := this.Size()  ; s is now always in mm
+        
+        if (this.Composition == "solid" or this.Composition == "") {
+            if (this.Multiplicity == "multiple") {
+                if (s < 6)
                     return "multiple_solid_small"
-                else if (s<=8)
+                else if (s >= 6 and s <= 8)
                     return "multiple_solid_medium"
                 else
                     return "multiple_solid_large"
             } else {
-                if (s<6)
+                if (s < 6)
                     return "single_solid_small"
-                else if (s<=8)
+                else if (s >= 6 and s <= 8)
                     return "single_solid_medium"
                 else
                     return "single_solid_large"
             }
-        } else if (this.Composition="ground glass") {
-            if (this.Multiplicity="multiple") {
-                if (s<6)
+        } else if (this.Composition == "ground glass") {
+            if (this.Multiplicity == "multiple") {
+                if (s < 6)
                     return "multiple_subsolid_small"
                 else
                     return "multiple_subsolid_large"
             } else {
-                if (s<6)
+                if (s < 6)
                     return "single_gg_small"
                 else
                     return "single_gg_large"
             }
-        } else if (this.Composition="part solid") {
-            if (this.Multiplicity="multiple") {
-                if (s<6)
+        } else if (this.Composition == "part solid") {
+            if (this.Multiplicity == "multiple") {
+                if (s < 6)
                     return "multiple_subsolid_small"
                 else
                     return "multiple_subsolid_large"
             } else {
-                if (s<6)
+                if (s < 6)
                     return "single_ps_small"
                 else
                     return "single_ps_large"
@@ -2602,178 +2521,298 @@ class Nodule {
     }
 
     Recommendation() {
-        global recommendations
-        cat := this.Category()
+        category := this.Category()
         risk := this.HighRisk ? "high" : "low"
-        if (recommendations.HasKey(cat)) {
-            if (IsObject(recommendations[cat]))
-                return recommendations[cat][risk]
+        
+        if (recommendations.HasKey(category)) {
+            if (IsObject(recommendations[category]))
+                return recommendations[category][risk]
             else
-                return recommendations[cat]
+                return recommendations[category]
         }
-        return "No specific recommendation."
+        return "Unable to determine recommendation."
     }
+}
+
+InitializeRecommendations() {
+    ObjRawSet(recommendations, "single_solid_small", {low: "No routine follow-up.", high: "Optional CT at 12 months."})
+    ObjRawSet(recommendations, "single_solid_medium", {low: "CT at 6-12 months, then consider CT at 18-24 months.", high: "CT at 6-12 months, then CT at 18-24 months."})
+    ObjRawSet(recommendations, "single_solid_large", {low: "Consider CT at 3 months, PET/CT, or tissue sampling.", high: "Consider CT at 3 months, PET/CT, or tissue sampling."})
+    ObjRawSet(recommendations, "multiple_solid_small", {low: "No routine follow-up.", high: "Optional CT at 12 months."})
+    ObjRawSet(recommendations, "multiple_solid_medium", {low: "CT at 3-6 months, then consider CT at 18-24 months.", high: "CT at 3-6 months, then at 18-24 months."})
+    ObjRawSet(recommendations, "multiple_solid_large", {low: "CT at 3-6 months, then consider CT at 18-24 months.", high: "CT at 3-6 months, then at 18-24 months."})
+    ObjRawSet(recommendations, "single_gg_small", "No routine follow-up.")
+    ObjRawSet(recommendations, "single_gg_large", "CT at 6-12 months to confirm persistence, then every 2 years until 5 years.")
+    ObjRawSet(recommendations, "single_ps_small", "No routine follow-up.")
+    ObjRawSet(recommendations, "single_ps_large", "CT at 3-6 months to confirm persistence. If unchanged and solid component remains <6mm, annual CT should be performed for 5 years.")
+    ObjRawSet(recommendations, "multiple_subsolid_small", "CT at 3-6 months. If stable, consider CT at 2 and 4 years.")
+	ObjRawSet(recommendations, "multiple_subsolid_large", "CT at 3-6 months. Subsequent management based on the most suspicious nodule(s).")
+}
+
+Join(arr, sep) {
+    result := ""
+    for index, element in arr {
+        if (index > 1)
+            result .= sep
+        result .= element
+    }
+    return result
 }
 
 PreprocessTextNodules(text) {
-    lines := StrSplit(text,"`n","`r")
-    out := []
+    sentences := []
+    lines := StrSplit(text, "`n", "`r")
     for _, line in lines {
-        line := RegExReplace(line,"^\s*[\*\-•]\s*","")
-        parts := StrSplit(line,".")
-        for idx,part in parts {
+        ; Remove bullet points
+        line := RegExReplace(line, "^\s*[\*\-•]\s*", "")
+        
+        ; Split by periods, but be careful with measurements
+        parts := StrSplit(line, ".")
+        for index, part in parts {
             part := Trim(part)
-            if (part!="")
-                out.Push(part)
+            ; Check if this part is a continuation of a measurement
+            if (index > 1 && RegExMatch(parts[index-1], "\d+$") && RegExMatch(part, "^\d+"))
+                sentences[sentences.Length()] .= "." . part
+            else if (part != "")
+                sentences.Push(part)
         }
     }
-    return out
+    return sentences
+}
+
+ProcessNodules(text) {
+    result := ""
+    sentences := PreprocessTextNodules(text)
+    nodules := []
+    globalHighRisk := CheckHighRiskConditions(text)
+    isMultiple := false
+
+    for _, sentence in sentences {
+        multipleNodulesProbability := CalculateMultipleNodulesProbability(sentence)
+        isMultiple := (multipleNodulesProbability >= 0.45) or isMultiple  ; Adjusted threshold and accumulate
+
+        noduleDescriptions := SplitNoduleDescriptions(sentence)
+        for _, description in noduleDescriptions {
+            try {
+                nodule := new Nodule(description)
+                nodule.GlobalHighRisk := globalHighRisk
+                nodule.Multiplicity := isMultiple ? "multiple" : "single"
+                nodules.Push(nodule)
+            } catch e {
+                ; Skip invalid nodule descriptions
+            }
+        }
+    }
+
+    if (nodules.Length() = 0) {
+        ; Check for general mention of micronodules or multiple nodules
+        if (InStr(text, "micronodule") or InStr(text, "micronodules") or (InStr(text, "multiple") and InStr(text, "nodule"))) {
+            nodule := new Nodule("Multiple nodules measuring up to 5 mm")
+            nodule.GlobalHighRisk := globalHighRisk
+            nodule.Multiplicity := "multiple"
+            nodules.Push(nodule)
+        } else {
+            result := "Error: No valid nodules found."
+            return result
+        }
+    }
+
+    ; Find the most significant nodule
+    mostSignificantNodule := nodules[1]
+    for _, nodule in nodules {
+        nodule.UpdateMString()  ; Update mString for each nodule
+        if (nodule.Size() > mostSignificantNodule.Size() or (nodule.Size() = mostSignificantNodule.Size() and IsMoreSignificant(nodule, mostSignificantNodule))) {
+            mostSignificantNodule := nodule
+        }
+    }
+
+    ; Ensure multiplicity is set correctly
+    if (nodules.Length() > 1 or isMultiple or InStr(text, "multiple") or InStr(text, "micronodules")) {
+        mostSignificantNodule.Multiplicity := "multiple"
+    }
+
+    ; Generate result string
+    result := text . "`n`n"  ; Preserve input text at the top
+    result .= "Fleischner 2017 assessment:`n"
+    if (mostSignificantNodule.Multiplicity == "multiple") {
+        result .= "Multiple pulmonary nodules are present. The most significant nodule forming the basis of follow-up:`n"
+    } else {
+        result .= "A solitary pulmonary nodule is described forming the basis of follow-up:`n"
+    }
+    esult .= "- Location: " . (mostSignificantNodule.Location ? mostSignificantNodule.Location : "Not specified") . "`n"
+    result .= "- Extracted (or inferred) Size: " . mostSignificantNodule.mString . "`n"
+    result .= "- Fleischner Size (mm): " . Format("{:.1f} mm", mostSignificantNodule.Size()) . "`n"
+    result .= "- Composition (or inferred): " . (mostSignificantNodule.Composition ? mostSignificantNodule.Composition : "solid") . "`n"
+    if (mostSignificantNodule.Calcified)
+        result .= "- Calcification: Present`n"
+    if (mostSignificantNodule.Morphology)
+        result .= "- Morphology: " . mostSignificantNodule.Morphology . "`n"
+		
+    currentDate := A_Now
+
+    result .= "`nFLEISCHNER SOCIETY RECOMMENDATION:`n"
+    if ((globalHighRisk || mostSignificantNodule.Morphology == "spiculated") && !mostSignificantNodule.Calcified) {
+        mostSignificantNodule.HighRisk := true
+        recommendation := mostSignificantNodule.Recommendation()
+        result .= AddFollowUpDates(recommendation, currentDate)
+    } else {
+        if (!mostSignificantNodule.Calcified && mostSignificantNodule.Composition == "solid" || mostSignificantNodule.Composition == "") {
+            lowRiskRec := mostSignificantNodule.Recommendation()
+            result .= "For low-risk patients: " . AddFollowUpDates(lowRiskRec, currentDate) . "`n"
+            mostSignificantNodule.HighRisk := true
+            highRiskRec := mostSignificantNodule.Recommendation()
+            result .= "`nFor high-risk patients: " . AddFollowUpDates(highRiskRec, currentDate) . "`n"
+		} else if (!mostSignificantNodule.Calcified && (mostSignificantNodule.Composition == "part solid" || mostSignificantNodule.Composition == "ground glass")) {
+			recommendation := mostSignificantNodule.Recommendation()
+			result .= AddFollowUpDates(recommendation, currentDate)
+		} else {
+            result .= "Incidental calcified nodules do not typically require routine follow up.`n"
+        }
+    }
+
+    if (globalHighRisk || mostSignificantNodule.Morphology == "spiculated")
+        result .= "`n`nNote: Patient has risk factors or morphologic characteristics that may increase the risk of lung cancer."
+
+    if (ShowCitations)
+        result .= "`n`nCitation: MacMahon H, Naidich DP, Goo JM, et al. Guidelines for Management of Incidental Pulmonary Nodules Detected on CT Images: From the Fleischner Society 2017. Radiology. 2017;284(1):228-243. doi:10.1148/radiol.2017161659"
+   
+    return result
+}
+
+IsMoreSignificant(nodule1, nodule2) {
+    ; Order of significance: solid > part solid > ground glass
+    compositionOrder := {"solid": 3, "part solid": 2, "ground glass": 1}
+    return compositionOrder[nodule1.Composition] > compositionOrder[nodule2.Composition]
+}
+
+SplitNoduleDescriptions(text) {
+    descriptions := []
+    ; Modified regex to capture nodule descriptions more accurately, including cases where size appears before location and "nodule"
+    needle := "i)(?:(?:\d+(?:\.\d+)?\s*(?:x\s*\d+(?:\.\d+)?)*\s*(?:mm|cm))\s*(?:[a-z\s]+\s+)?(?:pulmonary\s+)?(?:nodule|mass|opacity|lesion)s?|(?:(?:multiple\s+)?(?:nodule|mass|opacity|lesion)s?(?:\s+(?:up to|approximately|about|~)?)?\s*(?:\d+(?:\.\d+)?\s*(?:x\s*\d+(?:\.\d+)?)*\s*(?:mm|cm))?|(?:(?:up to|approximately|about|~)?\s*\d+(?:\.\d+)?\s*(?:x\s*\d+(?:\.\d+)?)*\s*(?:mm|cm))?\s*(?:(?:solid|ground glass|part[- ]solid|calcified|noncalcified|spiculated|lobulated|irregular|smooth)?\s*(?:pulmonary\s+)?(?:nodule|mass|opacity|lesion)s?)))(?:\s*\([^)]+\))?"
+    
+    ; Split the text into lines
+    lines := StrSplit(text, "`n", "`r")
+    for _, line in lines {
+        pos := 1
+        while (pos := RegExMatch(line, needle, match, pos)) {
+            descriptions.Push(Trim(match))
+            pos += StrLen(match)
+        }
+    }
+    
+    ; If no specific nodule descriptions found, check for general mentions of nodules
+    if (descriptions.Length() = 0) {
+        if (RegExMatch(text, "i)(?:multiple\s+)?nodules?.*(?:measure|up to).*(\d+(?:\.\d+)?)\s*(?:x\s*\d+(?:\.\d+)?)*\s*(mm|cm)", match)) {
+            descriptions.Push(match)
+        } else if (InStr(text, "micronodule") or InStr(text, "micronodules")) {
+            descriptions.Push("Multiple micronodules")
+        } else if (InStr(text, "multiple") and InStr(text, "nodule")) {
+            descriptions.Push("Multiple nodules")
+        }
+    }
+    
+    ; If still no descriptions found, return the entire text
+    if (descriptions.Length() = 0) {
+        descriptions.Push(text)
+    }
+    
+    return descriptions
+}
+
+AddFollowUpDates(recommendation, currentDate) {
+    followUpPeriods := []
+    
+    if (InStr(recommendation, "3 months"))
+        followUpPeriods.Push({min: 90, max: 90, text: "3 months"})
+	if (InStr(recommendation, "3-6 months"))
+        followUpPeriods.Push({min: 90, max: 183, text: "3-6 months"})
+    if (InStr(recommendation, "6-12 months"))
+        followUpPeriods.Push({min: 180, max: 365, text: "6-12 months"})
+    if (InStr(recommendation, "18-24 months"))
+        followUpPeriods.Push({min: 540, max: 730, text: "18-24 months"})
+	if (InStr(recommendation, "2 years until 5 years"))
+        followUpPeriods.Push({min: 1095, max: 1825, text: "2 years until 5 years"})
+    
+    if (followUpPeriods.Length() > 0) {
+        recommendation .= "`nFollow-up dates:"
+        for _, period in followUpPeriods {
+            minDate := DateCalc(currentDate, period.min)
+            maxDate := DateCalc(currentDate, period.max)
+            FormatTime, formattedMinDate, %minDate%, MMMM yyyy
+            FormatTime, formattedMaxDate, %maxDate%, MMMM yyyy
+			FormatTime, formattedCurrentDate, %currentDate%, MMMM yyyy
+            if (formattedMinDate != formattedMaxDate)
+                recommendation .= " " . period.text . " is " . formattedMinDate . " to " . formattedMaxDate . " from " . formattedCurrentDate . ". "
+            else
+                recommendation .= " " . period.text . " is " . formattedMinDate . " from " . formattedCurrentDate . ". "
+        }
+    }
+    
+    return recommendation
 }
 
 CheckHighRiskConditions(text) {
-    StringLower text, text
-    hrTerms := ["emphysema","fibrosis","fibrotic","emphysematous"]
-    for _, t in hrTerms {
-        if (FuzzyMatchGlobal(text,t))
-            return true
+    StringLower text, text ; Convert to lowercase
+    highRiskTerms := ["emphysema", "fibrosis", "fibrotic", "emphysematous"]
+    
+    for _, term in highRiskTerms {
+        words := StrSplit(text, A_Space)
+        for _, word in words {
+            if (FuzzyMatchGlobal(word, term))
+                return true
+        }
     }
     return false
 }
 
-FuzzyMatchGlobal(word,term, threshold:=2) {
-    return (LevenshteinDistance(word,term)<=threshold)
+FuzzyMatchGlobal(word1, word2, threshold := 2) {
+    return (LevenshteinDistance(word1, word2) <= threshold)
 }
 
-CalculateMultipleNodulesProbability(line) {
-    prob := 0
-    if (InStr(line,"nodules") || InStr(line,"multiple") || InStr(line,"several") || InStr(line,"few"))
-        prob += 0.7
-    if (InStr(line,"scattered") && InStr(line,"micronodules"))
-        prob += 0.6
-
-    measureCount := 0
+CalculateMultipleNodulesProbability(text) {
+    probability := 0
+    
+    ; Check for explicit mentions of multiple nodules
+    if (InStr(text, "nodules") or InStr(text, "multiple") or InStr(text, "several") or InStr(text, "few"))
+        probability += 0.7
+    
+    ; Check for scattered micronodules
+    if (InStr(text, "scattered") and InStr(text, "micronodules"))
+        probability += 0.6
+    
+    ; Check for multiple measurements
+    measurementCount := 0
     pos := 1
-    while (pos := RegExMatch(line,"i)(\d+(?:\.\d+)?\s*(mm|cm))",m,pos+StrLen(m))) {
-        measureCount++
+    while (pos := RegExMatch(text, "i)(\d+(?:\.\d+)?\s*(mm|cm))", match, pos + StrLen(match)))
+        measurementCount++
+    
+    if (measurementCount > 1)
+        probability += 0.5  ; Increased weight for multiple measurements
+    
+    ; Check for multiple locations
+    lobeKeywords := ["upper", "middle", "lower", "lingula", "apical", "basal", "right", "left"]
+    uniqueLocations := {}
+    for _, keyword in lobeKeywords {
+        if (InStr(text, keyword))
+            uniqueLocations[keyword] := true
     }
-    if (measureCount>1)
-        prob += 0.5
-
-    lobes := ["upper","middle","lower","lingula","apical","basal","right","left"]
-    locs := {}
-    for _, lw in lobes {
-        if (InStr(line,lw))
-            locs[lw]:=true
+    
+    if (uniqueLocations.Count() > 1)
+        probability += 0.3  ; Increased weight for multiple locations
+    
+    ; Count number of times "nodule" (singular) is mentioned
+    noduleCount := 0
+    pos := 1
+    while (pos := InStr(text, "nodule", false, pos))
+    {
+        noduleCount++
+        pos += 6  ; length of "nodule"
     }
-    if (locs.Count()>1)
-        prob += 0.3
-
-    nodCount := 0
-    pos2 := 1
-    while (pos2 := InStr(line,"nodule",false,pos2)) {
-        nodCount++
-        pos2 += 6
-    }
-    if (nodCount>1)
-        prob += 0.4
-
-    return (prob>1) ? 1 : prob
-}
-
-SplitNoduleDescriptions(text) {
-    descs := []
-    needle := "i)(?:(?:\d+(?:\.\d+)?\s*(?:x\s*\d+(?:\.\d+)?)*\s*(?:mm|cm)\s*)?(?:[a-z\s]+\s+)?(?:nodule|mass|opacity|lesion)s?)"
-    lines := StrSplit(text,"`n","`r")
-    for _, line in lines {
-        pos := 1
-        while (pos := RegExMatch(line, needle, m, pos)) {
-            descs.Push(Trim(m))
-            pos += StrLen(m)
-        }
-    }
-
-    if (descs.Length()=0) {
-        if (RegExMatch(text,"i)(?:multiple\s+nodules?.*(?:measure|up to).*\d+(?:\.\d+)?\s*(?:mm|cm))",mx)) {
-            descs.Push(mx)
-        } else if (InStr(text,"micronodule") || InStr(text,"micronodules")) {
-            descs.Push("Multiple micronodules")
-        } else if (InStr(text,"multiple") && InStr(text,"nodule")) {
-            descs.Push("Multiple nodules")
-        }
-    }
-    if (descs.Length()=0)
-        descs.Push(text)
-    return descs
-}
-
-IsMoreSignificant(n1,n2) {
-    cOrder := {"solid":3, "part solid":2, "ground glass":1, "":3}
-    return cOrder[n1.Composition]>cOrder[n2.Composition]
-}
-
-AddFollowUpDates(recommendation,currentDate) {
-    fups := []
-    if (InStr(recommendation,"3 months"))
-        fups.Push({min:90,max:90,text:"3 months"})
-    if (InStr(recommendation,"3-6mo"))
-        fups.Push({min:90,max:183,text:"3-6 months"})
-    if (InStr(recommendation,"6-12mo"))
-        fups.Push({min:180,max:365,text:"6-12 months"})
-    if (InStr(recommendation,"18-24mo"))
-        fups.Push({min:540,max:730,text:"18-24 months"})
-    if (InStr(recommendation,"q2yr up to 5yrs"))
-        fups.Push({min:730,max:1825,text:"2-5 yrs"})
-
-    if (fups.Length()>0) {
-        recommendation .= "`nSuggested follow-up windows:"
-        for _, fu in fups {
-            minDate := DateCalc(currentDate, fu.min)
-            maxDate := DateCalc(currentDate, fu.max)
-            FormatTime, fMin, %minDate%, MMM yyyy
-            FormatTime, fMax, %maxDate%, MMM yyyy
-            FormatTime, fNow, %currentDate%, MMM yyyy
-
-            if (fMin!=fMax)
-                recommendation .= " " . fu.text . " => " . fMin . " - " . fMax . " from " . fNow . "."
-            else
-                recommendation .= " " . fu.text . " => " . fMin . " from " . fNow . "."
-        }
-    }
-    return recommendation
-}
-
-; -------------------------------------------------------------------------
-; 16) Levenshtein Distance helper
-; -------------------------------------------------------------------------
-LevenshteinDistance(s, t) {
-    m := StrLen(s)
-    n := StrLen(t)
-    d := []
-    Loop, % m+1 {
-        d[A_Index] := []
-        d[A_Index,1] := A_Index-1
-    }
-    Loop, % n+1
-        d[1,A_Index] := A_Index-1
-
-    Loop, % m {
-        i := A_Index
-        Loop, % n {
-            j := A_Index
-            cost := (SubStr(s,i,1)=SubStr(t,j,1)) ? 0 : 1
-            d[i+1,j+1] := Min(d[i,j+1]+1, d[i+1,j]+1, d[i,j]+cost)
-        }
-    }
-    return d[m+1,n+1]
-}
-
-Join(arr, sep) {
-    out := ""
-    for i, element in arr {
-        if (i>1) out .= sep
-        out .= element
-    }
-    return out
+    
+    if (noduleCount > 1)
+        probability += 0.4  ; Add probability if "nodule" is mentioned multiple times
+    
+    return (probability > 1) ? 1 : probability
 }
 ; ------------------------------------------
 ; Go to MESA website and get informatoin
@@ -2922,6 +2961,37 @@ UrlEncode(str) {
     SetFormat, Integer, %oldFormat%
     return result
 }
+; ------------------------------------------
+; Levenshtein Distance for Fleischner
+; ------------------------------------------
+LevenshteinDistance(s, t) {
+    m := StrLen(s)
+    n := StrLen(t)
+    d := []
+
+    Loop, % m + 1
+    {
+        d[A_Index] := []
+        d[A_Index, 1] := A_Index - 1
+    }
+
+    Loop, % n + 1
+        d[1, A_Index] := A_Index - 1
+
+    Loop, % m
+    {
+        i := A_Index
+        Loop, % n
+        {
+            j := A_Index
+            cost := (SubStr(s, i, 1) = SubStr(t, j, 1)) ? 0 : 1
+            d[i+1, j+1] := Min(d[i, j+1] + 1, d[i+1, j] + 1, d[i, j] + cost)
+        }
+    }
+
+    return d[m+1, n+1]
+}
+
 ; ------------------------------------------
 ; End of Script
 ; ------------------------------------------
