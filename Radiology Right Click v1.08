@@ -1,0 +1,2928 @@
+; ==========================================
+; Radiologist's Helper Script (No OCR)
+; Version: 1.05
+; Description: This AutoHotkey script provides various calculation tools and utilities
+;              for radiologists, including volume calculations, date estimations,
+;              and other analyses, **without** OCR dependencies.
+; ==========================================
+
+#NoEnv
+#SingleInstance, Force
+SetWorkingDir, %A_ScriptDir%
+
+; -----------------------------------------
+; Global User-Modifiable Toggles (read from Preferences)
+; -----------------------------------------
+global DisplayUnits := true
+global DisplayAllValues := true
+global ShowEllipsoidVolume := true
+global ShowBulletVolume := true
+global ShowPSADensity := true
+global ShowPregnancyDates := true
+global ShowMenstrualPhase := true
+global ShowAdrenalWashout := true
+global ShowThymusChemicalShift := true
+global ShowHepaticSteatosis := true
+global ShowMRILiverIron := true
+global ShowStatistics := true
+global ShowNumberRange := true
+global PauseDuration := 180000
+global DarkMode := false
+global ShowCalciumScorePercentile := true
+global ShowCitations := true
+global ShowArterialAge := true
+global ShowContrastPremedication := true
+global ShowFleischnerCriteria := true
+global ShowNASCETCalculator := true
+
+; -------------- NEW/CHANGED CODE --------------
+; Menu-sorting-related Globals
+global MenuSortingMethod := "frequency"         ; can be "none", "frequency", or "custom"
+global DefaultCustomMenuOrder := "CalculateEllipsoidVolume,CalculateBulletVolume,CalculatePSADensity,CompareNoduleSizes,SortNoduleSizes,CalculateStatistics,Range,CalculateCalciumScorePercentile,CalculatePregnancyDates,CalculateMenstrualPhase,CalculateAdrenalWashout,CalculateThymusChemicalShift,CalculateHepaticSteatosis,CalculateIronContent,CalculateContrastPremedication,CalculateFleischnerCriteria,CalculateNASCET"
+global CustomMenuOrder := ""  ; comma-separated function-list from .ini
+global g_FunctionFrequency := {}  ; stores usage frequency per function
+
+; Some global variables used throughout
+global g_SelectedText := ""
+global TargetApps := [
+    "ahk_class Notepad",
+    "ahk_exe notepad.exe",
+    "ahk_class PowerScribe",
+    "ahk_exe PowerScribe.exe",
+    "ahk_class PowerScribe360",
+    "ahk_exe Nuance.PowerScribe360.exe",
+    "ahk_class PowerScribe | Reporting"
+]
+global ResultText
+global InvisibleControl
+global originalMouseX, originalMouseY
+
+; For Fleischner
+global g_Nodules := []
+global g_FleischnerNodules := []
+global g_ShowFleischnerCitation := false
+global g_ShowFleischnerExclusions := false
+global recommendations := {}
+
+; -------------------------------------------------------------------------
+; Load user preferences from an .ini file
+; -------------------------------------------------------------------------
+LoadPreferencesFromFile() {
+    global DisplayUnits, DisplayAllValues, ShowEllipsoidVolume, ShowBulletVolume
+    global ShowPSADensity, ShowPregnancyDates, ShowMenstrualPhase, ShowAdrenalWashout
+    global ShowThymusChemicalShift, ShowHepaticSteatosis, ShowMRILiverIron
+    global ShowStatistics, ShowNumberRange, PauseDuration, DarkMode
+    global ShowCalciumScorePercentile, ShowCitations, ShowArterialAge
+    global ShowContrastPremedication, ShowFleischnerCriteria, ShowNASCETCalculator
+    global MenuSortingMethod, CustomMenuOrder
+    global g_FunctionFrequency
+
+    preferencesFile := A_ScriptDir . "\preferences.ini"
+    if (FileExist(preferencesFile)) {
+        ; --- [Display] section ---
+        IniRead, DisplayUnits, %preferencesFile%, Display, DisplayUnits, 1
+        IniRead, DisplayAllValues, %preferencesFile%, Display, DisplayAllValues, 1
+        IniRead, DarkMode, %preferencesFile%, Display, DarkMode, 0
+        IniRead, ShowCitations, %preferencesFile%, Display, ShowCitations, 1
+        IniRead, ShowArterialAge, %preferencesFile%, Display, ShowArterialAge, 1
+
+        ; --- [Calculations] section ---
+        IniRead, ShowEllipsoidVolume, %preferencesFile%, Calculations, ShowEllipsoidVolume, 1
+        IniRead, ShowBulletVolume, %preferencesFile%, Calculations, ShowBulletVolume, 1
+        IniRead, ShowPSADensity, %preferencesFile%, Calculations, ShowPSADensity, 1
+        IniRead, ShowPregnancyDates, %preferencesFile%, Calculations, ShowPregnancyDates, 1
+        IniRead, ShowMenstrualPhase, %preferencesFile%, Calculations, ShowMenstrualPhase, 1
+        IniRead, ShowAdrenalWashout, %preferencesFile%, Calculations, ShowAdrenalWashout, 1
+        IniRead, ShowThymusChemicalShift, %preferencesFile%, Calculations, ShowThymusChemicalShift, 1
+        IniRead, ShowHepaticSteatosis, %preferencesFile%, Calculations, ShowHepaticSteatosis, 1
+        IniRead, ShowMRILiverIron, %preferencesFile%, Calculations, ShowMRILiverIron, 1
+        IniRead, ShowStatistics, %preferencesFile%, Calculations, ShowStatistics, 1
+        IniRead, ShowNumberRange, %preferencesFile%, Calculations, ShowNumberRange, 1
+        IniRead, ShowCalciumScorePercentile, %preferencesFile%, Calculations, ShowCalciumScorePercentile, 1
+        IniRead, ShowContrastPremedication, %preferencesFile%, Calculations, ShowContrastPremedication, 1
+        IniRead, ShowFleischnerCriteria, %preferencesFile%, Calculations, ShowFleischnerCriteria, 1
+        IniRead, ShowNASCETCalculator, %preferencesFile%, Calculations, ShowNASCETCalculator, 1
+
+        ; --- [Script] section ---
+        IniRead, PauseDuration, %preferencesFile%, Script, PauseDuration, 180000
+
+        ; --- [Menu] or [Sorting] section ---
+        IniRead, MenuSortingMethod, %preferencesFile%, Menu, SortingMethod, none
+        IniRead, CustomMenuOrder, %preferencesFile%, Menu, CustomMenuOrder,
+
+        ; Convert string "1" to boolean true, etc.
+        DisplayUnits := (DisplayUnits = "1")
+        DisplayAllValues := (DisplayAllValues = "1")
+        ShowEllipsoidVolume := (ShowEllipsoidVolume = "1")
+        ShowBulletVolume := (ShowBulletVolume = "1")
+        ShowPSADensity := (ShowPSADensity = "1")
+        ShowPregnancyDates := (ShowPregnancyDates = "1")
+        ShowMenstrualPhase := (ShowMenstrualPhase = "1")
+        ShowAdrenalWashout := (ShowAdrenalWashout = "1")
+        ShowThymusChemicalShift := (ShowThymusChemicalShift = "1")
+        ShowHepaticSteatosis := (ShowHepaticSteatosis = "1")
+        ShowMRILiverIron := (ShowMRILiverIron = "1")
+        ShowStatistics := (ShowStatistics = "1")
+        ShowNumberRange := (ShowNumberRange = "1")
+        DarkMode := (DarkMode = "1")
+        ShowCalciumScorePercentile := (ShowCalciumScorePercentile = "1")
+        ShowCitations := (ShowCitations = "1")
+        ShowArterialAge := (ShowArterialAge = "1")
+        ShowContrastPremedication := (ShowContrastPremedication = "1")
+        ShowFleischnerCriteria := (ShowFleischnerCriteria = "1")
+        ShowNASCETCalculator := (ShowNASCETCalculator = "1")
+        PauseDuration += 0
+
+        ; Load frequency data
+        LoadMenuFrequencies()
+    } else {
+        ; If no .ini file, do nothing special. Will be created on saving prefs.
+    }
+}
+LoadPreferencesFromFile()
+InitializeRecommendations()  ; For Fleischner
+
+; -------------------------------------------------------------------------
+; Load stored frequency data from .ini
+; -------------------------------------------------------------------------
+LoadMenuFrequencies() {
+    global g_FunctionFrequency
+    preferencesFile := A_ScriptDir . "\preferences.ini"
+    section := "Frequency"
+    freqKeys := []
+
+    IniRead, entireSection, %preferencesFile%, %section%
+    if (entireSection != "ERROR") {
+        Loop, Parse, entireSection, `n, `r
+        {
+            line := A_LoopField
+            if (RegExMatch(line, "^(.*?)=(.*)$", m)) {
+                cmd := m1
+                val := m2+0
+                g_FunctionFrequency[cmd] := val
+            }
+        }
+    }
+}
+
+; -------------------------------------------------------------------------
+; Save frequency to .ini after increment
+; -------------------------------------------------------------------------
+IncrementFunctionFrequency(cmd) {
+    global g_FunctionFrequency
+    preferencesFile := A_ScriptDir . "\preferences.ini"
+
+    if !(g_FunctionFrequency.HasKey(cmd)) {
+        g_FunctionFrequency[cmd] := 0
+    }
+    g_FunctionFrequency[cmd]++
+
+    IniWrite, % g_FunctionFrequency[cmd], %preferencesFile%, Frequency, %cmd%
+}
+
+; ------------------------------------------
+; HOTKEYS, MENUS, AND SCRIPT LOGIC
+; ------------------------------------------
+#If IsTargetApp()
+
+; Minor key hook: reset timer if user typed ". " quickly
+$Space::
+    if (A_PriorKey == "." and A_TimeSincePriorHotkey < 500) {
+        lastPeriodTime := 0
+    }
+    SendInput {Space}
+return
+
+; -------------------------------------------------------------------------
+; Right-click context menu activation (only in specified apps)
+; -------------------------------------------------------------------------
+CoordMode, Mouse, Screen
+
+RButton::
+{
+    ; Activate the window under cursor if not active
+    MouseGetPos, , , windowUnderCursor
+    if (windowUnderCursor != WinActive("A")) {
+        WinActivate, ahk_id %windowUnderCursor%
+    }
+    Sleep, 50
+
+    ; Grab selected text
+    g_SelectedText := GetSelectedText()
+
+    ; Build + show menu
+    CreateCustomMenu()
+    Menu, CustomMenu, Show
+    Menu, CustomMenu, DeleteAll
+    return
+}
+#If
+
+; -------------------------------------------------------------------------
+; Validate whether the current window is a target app
+; -------------------------------------------------------------------------
+IsTargetApp() {
+    MouseGetPos, , , windowUnderCursor
+    WinGetClass, windowClass, ahk_id %windowUnderCursor%
+    WinGet, windowExe, ProcessName, ahk_id %windowUnderCursor%
+
+    for index, app in TargetApps {
+        if (
+            windowClass == StrReplace(app, "ahk_class ", "") 
+            || windowExe == StrReplace(app, "ahk_exe ", "")
+        ) {
+            return true
+        }
+    }
+    return false
+}
+
+; -------------------------------------------------------------------------
+; Build the context (right-click) menu
+; -------------------------------------------------------------------------
+CreateCustomMenu() {
+    global DarkMode
+
+    Menu, CustomMenu, Add
+    Menu, CustomMenu, DeleteAll
+
+    ; Set menu colors based on Dark Mode
+    if (DarkMode) {
+        Menu, CustomMenu, Color, 0xA9A9A9
+    } else {
+        Menu, CustomMenu, Color, Default
+    }
+
+    ; Standard editing items (always at the top)
+    Menu, CustomMenu, Add, Cut, MenuCut
+    Menu, CustomMenu, Add, Copy, MenuCopy
+    Menu, CustomMenu, Add, Paste, MenuPaste
+    Menu, CustomMenu, Add, Delete, MenuDelete
+    Menu, CustomMenu, Add
+
+    ; Build + sort menu items
+    menuItems := BuildMenuItemsArray()
+    SortMenuItems(menuItems)
+
+    ; Add sorted items
+    For _, item in menuItems {
+        if (item.show) {
+            Menu, CustomMenu, Add, % item.title, % item.command
+        }
+    }
+
+    ; Final items (always at bottom)
+    Menu, CustomMenu, Add
+    Menu, CustomMenu, Add, Pause Script, PauseScript
+    Menu, CustomMenu, Add, Preferences, ShowPreferences
+}
+
+; -------------------------------------------------------------------------
+; Return a list of all possible menu items with relevant data
+; -------------------------------------------------------------------------
+BuildMenuItemsArray() {
+    global ShowCalciumScorePercentile, ShowEllipsoidVolume, ShowBulletVolume, ShowPSADensity
+    global ShowPregnancyDates, ShowMenstrualPhase, ShowAdrenalWashout, ShowThymusChemicalShift, ShowHepaticSteatosis
+    global ShowMRILiverIron, ShowStatistics, ShowNumberRange, ShowContrastPremedication
+    global ShowFleischnerCriteria, ShowNASCETCalculator, g_FunctionFrequency
+
+    items := []
+
+    ; Each entry => {title, command, freq, show, customKey}
+    ; 'command' must match label name for "IncrementFunctionFrequency"
+
+    items.Push({
+        title: "Compare Measurement Sizes",
+        command: "CompareNoduleSizes",
+        freq: g_FunctionFrequency["CompareNoduleSizes"]+0,
+        show: true,
+        customKey: "CompareNoduleSizes"
+    })
+    items.Push({
+        title: "Sort Measurement Sizes",
+        command: "SortNoduleSizes",
+        freq: g_FunctionFrequency["SortNoduleSizes"]+0,
+        show: true,
+        customKey: "SortNoduleSizes"
+    })
+
+    items.Push({
+        title: "Calculate Calcium Score Percentile",
+        command: "CalculateCalciumScorePercentile",
+        freq: g_FunctionFrequency["CalculateCalciumScorePercentile"]+0,
+        show: ShowCalciumScorePercentile,
+        customKey: "CalculateCalciumScorePercentile"
+    })
+    items.Push({
+        title: "Calculate Ellipsoid Volume",
+        command: "CalculateEllipsoidVolume",
+        freq: g_FunctionFrequency["CalculateEllipsoidVolume"]+0,
+        show: ShowEllipsoidVolume,
+        customKey: "CalculateEllipsoidVolume"
+    })
+    items.Push({
+        title: "Calculate Bullet Volume",
+        command: "CalculateBulletVolume",
+        freq: g_FunctionFrequency["CalculateBulletVolume"]+0,
+        show: ShowBulletVolume,
+        customKey: "CalculateBulletVolume"
+    })
+    items.Push({
+        title: "Calculate PSA Density",
+        command: "CalculatePSADensity",
+        freq: g_FunctionFrequency["CalculatePSADensity"]+0,
+        show: ShowPSADensity,
+        customKey: "CalculatePSADensity"
+    })
+    items.Push({
+        title: "Calculate Pregnancy Dates",
+        command: "CalculatePregnancyDates",
+        freq: g_FunctionFrequency["CalculatePregnancyDates"]+0,
+        show: ShowPregnancyDates,
+        customKey: "CalculatePregnancyDates"
+    })
+    items.Push({
+        title: "Calculate Menstrual Phase",
+        command: "CalculateMenstrualPhase",
+        freq: g_FunctionFrequency["CalculateMenstrualPhase"]+0,
+        show: ShowMenstrualPhase,
+        customKey: "CalculateMenstrualPhase"
+    })
+    items.Push({
+        title: "Calculate Adrenal Washout",
+        command: "CalculateAdrenalWashout",
+        freq: g_FunctionFrequency["CalculateAdrenalWashout"]+0,
+        show: ShowAdrenalWashout,
+        customKey: "CalculateAdrenalWashout"
+    })
+    items.Push({
+        title: "Calculate Thymus Chemical Shift",
+        command: "CalculateThymusChemicalShift",
+        freq: g_FunctionFrequency["CalculateThymusChemicalShift"]+0,
+        show: ShowThymusChemicalShift,
+        customKey: "CalculateThymusChemicalShift"
+    })
+    items.Push({
+        title: "Calculate Hepatic Steatosis",
+        command: "CalculateHepaticSteatosis",
+        freq: g_FunctionFrequency["CalculateHepaticSteatosis"]+0,
+        show: ShowHepaticSteatosis,
+        customKey: "CalculateHepaticSteatosis"
+    })
+    items.Push({
+        title: "MRI Liver Iron Content",
+        command: "CalculateIronContent",
+        freq: g_FunctionFrequency["CalculateIronContent"]+0,
+        show: ShowMRILiverIron,
+        customKey: "CalculateIronContent"
+    })
+    items.Push({
+        title: "Calculate Statistics",
+        command: "Statistics",
+        freq: g_FunctionFrequency["Statistics"]+0,
+        show: ShowStatistics,
+        customKey: "Statistics"
+    })
+    items.Push({
+        title: "Calculate Number Range",
+        command: "Range",
+        freq: g_FunctionFrequency["Range"]+0,
+        show: ShowNumberRange,
+        customKey: "Range"
+    })
+    items.Push({
+        title: "Calculate Contrast Premedication",
+        command: "CalculateContrastPremedication",
+        freq: g_FunctionFrequency["CalculateContrastPremedication"]+0,
+        show: ShowContrastPremedication,
+        customKey: "CalculateContrastPremedication"
+    })
+    items.Push({
+        title: "Calculate Fleischner Criteria",
+        command: "CalculateFleischnerCriteria",
+        freq: g_FunctionFrequency["CalculateFleischnerCriteria"]+0,
+        show: ShowFleischnerCriteria,
+        customKey: "CalculateFleischnerCriteria"
+    })
+    items.Push({
+        title: "Calculate NASCET",
+        command: "CalculateNASCET",
+        freq: g_FunctionFrequency["CalculateNASCET"]+0,
+        show: ShowNASCETCalculator,
+        customKey: "CalculateNASCET"
+    })
+
+    return items
+}
+
+; -------------------------------------------------------------------------
+; Sort the menu items (by freq or custom)
+; -------------------------------------------------------------------------
+FrequencySort(a, b) {
+    return b.freq - a.freq
+}
+
+CustomSort(a, b) {
+    global CustomMenuOrder
+    static mapOrder := {}
+
+    ; Clear and rebuild mapOrder
+    mapOrder := {}
+    customList := StrSplit(CustomMenuOrder, ",")
+    For i, cmd in customList {
+        cmd := Trim(cmd)
+        mapOrder[cmd] := i
+    }
+
+    aPos := mapOrder.HasKey(a.customKey) ? mapOrder[a.customKey] : 999999
+    bPos := mapOrder.HasKey(b.customKey) ? mapOrder[b.customKey] : 999999
+    return aPos - bPos
+}
+
+SortMenuItems(ByRef items) {
+    global MenuSortingMethod, CustomMenuOrder
+
+    if (MenuSortingMethod = "none" || MenuSortingMethod = "") {
+        return  ; do nothing
+    } else if (MenuSortingMethod = "frequency") {
+        tempArray := []
+        for index, item in items {
+            tempArray.Insert(item)
+        }
+
+        tempSorted := []
+        while (tempArray.Length() > 0) {
+            highestFreq := -1
+            highestIndex := 0
+            for index, item in tempArray {
+                if (item.freq > highestFreq) {
+                    highestFreq := item.freq
+                    highestIndex := index
+                }
+            }
+            tempSorted.Insert(tempArray[highestIndex])
+            tempArray.RemoveAt(highestIndex)
+        }
+        items := tempSorted
+    } else if (MenuSortingMethod = "custom") {
+        if (CustomMenuOrder = "") {
+            return  ; no custom order specified
+        }
+
+        orderMap := {}
+        customList := StrSplit(CustomMenuOrder, ",")
+        for index, cmd in customList {
+            cmd := Trim(cmd)
+            orderMap[cmd] := index
+        }
+
+        tempArray := []
+        for index, item in items {
+            tempArray.Insert(item)
+        }
+
+        tempSorted := []
+        while (tempArray.Length() > 0) {
+            lowestOrder := 999999
+            lowestIndex := 0
+            for index, item in tempArray {
+                itemOrder := orderMap.HasKey(item.customKey) ? orderMap[item.customKey] : 999999
+                if (itemOrder < lowestOrder) {
+                    lowestOrder := itemOrder
+                    lowestIndex := index
+                }
+            }
+            tempSorted.Insert(tempArray[lowestIndex])
+            tempArray.RemoveAt(lowestIndex)
+        }
+        items := tempSorted
+    }
+}
+
+; -------------------------------------------------------------------------
+; Basic editing items
+; -------------------------------------------------------------------------
+MenuCut:
+    Send, ^x
+return
+
+MenuCopy:
+    Send, ^c
+return
+
+MenuPaste:
+    Send, ^v
+return
+
+MenuDelete:
+    Send, {Delete}
+return
+
+; -------------------------------------------------------------------------
+; GetSelectedText: Captures text from the clipboard after Ctrl+C
+; -------------------------------------------------------------------------
+GetSelectedText() {
+    OldClipboard := ClipboardAll
+    Clipboard := ""
+    Send, ^c
+    ClipWait, 0.1
+    if (ErrorLevel) {
+        Clipboard := OldClipboard
+        return ""
+    }
+    SelectedText := Clipboard
+    Clipboard := OldClipboard
+    return SelectedText
+}
+
+; -------------------------------------------------------------------------
+; ShowResult( ResultString )
+; Displays the text in a small, always-on-top GUI near the mouse pointer.
+; -------------------------------------------------------------------------
+ShowResult(Result) {
+    global DarkMode, originalMouseX, originalMouseY
+
+    CoordMode, Mouse, Screen
+    MouseGetPos, originalMouseX, originalMouseY
+
+    ; Determine which monitor
+    SysGet, monitorCount, MonitorCount
+    Loop, %monitorCount% {
+        SysGet, monArea, Monitor, %A_Index%
+        if (
+            originalMouseX >= monAreaLeft
+            && originalMouseX <= monAreaRight
+            && originalMouseY >= monAreaTop
+            && originalMouseY <= monAreaBottom
+        ) {
+            activeMonitor := A_Index
+            break
+        }
+    }
+
+    ; Get monitor area
+    SysGet, workArea, MonitorWorkArea, %activeMonitor%
+    monitorWidth := workAreaRight - workAreaLeft
+    monitorHeight := workAreaBottom - workAreaTop
+
+    ; Measure text first in a hidden GUI
+    maxWidth := monitorWidth * 0.5
+    maxHeight := monitorHeight * 0.5
+
+    Gui, TempMeasure:New, +AlwaysOnTop
+    Gui, TempMeasure:Font, s10, Segoe UI
+    Gui, TempMeasure:Add, Text, w%maxWidth% wrap, %Result%
+    GuiControlGet, TextSize, TempMeasure:Pos, Static1
+    Gui, TempMeasure:Destroy
+
+    requiredWidth := TextSizeW + 40
+    requiredHeight := TextSizeH + 80
+    guiWidth := (requiredWidth > maxWidth) ? maxWidth : requiredWidth
+    guiHeight := (requiredHeight > maxHeight) ? maxHeight : requiredHeight
+    guiWidth := (guiWidth < 300) ? 300 : guiWidth
+    guiHeight := (guiHeight < 200) ? 200 : guiHeight
+
+    xPos := originalMouseX + 10
+    yPos := originalMouseY + 10
+    if (xPos + guiWidth > workAreaRight)
+        xPos := workAreaRight - guiWidth
+    if (yPos + guiHeight > workAreaBottom)
+        yPos := workAreaBottom - guiHeight
+
+    Gui, ResultBox:New, +AlwaysOnTop -SysMenu +Owner
+    Gui, ResultBox:Margin, 10, 10
+
+    if (DarkMode) {
+        Gui, ResultBox:Color, 0x2C2C2C, 0x2C2C2C
+        textColor := "cE0E0E0"
+        buttonOptions := "Background333333 c999999"
+    } else {
+        Gui, ResultBox:Color, 0xF0F0F0, 0xF0F0F0
+        textColor := "c000000"
+        buttonOptions := "Background777777 cFFFFFF"
+    }
+
+    Gui, ResultBox:Font, s10 %textColor%, Segoe UI
+    editHeight := guiHeight - 50
+    Gui, ResultBox:Add, Edit, vResultText ReadOnly -E0x200 +E0x20000 Wrap VScroll w%guiWidth% h%editHeight%, %Result%
+
+    Gui, ResultBox:Font, s9 bold, Segoe UI
+    Gui, ResultBox:Add, Button, gCloseResultBox w90 x10 y+10 %buttonOptions%, Close
+
+    Gui, ResultBox:Add, Text, Hidden vInvisibleControl
+    Gui, ResultBox:Show, x%xPos% y%yPos% w%guiWidth% h%guiHeight%, Result
+    GuiControl, Focus, InvisibleControl
+
+    ; Move mouse over close button for convenience
+    GuiControlGet, ClosePos, ResultBox:Pos, Close
+    MouseMove, % xPos + ClosePosX + (ClosePosW / 2), % yPos + ClosePosY + (ClosePosH / 2), 0
+
+    ; Copy result to clipboard
+    Clipboard := Result
+    return
+}
+
+CloseResultBox:
+    Gui, ResultBox:Destroy
+return
+
+; -------------------------------------------------------------------------
+; Calculation Functions (menu-driven)
+; Each function increments usage frequency
+; -------------------------------------------------------------------------
+CalculateCalciumScorePercentile:
+    IncrementFunctionFrequency("CalculateCalciumScorePercentile")
+    Result := CalculateCalciumScorePercentile(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculateEllipsoidVolume:
+    IncrementFunctionFrequency("CalculateEllipsoidVolume")
+    Result := CalculateEllipsoidVolume(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculateBulletVolume:
+    IncrementFunctionFrequency("CalculateBulletVolume")
+    Result := CalculateBulletVolume(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculatePSADensity:
+    IncrementFunctionFrequency("CalculatePSADensity")
+    Result := CalculatePSADensity(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculatePregnancyDates:
+    IncrementFunctionFrequency("CalculatePregnancyDates")
+    Result := CalculatePregnancyDates(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculateMenstrualPhase:
+    IncrementFunctionFrequency("CalculateMenstrualPhase")
+    Result := CalculateMenstrualPhase(g_SelectedText)
+    ShowResult(Result)
+return
+
+CompareNoduleSizes:
+    IncrementFunctionFrequency("CompareNoduleSizes")
+    Result := CompareNoduleSizes(g_SelectedText)
+    ShowResult(Result)
+return
+
+SortNoduleSizes:
+    IncrementFunctionFrequency("SortNoduleSizes")
+    ProcessedText := ProcessAllNoduleSizes(g_SelectedText)
+    if (ProcessedText != g_SelectedText) {
+        leadingSpace := (SubStr(g_SelectedText, 1, 1) == " ") ? " " : ""
+        trailingSpace := (SubStr(g_SelectedText, 0) == " ") ? " " : ""
+        Clipboard := leadingSpace . Trim(ProcessedText) . trailingSpace
+        Send, ^v
+    }
+return
+
+CalculateAdrenalWashout:
+    IncrementFunctionFrequency("CalculateAdrenalWashout")
+    Result := CalculateAdrenalWashout(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculateThymusChemicalShift:
+    IncrementFunctionFrequency("CalculateThymusChemicalShift")
+    Result := CalculateThymusChemicalShift(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculateHepaticSteatosis:
+    IncrementFunctionFrequency("CalculateHepaticSteatosis")
+    Result := CalculateHepaticSteatosis(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculateIronContent:
+    IncrementFunctionFrequency("CalculateIronContent")
+    Result := EstimateIronContent(g_SelectedText)
+    ShowResult(Result)
+return
+
+Statistics:
+    IncrementFunctionFrequency("Statistics")
+    Result := CalculateStatistics(g_SelectedText)
+    ShowResult(Result)
+return
+
+Range:
+    IncrementFunctionFrequency("Range")
+    Result := CalculateRange(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculateFleischnerCriteria:
+    IncrementFunctionFrequency("CalculateFleischnerCriteria")
+    Result := ProcessNodules(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculateNASCET:
+    IncrementFunctionFrequency("CalculateNASCET")
+    Result := CalculateNASCET(g_SelectedText)
+    ShowResult(Result)
+return
+
+CalculateContrastPremedication:
+    IncrementFunctionFrequency("CalculateContrastPremedication")
+    Result := ""  ; We'll trigger a small UI for premed
+    CalculateContrastPremedication()
+return
+
+; -------------------------------------------------------------------------
+; RestoreDefaults: Resets certain fields in the Preferences GUI
+; -------------------------------------------------------------------------
+RestoreDefaults:
+    global DefaultCustomMenuOrder
+    GuiControl,, MenuSortingMethodChoice, |none|frequency||custom
+    GuiControl,, CustomMenuOrderBox, % DefaultCustomMenuOrder
+return
+
+; -------------------------------------------------------------------------
+; Script pause/resume
+; -------------------------------------------------------------------------
+PauseScript() {
+    global PauseDuration
+    if (PauseDuration < 3600000) {
+        pauseMinutes := Floor(PauseDuration / 60000)
+        pauseDisplay := pauseMinutes . " minute" . (pauseMinutes != 1 ? "s" : "")
+    } else {
+        pauseHours := Floor(PauseDuration / 3600000)
+        pauseDisplay := pauseHours . " hour" . (pauseHours != 1 ? "s" : "")
+    }
+    Suspend, On
+    SetTimer, ResumeScript, %PauseDuration%
+    MsgBox, 0, Script Paused, Script paused for %pauseDisplay%. Click OK to resume immediately.
+    Suspend, Off
+    SetTimer, ResumeScript, Off
+}
+
+ResumeScript:
+    Suspend, Off
+    SetTimer, ResumeScript, Off
+    MsgBox, 0, Script Resumed, The script has been automatically resumed.
+return
+
+; -------------------------------------------------------------------------
+; Preferences GUI
+; -------------------------------------------------------------------------
+ShowPreferences() {
+    global DisplayUnits, DisplayAllValues, ShowEllipsoidVolume, ShowBulletVolume, ShowPSADensity
+    global ShowPregnancyDates, ShowMenstrualPhase, PauseDuration, ShowAdrenalWashout
+    global ShowThymusChemicalShift, ShowHepaticSteatosis, ShowMRILiverIron, ShowStatistics
+    global ShowNumberRange, DarkMode, ShowCalciumScorePercentile, ShowCitations, ShowArterialAge
+    global ShowContrastPremedication, ShowFleischnerCriteria, ShowNASCETCalculator
+    global MenuSortingMethod, CustomMenuOrder
+
+    ; Position near mouse
+    CoordMode, Mouse, Screen
+    MouseGetPos, px, py
+
+    SysGet, monitorCount, MonitorCount
+    activeMonitor := 1
+    Loop, %monitorCount% {
+        SysGet, monArea, Monitor, %A_Index%
+        if (px >= monAreaLeft && px <= monAreaRight && py >= monAreaTop && py <= monAreaBottom) {
+            activeMonitor := A_Index
+            break
+        }
+    }
+    SysGet, workArea, MonitorWorkArea, %activeMonitor%
+    monitorWidth := workAreaRight - workAreaLeft
+    monitorHeight := workAreaBottom - workAreaTop
+
+    ; Increased height to accommodate new elements
+    guiW := 300
+    guiH := 860
+    xPos := px + 10
+    yPos := py + 10
+    if (xPos + guiW > workAreaRight)
+        xPos := workAreaRight - guiW
+    if (yPos + guiH > workAreaBottom)
+        yPos := workAreaBottom - guiH
+
+    if (DarkMode) {
+        bgColor := "0x2C2C2C"
+        textColor := "cE0E0E0"
+        buttonOptions := "Background333333 c999999"
+    } else {
+        bgColor := "0xF0F0F0"
+        textColor := "c000000"
+        buttonOptions := "Background777777 cFFFFFF"
+    }
+
+    if (PauseDuration = 180000)
+        currentPauseDuration := "3 minutes"
+    else if (PauseDuration = 600000)
+        currentPauseDuration := "10 minutes"
+    else if (PauseDuration = 1800000)
+        currentPauseDuration := "30 minutes"
+    else if (PauseDuration = 3600000)
+        currentPauseDuration := "1 hour"
+    else if (PauseDuration = 36000000)
+        currentPauseDuration := "10 hours"
+    else
+        currentPauseDuration := PauseDuration . " ms"
+
+    Gui, Preferences:New, +AlwaysOnTop
+    Gui, Preferences:Color, %bgColor%, %bgColor%
+    Gui, Preferences:Font, s10 %textColor%, Segoe UI
+
+    ; Basic settings section
+    Gui, Add, Text, x10 y10 w200, Select functions to display:
+    Gui, Add, Checkbox, x10 y30 w200 vDarkMode Checked%DarkMode%, Dark Mode
+
+    ; Calculation functions (vertical list)
+    y := 60
+    Gui, Add, Checkbox, x10 y%y% w200 vShowEllipsoidVolume Checked%ShowEllipsoidVolume%, Ellipsoid Volume
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowBulletVolume Checked%ShowBulletVolume%, Bullet Volume
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowPSADensity Checked%ShowPSADensity%, PSA Density
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowPregnancyDates Checked%ShowPregnancyDates%, Pregnancy Dates
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowMenstrualPhase Checked%ShowMenstrualPhase%, Menstrual Phase
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowAdrenalWashout Checked%ShowAdrenalWashout%, Adrenal Washout
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowThymusChemicalShift Checked%ShowThymusChemicalShift%, Thymus Chemical Shift
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowHepaticSteatosis Checked%ShowHepaticSteatosis%, Hepatic Steatosis
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowMRILiverIron Checked%ShowMRILiverIron%, MRI Liver Iron Content
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowStatistics Checked%ShowStatistics%, Calculate Statistics
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowNumberRange Checked%ShowNumberRange%, Calculate Number Range
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowCalciumScorePercentile Checked%ShowCalciumScorePercentile%, Calcium Score Percentile
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowCitations Checked%ShowCitations%, Show Citations in Output
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowArterialAge Checked%ShowArterialAge%, Show Arterial Age
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowContrastPremedication Checked%ShowContrastPremedication%, Contrast Premedication
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowFleischnerCriteria Checked%ShowFleischnerCriteria%, Fleischner Criteria
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowNASCETCalculator Checked%ShowNASCETCalculator%, NASCET Calculator
+
+    ; Pause duration
+    y += 40
+    Gui, Add, Text, x10 y%y% w250, Pause Length (current: %currentPauseDuration%):
+    y += 30
+    Gui, Add, DropDownList, x10 y%y% w200 vPauseDurationChoice, 3 minutes|10 minutes|30 minutes|1 hour|10 hours
+    if (PauseDuration = 180000)
+        GuiControl, Choose, PauseDurationChoice, 1
+    else if (PauseDuration = 600000)
+        GuiControl, Choose, PauseDurationChoice, 2
+    else if (PauseDuration = 1800000)
+        GuiControl, Choose, PauseDurationChoice, 3
+    else if (PauseDuration = 3600000)
+        GuiControl, Choose, PauseDurationChoice, 4
+    else if (PauseDuration = 36000000)
+        GuiControl, Choose, PauseDurationChoice, 5
+
+    ; Menu sorting
+    y += 40
+    Gui, Add, Text, x10 y%y% w250, Menu Sorting Method:
+    y += 20
+    Gui, Add, DropDownList, x10 y%y% w200 vMenuSortingMethodChoice, none|frequency|custom
+    if (MenuSortingMethod = "none")
+        GuiControl, Choose, MenuSortingMethodChoice, 1
+    else if (MenuSortingMethod = "frequency")
+        GuiControl, Choose, MenuSortingMethodChoice, 2
+    else if (MenuSortingMethod = "custom")
+        GuiControl, Choose, MenuSortingMethodChoice, 3
+
+    y += 30
+    Gui, Add, Text, x10 y%y% w280, Custom Menu Order (comma-separated function names):
+    y += 20
+    Gui, Add, Edit, x10 y%y% w280 h50 vCustomMenuOrderBox, % CustomMenuOrder
+
+    ; Buttons at the bottom
+    y += 60
+    Gui, Add, Button, x10 y%y% w135 gRestoreDefaults %buttonOptions%, Restore Defaults
+    Gui, Add, Button, x155 y%y% w135 gSavePreferences %buttonOptions%, Save
+
+    Gui, Show, x%xPos% y%yPos% w%guiW% h%guiH%, Preferences
+}
+
+; -------------------------------------------------------------------------
+; SavePreferences: stores user selection into .ini
+; -------------------------------------------------------------------------
+SavePreferences:
+    Gui, Submit, NoHide
+    global DisplayUnits, DisplayAllValues, DarkMode
+    global ShowEllipsoidVolume, ShowBulletVolume, ShowPSADensity, ShowPregnancyDates
+    global ShowMenstrualPhase, ShowAdrenalWashout, ShowThymusChemicalShift
+    global ShowHepaticSteatosis, ShowMRILiverIron, ShowStatistics, ShowNumberRange
+    global PauseDuration, ShowCitations, ShowArterialAge
+    global ShowCalciumScorePercentile, ShowContrastPremedication
+    global ShowFleischnerCriteria, ShowNASCETCalculator
+    global MenuSortingMethod, CustomMenuOrder
+    global MenuSortingMethodChoice, CustomMenuOrderBox
+
+    if (PauseDurationChoice = "3 minutes")
+        PauseDuration := 180000
+    else if (PauseDurationChoice = "10 minutes")
+        PauseDuration := 600000
+    else if (PauseDurationChoice = "30 minutes")
+        PauseDuration := 1800000
+    else if (PauseDurationChoice = "1 hour")
+        PauseDuration := 3600000
+    else if (PauseDurationChoice = "10 hours")
+        PauseDuration := 36000000
+
+    MenuSortingMethod := MenuSortingMethodChoice
+    CustomMenuOrder := CustomMenuOrderBox
+
+    SavePreferencesToFile()
+    Gui, Destroy
+return
+
+PreferencesGuiClose:
+PreferencesGuiEscape:
+    Gui, Destroy
+return
+
+; -------------------------------------------------------------------------
+; SavePreferencesToFile: Writes final user preferences to .ini
+; -------------------------------------------------------------------------
+SavePreferencesToFile() {
+    global DisplayUnits, DisplayAllValues, ShowEllipsoidVolume, ShowBulletVolume
+    global ShowPSADensity, ShowPregnancyDates, ShowMenstrualPhase
+    global ShowAdrenalWashout, ShowThymusChemicalShift, ShowHepaticSteatosis
+    global ShowMRILiverIron, ShowStatistics, ShowNumberRange, PauseDuration
+    global DarkMode, ShowCalciumScorePercentile, ShowCitations, ShowArterialAge
+    global ShowContrastPremedication, ShowFleischnerCriteria, ShowNASCETCalculator
+    global MenuSortingMethod, CustomMenuOrder
+
+    preferencesFile := A_ScriptDir . "\preferences.ini"
+
+    ; [Display]
+    IniWrite, %DisplayUnits%, %preferencesFile%, Display, DisplayUnits
+    IniWrite, %DisplayAllValues%, %preferencesFile%, Display, DisplayAllValues
+    IniWrite, %DarkMode%, %preferencesFile%, Display, DarkMode
+    IniWrite, %ShowCitations%, %preferencesFile%, Display, ShowCitations
+    IniWrite, %ShowArterialAge%, %preferencesFile%, Display, ShowArterialAge
+
+    ; [Calculations]
+    IniWrite, %ShowEllipsoidVolume%, %preferencesFile%, Calculations, ShowEllipsoidVolume
+    IniWrite, %ShowBulletVolume%, %preferencesFile%, Calculations, ShowBulletVolume
+    IniWrite, %ShowPSADensity%, %preferencesFile%, Calculations, ShowPSADensity
+    IniWrite, %ShowPregnancyDates%, %preferencesFile%, Calculations, ShowPregnancyDates
+    IniWrite, %ShowMenstrualPhase%, %preferencesFile%, Calculations, ShowMenstrualPhase
+    IniWrite, %ShowAdrenalWashout%, %preferencesFile%, Calculations, ShowAdrenalWashout
+    IniWrite, %ShowThymusChemicalShift%, %preferencesFile%, Calculations, ShowThymusChemicalShift
+    IniWrite, %ShowHepaticSteatosis%, %preferencesFile%, Calculations, ShowHepaticSteatosis
+    IniWrite, %ShowMRILiverIron%, %preferencesFile%, Calculations, ShowMRILiverIron
+    IniWrite, %ShowStatistics%, %preferencesFile%, Calculations, ShowStatistics
+    IniWrite, %ShowNumberRange%, %preferencesFile%, Calculations, ShowNumberRange
+    IniWrite, %ShowCalciumScorePercentile%, %preferencesFile%, Calculations, ShowCalciumScorePercentile
+    IniWrite, %ShowContrastPremedication%, %preferencesFile%, Calculations, ShowContrastPremedication
+    IniWrite, %ShowFleischnerCriteria%, %preferencesFile%, Calculations, ShowFleischnerCriteria
+    IniWrite, %ShowNASCETCalculator%, %preferencesFile%, Calculations, ShowNASCETCalculator
+
+    ; [Script]
+    IniWrite, %PauseDuration%, %preferencesFile%, Script, PauseDuration
+
+    ; [Menu]
+    IniWrite, %MenuSortingMethod%, %preferencesFile%, Menu, SortingMethod
+    IniWrite, %CustomMenuOrder%, %preferencesFile%, Menu, CustomMenuOrder
+}
+
+; ------------------------------------------
+; "Actual" Calculation Code
+; ------------------------------------------
+
+; -------------------------------------------------------------
+; 1) CalculateEllipsoidVolume
+; -------------------------------------------------------------
+CalculateEllipsoidVolume(input) {
+    RegExNeedle := "\s*(\d+(?:\.\d+)?)\s*[x,]\s*(\d+(?:\.\d+)?)\s*[x,]\s*(\d+(?:\.\d+)?)\s*"
+    if (RegExMatch(input, RegExNeedle, match)) {
+        dimensions := [match1, match2, match3]
+        dimensions := SortDimensions(dimensions)
+
+        ; mm vs cm check
+        isMillimeters := (
+            (InStr(dimensions[1], ".") = 0)
+         && (InStr(dimensions[2], ".") = 0)
+         && (InStr(dimensions[3], ".") = 0)
+        )
+        if (isMillimeters) {
+            dimensions[1] := dimensions[1] / 10
+            dimensions[2] := dimensions[2] / 10
+            dimensions[3] := dimensions[3] / 10
+        }
+
+        volume := (1/6) * 3.141592653589793 * dimensions[1] * dimensions[2] * dimensions[3]
+        volumeRounded := (volume < 1) ? Round(volume, 3) : Round(volume, 1)
+
+        result := input . " (" . volumeRounded . (DisplayUnits ? " cc" : "") . ")"
+        return result
+    } else {
+        return "Invalid input format for ellipsoid volume.`nExample: 3 x 2 x 1 cm"
+    }
+}
+
+; -------------------------------------------------------------
+; 2) CalculateBulletVolume
+; -------------------------------------------------------------
+CalculateBulletVolume(input) {
+    RegExNeedle := "\s*(\d+(?:\.\d+)?)\s*[x,]\s*(\d+(?:\.\d+)?)\s*[x,]\s*(\d+(?:\.\d+)?)\s*"
+    if (RegExMatch(input, RegExNeedle, match)) {
+        dimensions := [match1, match2, match3]
+        dimensions := SortDimensions(dimensions)
+
+        isMillimeters := (
+            (InStr(dimensions[1], ".") = 0)
+         && (InStr(dimensions[2], ".") = 0)
+         && (InStr(dimensions[3], ".") = 0)
+        )
+        if (isMillimeters) {
+            dimensions[1] := dimensions[1] / 10
+            dimensions[2] := dimensions[2] / 10
+            dimensions[3] := dimensions[3] / 10
+        }
+
+        volume := dimensions[1] * dimensions[2] * dimensions[3] * (5 * 3.141592653589793 / 24)
+        volumeRounded := (volume < 1) ? Round(volume, 3) : Round(volume, 1)
+        return input . " (" . volumeRounded . (DisplayUnits ? " cc" : "") . ")"
+    } else {
+        return "Invalid input format for bullet volume.`nExample: 3 x 2 x 1 cm"
+    }
+}
+
+; -------------------------------------------------------------
+; 3) CalculatePSADensity
+; -------------------------------------------------------------
+CalculatePSADensity(input) {
+    volNotGiven := 1
+    volumeMethod := "User Supplied"
+
+    PSARegEx := "i)PSA\s*(?:level|value)?:?\s*(\d+(?:\.\d+)?)(?:\s*(?:ng\/ml|ng/mL|ng\/cc|ng/cc)?)"
+    VolumeRegEx := "i)(?:(?:volume:?\s*(\d+(?:\.\d+)?)(?:\s*(?:cc|cm3|mL|ml)))|(?:Prostate )?Size:?.*?\((\d+(?:\.\d+?)\s*cc\)|(\d+(?:\.\d+)?)(?:\s*x\s*\d+(?:\.\d+)?\s*x\s*\d+(?:\.\d+)?\s*cm\s*\((\d+(?:\.\d+?)\s*cc\)))"
+
+    if (RegExMatch(input, PSARegEx, PSAMatch)) {
+        PSALevel := PSAMatch1
+    } else {
+        return "Invalid format for PSA density.`nExample:`nPSA: 5.6 ng/mL`nSize: 3.5 x 5.4 x 2.5 cm"
+    }
+
+    if (RegExMatch(input, VolumeRegEx, VolumeMatch)) {
+        if (VolumeMatch1 != "")
+            ProstateVolume := VolumeMatch1
+        else if (VolumeMatch2 != "")
+            ProstateVolume := VolumeMatch2
+        else if (VolumeMatch4 != "")
+            ProstateVolume := VolumeMatch4
+    } else {
+        volNotGiven := 0
+        bulletResult := CalculateBulletVolume(input)
+        if (!InStr(bulletResult, "Invalid input")) {
+            ProstateVolume := RegExReplace(bulletResult, "s).*?(\d+(?:\.\d+)?)(?:\s*cc)?\).*", "$1")
+            volumeMethod := "Bullet Volume"
+
+            if (ProstateVolume >= 55) {
+                ellipsoidResult := CalculateEllipsoidVolume(input)
+                volumeMethod := "Ellipsoid Volume"
+                if (!InStr(ellipsoidResult, "Invalid input")) {
+                    ProstateVolume := RegExReplace(ellipsoidResult, "s).*?(\d+(?:\.\d+)?)(?:\s*cc)?\).*", "$1")
+                }
+            }
+        } else {
+            return "Prostate volume not found.`nExample:`nPSA: 5.6 ng/mL`nSize: 3.5 x 5.4 x 2.5 cm"
+        }
+    }
+
+    PSADensity := PSALevel / ProstateVolume
+    PSADensity := Round(PSADensity, 3)
+
+    if (volNotGiven = 0) {
+        result := input . "`nProstate volume: " . ProstateVolume . " cc (" . volumeMethod . ")`n"
+        result .= "PSA Density: " . PSADensity . (DisplayUnits ? " ng/mL/cc" : "")
+    } else {
+        result := input . "`nPSA Density: " . PSADensity . (DisplayUnits ? " ng/mL/cc" : "")
+    }
+    return result
+}
+
+; -------------------------------------------------------------
+; 4) CalculatePregnancyDates
+; -------------------------------------------------------------
+CalculatePregnancyDates(input) {
+    LMPRegEx := "i)(?:LMP|Last\s*Menstrual\s*Period).*?(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4})"
+    GARegEx := "i)(\d+)(?:\s*(?:weeks?|w))?\s*(?:and|&|,|-)?\s*(\d+)?(?:\s*(?:days?|d))?(?:.*?(?:as of|on)\s+(today|\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}))?"
+
+    if (RegExMatch(input, LMPRegEx, LMPMatch)) {
+        LMPDate := ParseDate(LMPMatch1)
+        if (LMPDate = "Invalid Date") {
+            return "Invalid LMP date. Please use MM/DD/YYYY or DD/MM/YYYY."
+        }
+        return CalculateDatesFromLMP(LMPDate)
+    } else if (RegExMatch(input, GARegEx, GAMatch)) {
+        WeeksGA := GAMatch1+0
+        DaysGA := (GAMatch2 != "") ? GAMatch2+0 : 0
+        ReferenceDate := (GAMatch3 != "") ? (GAMatch3 = "today" ? A_Now : ParseDate(GAMatch3)) : A_Now
+        return CalculateDatesFromGA(WeeksGA, DaysGA, ReferenceDate)
+    } else {
+        return "Invalid format for pregnancy date calculation.`nExample:`nLMP: 01/15/2023 or GA: 12 weeks and 3 days as of today"
+    }
+}
+
+; -------------------------------------------------------------
+; 5) CalculateMenstrualPhase
+; -------------------------------------------------------------
+CalculateMenstrualPhase(input) {
+    LMPRegEx := "i)(?:LMP|Last\s*Menstrual\s*Period)\s*:?\s*(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4})"
+    if (RegExMatch(input, LMPRegEx, LMPMatch)) {
+        LMPDate := ParseDate(LMPMatch1)
+        if (LMPDate = "Invalid Date") {
+            return "Invalid LMP date. Use MM/DD/YYYY or DD/MM/YYYY."
+        }
+        return DetermineMenstrualPhase(LMPDate)
+    } else {
+        return "Invalid format for menstrual phase calculation.`nExample: LMP: 05/01/2023"
+    }
+}
+
+; -------------------------------------------------------------
+; 6) Compare / sort nodule sizes
+; -------------------------------------------------------------
+CompareNoduleSizes(input) {
+    static RegExNeedle := "i)(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?.*?(?:(?:previous|prior|before|old).*?(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?)"
+
+    if (!RegExMatch(input, RegExNeedle, match)) {
+        ; alternate approach
+        RegExNeedleAlt := "i)(?:previous.*?(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?.*?(?:now|current).*?(?:(\d{1,2}/\d{1,2}/\d{2,4})[:.]?\s*)?(\d+(?:\.\d+)?(?:\s*(?:x|\*)\s*\d+(?:\.\d+)?){0,2})\s*(cm|mm)?)"
+        if (!RegExMatch(input, RegExNeedleAlt, matchAlt)) {
+            return "Invalid format. Provide current and previous measurements."
+        }
+        current := matchAlt4 . " " . matchAlt5
+        currentDate := matchAlt3
+        previous := matchAlt2 . " " . matchAlt3
+        previousDate := matchAlt1
+        return CompareMeasurements(previous, current, previousDate, currentDate, input)
+    } else {
+        current := match2 . " " . match3
+        currentDate := match1
+        previous := match5 . " " . match6
+        previousDate := match4
+        return CompareMeasurements(previous, current, previousDate, currentDate, input)
+    }
+}
+
+ProcessAllNoduleSizes(input) {
+    RegExNeedleComma3 := "\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*"
+    RegExNeedleX3 := "\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*"
+    RegExNeedleComma2 := "\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*"
+    RegExNeedleX2 := "\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*"
+
+    input := ProcessPattern(input, RegExNeedleComma3, 3)
+    input := ProcessPattern(input, RegExNeedleX3, 3)
+    input := ProcessPattern(input, RegExNeedleComma2, 2)
+    input := ProcessPattern(input, RegExNeedleX2, 2)
+
+    return input
+}
+
+ProcessPattern(input, RegExNeedle, dimensions) {
+    pos := 1
+    while (pos := RegExMatch(input, RegExNeedle, match, pos)) {
+        if (dimensions == 3)
+            processed := ProcessNoduleSizes(match1, match2, match3)
+        else
+            processed := ProcessNoduleSizes(match1, match2)
+
+        if (processed != match) {
+            input := SubStr(input, 1, pos-1) . processed . SubStr(input, pos+StrLen(match))
+        }
+        pos += StrLen(processed)
+    }
+    return input
+}
+
+ProcessNoduleSizes(a, b, c := "") {
+    aNum := a+0, bNum := b+0
+    cNum := (c != "") ? c+0 : ""
+
+    if (c != "") {
+        if (aNum < bNum) {
+            temp := a, a := b, b := temp
+            tempNum := aNum, aNum := bNum, bNum := tempNum
+        }
+        if (bNum < cNum) {
+            temp := b, b := c, c := temp
+            tempNum := bNum, bNum := cNum, cNum := tempNum
+        }
+        if (aNum < bNum) {
+            temp := a, a := b, b := temp
+            tempNum := aNum, aNum := bNum, bNum := tempNum
+        }
+        return " " . Trim(a) . " x " . Trim(b) . " x " . Trim(c) . " "
+    } else {
+        if (aNum < bNum) {
+            temp := a, a := b, b := temp
+        }
+        return " " . Trim(a) . " x " . Trim(b) . " "
+    }
+}
+
+; -------------------------------------------------------------
+; 7) Basic Statistics
+; -------------------------------------------------------------
+CalculateStatistics(input) {
+    numbers := ExtractNumbers(input)
+    count := numbers.Length()
+    if (count = 0) {
+        return "No numbers found in text."
+    }
+
+    result := "Statistics:`n"
+    result .= "Count: " . count . "`n"
+    result .= "Sum: " . Round(CalculateSum(numbers), 1) . "`n"
+    result .= "Mean: " . Round(CalculateMean(numbers), 1) . "`n"
+    result .= "Median: " . Round(CalculateMedian(numbers), 1) . "`n"
+    result .= "Min: " . Round(Min(numbers*), 1) . "`n"
+    result .= "Max: " . Round(Max(numbers*), 1) . "`n"
+
+    if (count >= 9) {
+        Q1 := Round(CalculateQuartile(numbers, 0.25), 1)
+        Q3 := Round(CalculateQuartile(numbers, 0.75), 1)
+        IQR := Q3 - Q1
+        median := Round(CalculateMedian(numbers), 1)
+        result .= "Q1: " . Q1 . "`n"
+        result .= "Q3: " . Q3 . "`n"
+        result .= "IQR: " . Round(IQR, 1) . "`n"
+        result .= "IQR/Median: " . Round(IQR / median, 2) . "`n"
+        result .= "Standard Deviation: " . Round(CalculateStandardDeviation(numbers), 1) . "`n"
+    }
+    return result
+}
+
+ExtractNumbers(input) {
+    numbers := []
+    input := RegExReplace(input, "i)(?:^|\n|\s)(?:slice|observation|sample|number|#|no\.?)\s*\d+:?\s*", "`n")
+    RegExNeedle := "(-?\d+(?:\.\d+)?)(?:\s*(?:cm|mm)?)"
+    pos := 1
+    while (pos := RegExMatch(input, RegExNeedle, match, pos)) {
+        numbers.Push(match1+0)
+        pos += StrLen(match)
+    }
+    return numbers
+}
+
+CalculateSum(arr) {
+    total := 0
+    for index, value in arr {
+        total += value
+    }
+    return total
+}
+
+CalculateMean(numbers) {
+    sum := 0
+    for i, num in numbers {
+        sum += num
+    }
+    return (sum / numbers.Length())
+}
+
+CalculateMedian(numbers) {
+    sortedNumbers := SortArray(numbers)
+    count := sortedNumbers.Length()
+
+    if (count = 0)
+        return 0
+    else if (Mod(count, 2) = 0) {
+        middle1 := sortedNumbers[count//2]
+        middle2 := sortedNumbers[(count//2)+1]
+        return (middle1 + middle2) / 2
+    } else {
+        return sortedNumbers[Floor(count/2)+1]
+    }
+}
+
+SortArray(numbers) {
+    sortedNumbers := []
+    for index, value in numbers {
+        sortedNumbers.Push(value)
+    }
+    sortedNumbers.Sort()
+    return sortedNumbers
+}
+
+CalculateQuartile(numbers, percentile) {
+    sortedNumbers := SortArray(numbers)
+    count := sortedNumbers.Length()
+    position := (count - 1) * percentile + 1
+    lower := Floor(position)
+    upper := Ceil(position)
+    if (lower = upper) {
+        return sortedNumbers[lower]
+    } else {
+        return sortedNumbers[lower] + (position - lower)*(sortedNumbers[upper] - sortedNumbers[lower])
+    }
+}
+
+CalculateStandardDeviation(numbers) {
+    mean := CalculateMean(numbers)
+    sumSquaredDiff := 0
+    for i, num in numbers {
+        diff := num - mean
+        sumSquaredDiff += diff*diff
+    }
+    variance := sumSquaredDiff / (numbers.Length()-1)
+    return Sqrt(variance)
+}
+
+; -------------------------------------------------------------
+; 8) Number Range
+; -------------------------------------------------------------
+CalculateRange(input) {
+    numbers := []
+    unit := ""
+    RegExNeedle := "(-?\d+(?:\.\d+)?)(?:\s*((?:cm/s|mm/s|m/s|km/h|mph|cm|mm|Hz|T|mg|m|ml|mL|cc|s|min|hr|days?|weeks?|months?|years?|g|ng|ng/ml|ng/mL|mmol/L|µmol/L|°F|°C)(?:/(?:day|week|month|year))?))?"
+    pos := 1
+    while (pos := RegExMatch(input, RegExNeedle, match, pos)) {
+        numbers.Push(match1+0)
+        if (match2 != "" && unit = "")
+            unit := match2
+        pos += StrLen(match)
+    }
+    if (numbers.Length() = 0) {
+        return "No numbers found."
+    }
+    minValue := Min(numbers*)
+    maxValue := Max(numbers*)
+    result := Round(minValue,1) . " - " . Round(maxValue,1)
+    if (unit != "")
+        result .= " " . unit
+    return result
+}
+
+; -------------------------------------------------------------
+; 9) Adrenal Washout
+; -------------------------------------------------------------
+CalculateAdrenalWashout(input) {
+    global ShowCitations
+    RegExNeedle := "i)(?:(?:unenhanced|non-?enhanced|pre-?contrast|baseline|native)(?:\s+CT)?[\s:]*(-?\d+(?:\.\d+)?)(?:\s*HU)?).*?(?:(?:enhanced|post-?contrast|arterial|portal|venous?)(?:\s+CT)?[\s:]*(-?\d+(?:\.\d+)?)(?:\s*HU)?).*?(?:(?:delayed|late|10-?15\s*min|15\s*min)(?:\s+CT)?[\s:]*(-?\d+(?:\.\d+)?)(?:\s*HU)?)"
+    if (RegExMatch(input, RegExNeedle, match)) {
+        unenhanced := match1+0
+        enhanced := match2+0
+        delayed := match3+0
+
+        absoluteWashout := ((enhanced - delayed) / (enhanced - unenhanced)) * 100
+        relativeWashout := ((enhanced - delayed) / enhanced) * 100
+
+        result := input . "`n`n"
+        result .= "Absolute Washout: " . Round(absoluteWashout,1) . "% (adenoma ≥60%)`n"
+        result .= "Relative Washout: " . Round(relativeWashout,1) . "% (adenoma ≥40%)`n`n"
+
+        if (ShowCitations=1) {
+            result .= "Reference: Mayo-Smith WW, et al. Management of Incidental Adrenal Masses: ACR White Paper. J Am Coll Radiol. 2017."
+        }
+        result .= "`n`n" . InterpretAdrenalWashout(absoluteWashout, relativeWashout, unenhanced, enhanced, delayed)
+        return result
+    } else {
+        ; second pattern if unenhanced is missing
+        RegExNeedle2 := "i)(?:(?:enhanced|post-?contrast|arterial|portal|venous?)(?:\s+CT)?[\s:]*(\d+(?:\.\d+)?)(?:\s*HU)?).*?(?:(?:delayed|late|10-?15\s*min|15\s*min)(?:\s+CT)?[\s:]*(\d+(?:\.\d+)?)(?:\s*HU)?)"
+        if (RegExMatch(input, RegExNeedle2, match2)) {
+            enhanced := match21+0
+            delayed := match22+0
+            relativeWashout := ((enhanced - delayed) / enhanced)*100
+
+            result := input . "`n`n"
+            result .= "Relative Washout: " . Round(relativeWashout,1) . "%`n`n"
+            if (ShowCitations=1) {
+                result .= "Reference: Mayo-Smith WW, et al. Management of Incidental Adrenal Masses: ACR White Paper. J Am Coll Radiol. 2017."
+            }
+            result .= "`n`n" . InterpretAdrenalWashout(0, relativeWashout, "", enhanced, delayed)
+            return result
+        } else {
+            return "Invalid adrenal washout format.`nExample: Unenh: 10 HU, Enh: 80 HU, Delayed: 40 HU"
+        }
+    }
+}
+
+InterpretAdrenalWashout(absoluteWashout, relativeWashout, unenhanced, enhanced, delayed) {
+    result := ""
+    isUnenhAvailable := (unenhanced != "")
+    if (isUnenhAvailable) {
+        unenh := unenhanced+0
+        e := enhanced+0
+        d := delayed+0
+
+        if (unenh <= 10) {
+            result .= "Unenhanced HU ≤10 suggests benign adenoma. "
+        } else if (unenh > 43) {
+            result .= "Unenhanced HU >43 is suspicious for malignancy. "
+        }
+
+        enhancedChange := e - unenh
+        delayedChange := d - unenh
+        if (Abs(enhancedChange) < 10 && Abs(delayedChange) < 10) {
+            result .= "Minimal enhancement change (<10 HU). Could be cyst, hemorrhage, or other non-enhancing lesion."
+        } else {
+            if (absoluteWashout>=60 || relativeWashout>=40) {
+                result .= "Washout consistent with a benign adenoma."
+            } else {
+                result .= "Indeterminate washout."
+            }
+        }
+    } else {
+        if (relativeWashout>=40) {
+            result .= "Washout consistent with benign adenoma, but unenhanced HU not available."
+        } else {
+            result .= "Indeterminate without unenhanced HU."
+        }
+    }
+    return result
+}
+
+; -------------------------------------------------------------
+; 10) Thymus Chemical Shift
+; -------------------------------------------------------------
+CalculateThymusChemicalShift(input) {
+    RegExNeedle := "i)thymus.*?(?:in[- ]?phase|ip)\s*:\s*(\d+).*?(?:out[- ]?of[- ]?phase|op)\s*:\s*(\d+).*?(?:paraspinous|paraspinal).*?(?:in[- ]?phase|ip)\s*:\s*(\d+).*?(?:out[- ]?of[- ]?phase|op)\s*:\s*(\d+)"
+    if (RegExMatch(input, RegExNeedle, match)) {
+        thymusIn := match1+0, thymusOut := match2+0
+        paraIn := match3+0, paraOut := match4+0
+        sii := ((thymusIn - thymusOut)/thymusIn)*100
+
+        outOfPhaseRatio := thymusOut / paraOut
+        inPhaseRatio := thymusIn / paraIn
+        chemicalShiftRatio := outOfPhaseRatio / inPhaseRatio
+
+        result := input . "`n"
+        if (DisplayAllValues) {
+            result .= "`nChemical Shift Ratio: " . Round(chemicalShiftRatio,3) . " (hyperplasia <0.849)`n"
+            result .= "Signal Intensity Index: " . Round(sii,2) . "% (hyperplasia >8.92)`n"
+        }
+        result .= "`n" . InterpretThymusChemicalShift(chemicalShiftRatio, sii)
+        return result
+    } else {
+        ; simpler pattern if no paraspinous
+        RegExNeedle2 := "i)thymus.*?(?:in[- ]?phase|ip)\s*:\s*(\d+).*?(?:out[- ]?of[- ]?phase|op)\s*:\s*(\d+)"
+        if (RegExMatch(input, RegExNeedle2, match2)) {
+            thymusIn := match21+0
+            thymusOut := match22+0
+            sii := ((thymusIn - thymusOut)/thymusIn)*100
+
+            result := input
+            if (DisplayAllValues) {
+                result .= "`nSignal Intensity Index: " . Round(sii,2) . "% (hyperplasia >8.92)`n"
+            }
+            result .= "`n" . InterpretThymusChemicalShift("", sii)
+            return result
+        }
+        return "Invalid format for thymus chemical shift.`nExample: Thymus IP:100, OP:80, Paraspinous IP:90, OP:85"
+    }
+}
+
+InterpretThymusChemicalShift(chemRatio, SII) {
+    global ShowCitations
+    result := ""
+    if (chemRatio!="" && SII!="") {
+        if (chemRatio <=0.849 && SII>8.92) {
+            result .= "Likely thymic hyperplasia (part dual-echo)."
+        } else if (chemRatio >0.849 && SII<=8.92) {
+            result .= "Not typical of hyperplasia (part dual-echo)."
+        } else {
+            result .= "Mixed findings or borderline values."
+        }
+    } else if (chemRatio!="") {
+        result .= (chemRatio<=0.849)
+                 ? "Chemical Shift Ratio <0.849: possible hyperplasia"
+                 : "Chemical Shift Ratio >0.849: less likely hyperplasia"
+    } else if (SII!="") {
+        result .= (SII>8.92)
+                 ? "Signal Intensity Index >8.92%: possible hyperplasia"
+                 : "SII ≤8.92%: not typical hyperplasia"
+    } else {
+        result := "No values to interpret."
+    }
+
+    if (ShowCitations=1) {
+        result .= "`nCitation: Priola AM et al. Radiology. 2015;274(1):238-49."
+    }
+    return result
+}
+
+; -------------------------------------------------------------
+; 11) Hepatic Steatosis
+; -------------------------------------------------------------
+CalculateHepaticSteatosis(inputText) {
+    global ShowCitations
+    RegExNeedleLocal := "i)liver.*?((?:in[- ]?phase|ip)).*?(\d+).*?((?:out[- ]?of[- ]?phase|op)).*?(\d+)"
+    RegExNeedleSpleenLocal := "i)spleen.*?((?:in[- ]?phase|ip)).*?(\d+).*?((?:out[- ]?of[- ]?phase|op)).*?(\d+)"
+
+    if (RegExMatch(inputText, RegExNeedleLocal, matchLocal)) {
+        liverIP := matchLocal2+0
+        liverOP := matchLocal4+0
+        ffLocal := 100*(liverIP - liverOP)/(2*liverIP)
+
+        resultLocal := inputText . " (Fat Fraction: " . Round(ffLocal,1) . "%)"
+        resultLocal .= "`nFat Fraction " . InterpretHepaticSteatosis(ffLocal) . "`n"
+
+        if (RegExMatch(inputText, RegExNeedleSpleenLocal, matchSpleen)) {
+            spleenIP := matchSpleen2+0
+            spleenOP := matchSpleen4+0
+            ratioIP := (liverIP / spleenIP)
+            ratioOP := (liverOP / spleenOP)
+            fatPercentageLocal := 100*((ratioIP - ratioOP)/(2*ratioIP))
+
+            resultLocal := StrReplace(resultLocal, ")", ", Fat Percentage: " . Round(fatPercentageLocal,1) . "%)")
+            resultLocal .= "Fat Percentage " . InterpretHepaticSteatosis(fatPercentageLocal) . "`n"
+        }
+        if (ShowCitations=1) {
+            resultLocal .= "`nSirlin CB. Radiographics. 2009;29:1277-80 (invited commentary)."
+        }
+        return resultLocal
+    } else {
+        return "Invalid hepatic steatosis format.`nExample: Liver IP:100, OP:80, Spleen IP:90, OP:88"
+    }
+}
+
+InterpretHepaticSteatosis(fatFraction) {
+    if (fatFraction<5)
+        return ": No significant steatosis."
+    else if (fatFraction<15)
+        return ": Mild steatosis."
+    else if (fatFraction<30)
+        return ": Moderate steatosis."
+    else
+        return ": Severe steatosis."
+}
+
+; -------------------------------------------------------------
+; 12) MRI Liver Iron Content
+; -------------------------------------------------------------
+EstimateIronContent(input) {
+    global ShowCitations
+
+    RegExMatch(input, "i)(1[.,]?5|3[.,]?0)\s*T", fieldStrength)
+    if (!fieldStrength1) {
+        return "Error: Field strength (1.5T or 3.0T) not found."
+    }
+    fieldStrengthVal := StrReplace(fieldStrength1,",",".")
+
+    R2StarPattern := "i)R2\*?\s*:\s*(\d+(?:\.\d+)?)(?:\s*(?:Hz|1/s))"
+    if (!RegExMatch(input, R2StarPattern, R2Star)) {
+        return "Error: R2* value not found. E.g.: '1.5T, R2*: 50 Hz'"
+    }
+    R2StarValue := StrReplace(R2Star1, ",", ".")+0
+
+    if (fieldStrengthVal="1.5") {
+        ironContent := -0.04 + 2.62e-2 * R2StarValue
+    } else {
+        ironContent := 1.41e-2 * R2StarValue
+    }
+    result := input . " (" . Round(ironContent,2) . " mg Fe/g dry liver)"
+    if (DisplayAllValues) {
+        result .= "`nField Strength: " . fieldStrengthVal . "T`n"
+        result .= "R2* Value: " . R2StarValue . " Hz`n"
+    }
+    if (ShowCitations=1) {
+        result .= "`nHernando D, et al. Eur Radiol. 2021."
+    }
+    return result
+}
+
+; -------------------------------------------------------------
+; 13) Calcium Score Percentile (no OCR)
+; -------------------------------------------------------------
+CalculateCalciumScorePercentile(input) {
+    ; Extract age, sex, race, and calcium score from input
+    RegExMatch(input, "i)Age:\s*(\d+)", age)
+    RegExMatch(input, "i)Sex:\s*(Male|Female)", sex)
+    RegExMatch(input, "i)Race:\s*(White|Black|Hispanic|Chinese|[A-Za-z]+)", race)
+    RegExMatch(input, "i)(?:your\s+)?(?:coronary\s+artery\s+)?calcium\s+score(?:\s+is)?:?\s*(\d+(?:\.\d+)?)\s*(?:\(?\s*Agatston\s*\)?)?|(?:total\s+)?calcium\s+score:?\s*(\d+(?:\.\d+)?)", score)
+	
+	if (!age1) {
+        return input . "`n`nError: Age not found or invalid. Please provide age in the format 'Age: 55'."
+    }
+    if (!sex1) {
+        return input . "`n`nError: Sex not found or invalid. Please specify either Male or Female."
+    }
+    if (!score1 && score1 !=0 ) {
+        return input . "`n`nError: Calcium score not found or invalid. Please ensure the score is provided in the format 'YOUR CORONARY ARTERY CALCIUM SCORE: 0.0 (Agatston)'."
+    }
+
+    age := age1
+    sex := sex1
+    race := race1 ? race1 : "Unspecified"
+    score := score1
+
+    result := ""
+    if (age >= 45 && age <= 84 && (race = "White" || race = "Black" || race = "Hispanic" || race = "Chinese")) {
+        result := CalculateMESAScore(age, race, sex, score)
+    } else if (age >= 30) {
+        result := CalculateHoffScore(age, sex, score, race)
+    } else {
+        result := "Error: The calcium score calculators are only valid for ages 30 and above."
+    }
+
+    return input . "`n`nCONTEXT:`n" . result
+}
+
+CalculateMESAScore(age, race, sex, score) {
+	global ShowCitations
+	global ShowArterialAge
+
+    url := "https://www.mesa-nhlbi.org/Calcium/input.aspx"
+    
+    ; First, we need to get the initial page to retrieve some hidden values
+    initialResponse := DownloadToString(url)
+    if (InStr(initialResponse, "Error:")) {
+        return "Initial page load failed: " . initialResponse
+    }
+    
+    ; Extract necessary hidden values
+    RegExMatch(initialResponse, "id=""__VIEWSTATE"" value=""([^""]+)""", viewState)
+    RegExMatch(initialResponse, "id=""__VIEWSTATEGENERATOR"" value=""([^""]+)""", viewStateGenerator)
+    RegExMatch(initialResponse, "id=""__EVENTVALIDATION"" value=""([^""]+)""", eventValidation)
+    
+    ; Prepare the post data
+    postData := "__VIEWSTATE=" . UrlEncode(viewState1)
+              . "&__VIEWSTATEGENERATOR=" . viewStateGenerator1
+              . "&__EVENTVALIDATION=" . UrlEncode(eventValidation1)
+              . "&Age=" . age
+              . "&gender=" . GetSexValue(sex)
+              . "&Race=" . GetRaceValue(race)
+              . "&Score=" . score
+              . "&Calculate=Calculate"
+
+    ; Send the calculation request
+    response := DownloadToString(url, postData)
+    if (InStr(response, "Error:")) {
+        return "Calculation request failed: " . response
+    }
+    
+    ; Extract the results
+    RegExMatch(response, "id=""Label10""[^>]*>([^<]+)</span>", probability)
+    RegExMatch(response, "id=""scoreLabel""[^>]*>([^<]+)</span>", observedScore)
+    RegExMatch(response, "id=""percLabel""[^>]*>([^<]+)</span>", percentile)
+    
+    if (probability1 || observedScore1 || percentile1) {
+        result := "Probability of non-zero calcium score: " . probability1 . "`n`n"
+        
+        result .= "Plaque Burden: " . DeterminePlaqueBurden(score) . "`n`n"
+        
+        percentileNum := percentile1 + 0
+        comparison := DetermineComparison(percentileNum)
+        
+        result .= "Comparison to people of the same age, race and sex: " . comparison . "`n`n"
+        result .= "Observed calcium score of " . score . " Agatston is at percentile " . percentile1 . " for age, race and sex`n`n"
+        
+        if(ShowArterialAge=1){
+			result .= "Arterial Age: " . CalculateCoronaryAge(score) . " years" . "`n`n"
+        }
+		if(ShowCitations=1) {
+			result .= "Citation 1: McClelland RL, et al. Distribution of coronary artery calcium by race, gender, and age: results from the Multi-Ethnic Study of Atherosclerosis (MESA). Circulation. 2006 Jan 3;113(1):30-7.`n`n"
+			result .= "Citation 2: McClelland RL, Nasir K, Budoff M, Blumenthal RS, Kronmal RA. Arterial age as a function of coronary artery calcium (from the Multi-Ethnic Study of Atherosclerosis [MESA]). Am J Cardiol. 2009 Jan 1;103(1):59-63."
+        }
+		
+		return result
+		
+	} else {
+		; Save the response for debugging
+		FileAppend, %response%, %A_Desktop%\mesa_debug_response.html
+		return "Error: Unable to retrieve result from MESA calculator. The response has been saved to your desktop as 'mesa_debug_response.html' for further investigation."
+	}
+}
+
+CalculateHoffScore(age, sex, score, race) {
+	global ShowCitations
+	global ShowArterialAge
+
+    ageGroup := GetAgeGroup(age)
+    percentile := GetHoffPercentile(ageGroup, sex, score)
+    
+    result := "Plaque Burden: " . DeterminePlaqueBurden(score) . "`n`n"
+    
+    comparison := DetermineComparison(percentile)
+    result .= "Comparison to people of the same age and sex: " . comparison . "`n`n"
+    
+    if(ShowArterialAge=1){
+		result .= "Arterial Age: " . CalculateCoronaryAge(score) . " years" . "`n`n"
+    }
+    if(ShowCitations=1){
+		result .= "Citation 1: Hoff JA, et al. Age and gender distributions of coronary artery calcium detected by electron beam tomography in 35,246 adults. Am J Cardiol. 2001 Jun 15;87(12):1335-9.`n`n"
+		result .= "Citation 2: McClelland RL, Nasir K, Budoff M, Blumenthal RS, Kronmal RA. Arterial age as a function of coronary artery calcium (from the Multi-Ethnic Study of Atherosclerosis [MESA]). Am J Cardiol. 2009 Jan 1;103(1):59-63."
+    }
+	
+    return result
+}
+
+GetAgeGroup(age) {
+    if (age < 40)
+        return "<40"
+    else if (age < 45)
+        return "40-44"
+    else if (age < 50)
+        return "45-49"
+    else if (age < 55)
+        return "50-54"
+    else if (age < 60)
+        return "55-59"
+    else if (age < 65)
+        return "60-64"
+    else if (age < 70)
+        return "65-69"
+    else if (age <= 74)
+        return "70-74"
+    else
+        return ">74"
+}
+
+GetHoffPercentile(ageGroup, sex, score) {
+    percentiles := {"<40": {}, "40-44": {}, "45-49": {}, "50-54": {}, "55-59": {}, "60-64": {}, "65-69": {}, "70-74": {}, ">74": {}}
+    
+    ; Male percentiles
+    percentiles["<40"]["Male"] := [0, 1, 3, 14]
+    percentiles["40-44"]["Male"] := [0, 1, 9, 59]
+    percentiles["45-49"]["Male"] := [0, 3, 36, 154]
+    percentiles["50-54"]["Male"] := [1, 15, 103, 332]
+    percentiles["55-59"]["Male"] := [4, 48, 215, 554]
+    percentiles["60-64"]["Male"] := [13, 113, 410, 994]
+    percentiles["65-69"]["Male"] := [32, 180, 566, 1299]
+    percentiles["70-74"]["Male"] := [64, 310, 892, 1774]
+    percentiles[">74"]["Male"] := [166, 473, 1071, 1982]
+    
+    ; Female percentiles
+    percentiles["<40"]["Female"] := [0, 0, 1, 3]
+    percentiles["40-44"]["Female"] := [0, 0, 1, 4]
+    percentiles["45-49"]["Female"] := [0, 0, 2, 22]
+    percentiles["50-54"]["Female"] := [0, 0, 5, 55]
+    percentiles["55-59"]["Female"] := [0, 1, 23, 121]
+    percentiles["60-64"]["Female"] := [0, 3, 57, 193]
+    percentiles["65-69"]["Female"] := [1, 24, 145, 410]
+    percentiles["70-74"]["Female"] := [3, 52, 210, 631]
+    percentiles[">74"]["Female"] := [9, 75, 241, 709]
+    
+    agePercentiles := percentiles[ageGroup][sex]
+    
+    if (score <= agePercentiles[1])
+        return 25
+    else if (score <= agePercentiles[2])
+        return 50
+    else if (score <= agePercentiles[3])
+        return 75
+    else if (score <= agePercentiles[4])
+        return 90
+    else
+        return 99
+}
+
+DeterminePlaqueBurden(score) {
+    if (score=0)
+        return "None (very low CAD risk)."
+    else if (score<=10)
+        return "Minimal plaque."
+    else if (score<=100)
+        return "Mild plaque; mild CAD possible."
+    else if (score<=400)
+        return "Moderate plaque; significant narrowings possible."
+    else
+        return "Extensive plaque; high likelihood of significant stenosis."
+}
+
+DetermineComparison(percentile) {
+    if (percentile<=25)
+        return "Low (≤25%)"
+    else if (percentile<=50)
+        return "Average (25-50%)"
+    else if (percentile<=75)
+        return "Average (50-75%)"
+    else if (percentile<=90)
+        return "High (75-90%)"
+    else
+        return "Very high (>90%)"
+}
+
+CalculateCoronaryAge(score) {
+    logScore := Ln(score+1)
+    effectiveAge := Round(39.1 + 7.25*logScore, 0)
+    return effectiveAge
+}
+
+; -------------------------------------------------------------
+; 14) CalculateNASCET
+; -------------------------------------------------------------
+CalculateNASCET(input) {
+    global ShowCitations
+    raw := input
+    input := RegExReplace(input, "`r?\n", " ")
+
+    RegExNeedle := "i)(?:distal.*?(\d+(?:\.\d+)?)(?:mm|cm)).*?(?:stenosis.*?(\d+(?:\.\d+)?)(?:mm|cm))"
+    if (!RegExMatch(input, RegExNeedle, match)) {
+        RegExNeedle2 := "i)(?:stenosis.*?(\d+(?:\.\d+)?)(?:mm|cm)).*?(?:distal.*?(\d+(?:\.\d+)?)(?:mm|cm))"
+        if (!RegExMatch(input, RegExNeedle2, match2)) {
+            numbers := []
+            patternAny := "(\d+(?:\.\d+)?)(?:mm|cm)?"
+            pos := 1
+            while (pos := RegExMatch(input, patternAny, m, pos)) {
+                numbers.Push(m1+0)
+                pos += StrLen(m)
+            }
+            if (numbers.Length()<2)
+                return "Could not find two diameters for NASCET. Example: 'Distal ICA = 6 mm, Stenosis = 2 mm'"
+            distal := Max(numbers*)
+            stenosis := Min(numbers*)
+        } else {
+            stenosis := match21+0
+            distal := match22+0
+        }
+    } else {
+        distal := match1+0
+        stenosis := match2+0
+    }
+
+    nascetVal := (distal - stenosis)/distal*100
+    nascetVal := Round(nascetVal,1)
+
+    result := raw . "`n`nNASCET Calculation:`nDistal: " . distal . " mm`nStenosis: " . stenosis . " mm`nNASCET: " . nascetVal . "%"
+
+    if (nascetVal<50)
+        result .= "`nMild (<50%)"
+    else if (nascetVal<70)
+        result .= "`nModerate (50-69%)"
+    else
+        result .= "`nSevere (≥70%)"
+
+    if (ShowCitations=1) {
+        result .= "`nCitation: NASCET (N Engl J Med 1991;325:445-53)."
+    }
+    return result
+}
+
+; ------------------------------------------
+; Utility Subfunctions
+; ------------------------------------------
+SortDimensions(dimensions) {
+    if (dimensions[1] < dimensions[2]) {
+        temp := dimensions[1], dimensions[1] := dimensions[2], dimensions[2] := temp
+    }
+    if (dimensions[2] < dimensions[3]) {
+        temp := dimensions[2], dimensions[2] := dimensions[3], dimensions[3] := temp
+    }
+    if (dimensions[1] < dimensions[2]) {
+        temp := dimensions[1], dimensions[1] := dimensions[2], dimensions[2] := temp
+    }
+    return dimensions
+}
+
+ParseDate(dateStr) {
+    dateStr := StrReplace(dateStr, ".", "/")
+    dateStr := StrReplace(dateStr, "-", "/")
+    if (RegExMatch(dateStr, "(\d{1,2})/(\d{1,2})/(\d{2,4})", match)) {
+        month := match1
+        day := match2
+        year := match3
+        if (StrLen(year)=2)
+            year := "20" . year
+        if (month>12) {
+            temp := month, month := day, day := temp
+        }
+        if (day>31 || month>12)
+            return "Invalid Date"
+        month := SubStr("0" . month, -1)
+        day := SubStr("0" . day, -1)
+        return year . month . day
+    }
+    return "Invalid Date"
+}
+
+CalculateDatesFromLMP(LMPDate) {
+    FormatTime, LMPFormatted, %LMPDate%, MM/dd/yyyy
+    EDDDate := DateCalc(LMPDate, 280)
+    FormatTime, EDDFormatted, %EDDDate%, MM/dd/yyyy
+
+    GA := A_Now
+    GA -= LMPDate, days
+    GAweeks := Floor(GA/7)
+    GAdays := Mod(GA,7)
+
+    return "LMP: " . LMPFormatted . "`nEstimated Delivery: " . EDDFormatted
+        . "`nGestational Age (today): " . GAweeks . "w " . GAdays . "d"
+}
+
+CalculateDatesFromGA(WeeksGA, DaysGA, ReferenceDate) {
+    daysSinceConception := (WeeksGA*7) + DaysGA
+    LMPDate := DateCalc(ReferenceDate, -daysSinceConception)
+    FormatTime, LMPFormatted, %LMPDate%, MM/dd/yyyy
+    EDDDate := DateCalc(LMPDate, 280)
+    FormatTime, EDDFormatted, %EDDDate%, MM/dd/yyyy
+
+    currentGA := A_Now
+    currentGA -= LMPDate, days
+    cWeeks := Floor(currentGA/7)
+    cDays := Mod(currentGA,7)
+
+    FormatTime, ReferenceDateFmt, %ReferenceDate%, MM/dd/yyyy
+    return "LMP: " . LMPFormatted . "`nEstimated Delivery: " . EDDFormatted
+        . "`nGA as of " . ReferenceDateFmt . ": " . WeeksGA . "w " . DaysGA . "d"
+        . "`nCurrent GA: " . cWeeks . "w " . cDays . "d"
+}
+
+DetermineMenstrualPhase(LMPDate) {
+    DaysSinceLMP := A_Now
+    DaysSinceLMP -= LMPDate, days
+    CycleDay := Mod(DaysSinceLMP,28)+1
+
+    FormatTime, LMPFmt, %LMPDate%, MM/dd/yyyy
+    result := "LMP: " . LMPFmt . "`nCycle Day: " . CycleDay . "`n"
+
+    if (CycleDay>=1 && CycleDay<=5) {
+        result .= "Menstrual Phase (1-5)."
+    } else if (CycleDay>=6 && CycleDay<=13) {
+        result .= "Early Proliferative (6-13)."
+    } else if (CycleDay=14) {
+        result .= "Ovulation (Day 14)."
+    } else if (CycleDay>=15 && CycleDay<=28) {
+        result .= "Secretory (15-28)."
+    } else {
+        result .= "`nError: invalid day."
+    }
+    return result
+}
+
+DateCalc(date, days) {
+    date += %days%, days
+    FormatTime, out, %date%, yyyyMMdd
+    return out
+}
+
+; -------------------------------------------------------------
+; CompareMeasurements: single function to compare old vs new
+; -------------------------------------------------------------
+CompareMeasurements(previous, current, previousDate, currentDate, fullText) {
+    prev := ProcessMeasurement(previous)
+    curr := ProcessMeasurement(current)
+
+    if (prev.dimensions.MaxIndex() != curr.dimensions.MaxIndex()) {
+        return "Mismatch in dimension count.`nPrev: " . previous . "`nCurrent: " . current
+    }
+
+    result := fullText . "`n`nComparison:`n"
+    result .= "Previous Date: " . (previousDate ? previousDate : "N/A") . "`n"
+    result .= "Current Date: " . (currentDate ? currentDate : "Today") . "`n`n"
+
+    prevLongest := 0
+    currLongest := 0
+
+    Loop, % prev.dimensions.MaxIndex() {
+        p := prev.dimensions[A_Index]
+        c := curr.dimensions[A_Index]
+        pCm := (prev.unit="mm") ? p/10 : p
+        cCm := (curr.unit="mm") ? c/10 : c
+
+        if (pCm>prevLongest)
+            prevLongest := pCm
+        if (cCm>currLongest)
+            currLongest := cCm
+
+        change := (cCm/pCm -1)*100
+        result .= "Dim " . A_Index . ": " . Round(p,2) . prev.unit . " -> " . Round(c,2) . curr.unit
+        result .= " (" . (change>=0 ? "+" : "") . Round(change,1) . "%)`n"
+    }
+
+    ldChange := (currLongest/prevLongest -1)*100
+    result .= "`nLongest dimension change: " . (ldChange>=0 ? "+" : "") . Round(ldChange,1) . "%`n"
+
+    prevVolume := CalculateVolume(prev.dimensions, prev.unit)
+    currVolume := CalculateVolume(curr.dimensions, curr.unit)
+    if (prevVolume!="Invalid input" && currVolume!="Invalid input") {
+        volChange := (currVolume/prevVolume -1)*100
+        result .= "Volume change: " . (volChange>=0 ? "+" : "") . Round(volChange,1) . "%`n"
+        result .= "Prev volume: " . FormatVolume(prevVolume) . "`n"
+        result .= "Curr volume: " . FormatVolume(currVolume) . "`n"
+
+        if (previousDate) {
+            parsePrev := ParseDate(previousDate)
+            if (parsePrev="Invalid Date") {
+                return result . "`nError: Invalid previous date format."
+            }
+            parseCurr := (currentDate!="") ? ParseDate(currentDate) : A_Now
+            if (parseCurr="Invalid Date") {
+                return result . "`nError: Invalid current date."
+            }
+            timeDiff := DateDiff(parsePrev, parseCurr)/365.25
+            result .= "Time difference: " . Round(timeDiff,2) . " yrs`n"
+            if (timeDiff>0) {
+                doublingTime := CalculateDoublingTime(prevVolume, currVolume, timeDiff)
+                dtDays := doublingTime*365.25
+                result .= "Doubling time: "
+                result .= (doublingTime!="N/A") ? Round(dtDays,0) . " days`n" : "N/A`n"
+
+                growthRate := CalculateExponentialGrowth(prevVolume, currVolume, timeDiff)*100
+                result .= "Exponential Growth Rate: " . Round(growthRate,2) . "%/yr"
+            } else {
+                result .= "Cannot calc doubling time with invalid date difference."
+            }
+        }
+    } else {
+        result .= "Volume calculation error."
+    }
+    return result
+}
+
+ProcessMeasurement(input) {
+    dimensions := []
+    RegExMatch(input, "i)(\d+(?:\.\d+)?)(?:\s*(?:x|\*)\s*(\d+(?:\.\d+)?))?(?:\s*(?:x|\*)\s*(\d+(?:\.\d+)?))?(?=\s*(cm|mm)?)", m)
+    dimensions.Push(m1+0)
+    if (m2!="")
+        dimensions.Push(m2+0)
+    if (m3!="")
+        dimensions.Push(m3+0)
+
+    theUnit := (m4!="") ? m4 : ((InStr(m1,".")>0 || InStr(m2,".")>0 || InStr(m3,".")>0) ? "cm" : "mm")
+    return {dimensions: dimensions, unit: theUnit}
+}
+
+CalculateVolume(dimensions, unit) {
+    static PI := 3.14159265358979
+
+    if (dimensions.MaxIndex()=1) {
+        ; sphere
+        vol := (4/3)*PI*((dimensions[1]/2)**3)
+    } else if (dimensions.MaxIndex()=2) {
+        ; assume 3rd dimension ~ average
+        avgDim := (dimensions[1]+dimensions[2])/2
+        vol := (4/3)*PI*((dimensions[1]/2)*(dimensions[2]/2)*(avgDim/2))
+    } else if (dimensions.MaxIndex()=3) {
+        ; ellipsoid
+        vol := (1/6)*PI*(dimensions[1]*dimensions[2]*dimensions[3])
+    } else {
+        return "Invalid input"
+    }
+    return (unit="mm") ? vol/1000 : vol
+}
+
+FormatVolume(volume) {
+    return (volume<1)
+        ? Round(volume*1000,1) . " mm³"
+        : Round(volume,1) . " cc"
+}
+
+CalculateDoublingTime(v1, v2, time) {
+    if (v2<=v1)
+        return "N/A"
+    growthRate := (v2/v1)**(1/time)-1
+    return (growthRate>0) ? (Ln(2)/Ln(1+growthRate)) : "N/A"
+}
+
+CalculateExponentialGrowth(v1,v2,time) {
+    return Ln(v2/v1)/time
+}
+
+DateDiff(date1, date2) {
+    EnvSub, date2, %date1%, days
+    return date2
+}
+
+; -------------------------------------------------------------------------
+; 15) Contrast Premedication
+; -------------------------------------------------------------------------
+CalculateContrastPremedication() {
+    ; Show a small GUI for user to pick date/time and see premed schedule
+    defaultDateTime := A_Now
+    EnvAdd, defaultDateTime, 13, Hours
+
+    FormatTime, hours, %defaultDateTime%, HH
+    FormatTime, minutes, %defaultDateTime%, mm
+    minutes := Ceil(minutes/5)*5
+    if (minutes=60) {
+        minutes := 0
+        hours++
+    }
+    if (hours>=24) {
+        hours := Mod(hours,24)
+        EnvAdd, defaultDateTime, 1, Days
+    }
+    formTime := Format("{:02d}{:02d}00", hours, minutes)
+    FormatTime, formDate, %defaultDateTime%, yyyyMMdd
+    combineDefault := formDate . formTime
+
+    ; Position near mouse
+    CoordMode, Mouse, Screen
+    MouseGetPos, mx, my
+
+    SysGet, monCount, MonitorCount
+    Loop, %monCount% {
+        SysGet, monA, Monitor, %A_Index%
+        if (mx>=monALeft && mx<=monARight && my>=monATop && my<=monABottom) {
+            activeMonitor := A_Index
+            break
+        }
+    }
+    SysGet, wArea, MonitorWorkArea, %activeMonitor%
+    monitorW := wAreaRight - wAreaLeft
+    monitorH := wAreaBottom - wAreaTop
+
+    guiW := 250
+    guiH := 160
+    xPos := mx+10
+    yPos := my+10
+    if (xPos+guiW>wAreaRight)
+        xPos := wAreaRight - guiW
+    if (yPos+guiH>wAreaBottom)
+        yPos := wAreaBottom - guiH
+
+    Gui, Premed:New, +AlwaysOnTop
+    Gui, Premed:Add, Text, x10 y10, Scan Date:
+    Gui, Premed:Add, DateTime, x10 y30 w120 vScanDate Choose%formDate%
+    Gui, Premed:Add, Text, x140 y10, Scan Time:
+    Gui, Premed:Add, DropDownList, x140 y30 w100 vScanTime, % CreateTimeList(Format("{:02d}:{:02d}", hours, minutes))
+    Gui, Premed:Add, Radio, x10 y60 w200 vPremedProtocol Checked, Prednisone (13-7-1 hour)
+    Gui, Premed:Add, Radio, x10 y80 w200, Methylprednisolone (12-2 hour)
+    Gui, Premed:Add, Checkbox, x10 y100 w200 vIncludeDiphenhydramine Checked, Include Diphenhydramine
+    Gui, Premed:Add, Button, x10 y130 w100 gCalculatePremedTiming, Calculate
+    Gui, Premed:Add, Button, x120 y130 w100 gShowPremedDosages, Show Dosages
+
+    Gui, Premed:Show, x%xPos% y%yPos% w%guiW% h%guiH%, Contrast Premedication
+    return
+}
+
+CreateTimeList(defaultTime) {
+    timeList := ""
+    Loop, 24 {
+        hr := A_Index-1
+        Loop, 12 {
+            min := (A_Index-1)*5
+            t := Format("{:02d}:{:02d}", hr, min)
+            timeList .= t . "|"
+        }
+    }
+    timeList := RTrim(timeList, "|")
+    if (defaultTime!="") {
+        timeList := StrReplace(timeList, defaultTime, defaultTime . "||")
+    }
+    return timeList
+}
+
+CalculatePremedTiming:
+    Gui, Premed:Submit, NoHide
+    sdt := GetScanDateTime(ScanDate, ScanTime)
+    if (!sdt) {
+        MsgBox, 0, Error, Invalid date/time
+        return
+    }
+    DisplayPremedResult(sdt, PremedProtocol, IncludeDiphenhydramine)
+return
+
+ShowPremedDosages:
+    Gui, Premed:Submit, NoHide
+    ShowPremedDosages(PremedProtocol, IncludeDiphenhydramine)
+return
+
+GetScanDateTime(scanDate, scanTime) {
+    FormatTime, dt, %scanDate%, yyyyMMdd
+    formTime := StrReplace(scanTime,":")
+    full := dt . formTime . "00"
+    if (!IsValidDateTime(full)) {
+        return ""
+    }
+    return full
+}
+
+IsValidDateTime(dt) {
+    try {
+        FormatTime, test, %dt%, yyyy-MM-dd HH:mm:ss
+        return true
+    } catch {
+        return false
+    }
+}
+
+DisplayPremedResult(scanDateTime, protocol, useBenadryl) {
+    FormatTime, sdf, %scanDateTime%, MM/dd/yyyy hh:mm tt
+    res := "Scan: " . sdf . "`n"
+
+    if (protocol=1) {
+        res .= FormatPremedDose(scanDateTime, -13, "13", protocol, useBenadryl)
+        res .= FormatPremedDose(scanDateTime, -7, "7", protocol, useBenadryl)
+        res .= FormatPremedDose(scanDateTime, -1, "1", protocol, useBenadryl)
+    } else {
+        res .= FormatPremedDose(scanDateTime, -12, "12", protocol, useBenadryl)
+        res .= FormatPremedDose(scanDateTime, -2, "2", protocol, useBenadryl)
+    }
+    res .= "`nShorter regimens (<4-5 hr) not proven effective.`nIf patient cannot take PO, 200 mg hydrocortisone IV can replace each PO steroid dose.`n"
+    if (ShowCitations)
+        res .= "`nRef: ACR Manual on Contrast Media."
+    ShowResult(res)
+}
+
+FormatPremedDose(scanTime, offset, label, protocol, useBenadryl) {
+    st := DateAdd(scanTime, offset, "hours")
+    FormatTime, stFmt, %st%, MM/dd/yyyy hh:mm tt
+    txt := label . " hr before (" . stFmt . "):`n"
+
+    if (protocol=1) {
+        txt .= "- Prednisone 50 mg PO"
+        if (label="1" && useBenadryl) {
+            txt .= "`n- Diphenhydramine 50 mg IV/IM/PO"
+        }
+    } else {
+        txt .= "- Methylprednisolone 32 mg PO"
+        if (label="2" && useBenadryl) {
+            txt .= "`n- Diphenhydramine 50 mg IV/IM/PO"
+        }
+    }
+    txt .= "`n`n"
+    return txt
+}
+
+ShowPremedDosages(protocol, useBenadryl) {
+    dosages := "Contrast Premedication Dosages:`n"
+    if (protocol=1) {
+        dosages .= "`nPrednisone 13-7-1 hr:`n"
+        dosages .= "13 hr: Prednisone 50 mg PO`n"
+        dosages .= " 7 hr: Prednisone 50 mg PO`n"
+        dosages .= " 1 hr: Prednisone 50 mg PO"
+        if (useBenadryl) {
+            dosages .= "`n + Diphenhydramine 50 mg"
+        }
+    } else {
+        dosages .= "`nMethylprednisolone 12-2 hr:`n"
+        dosages .= "12 hr: Methylprednisolone 32 mg PO`n"
+        dosages .= " 2 hr: Methylprednisolone 32 mg PO"
+        if (useBenadryl) {
+            dosages .= "`n + Diphenhydramine 50 mg"
+        }
+    }
+    dosages .= "`n`nLess than 4-5 hr premed is not proven. If unable to take oral meds, 200 mg hydrocortisone IV may replace each steroid dose."
+    if (ShowCitations)
+        dosages .= "`nRef: ACR Manual on Contrast Media."
+    ShowResult(dosages)
+}
+
+DateAdd(datetime, val, unit) {
+    EnvAdd, datetime, %val%, %unit%
+    return datetime
+}
+
+; -------------------------------------------------------------------------
+; 16) Fleischner Code
+; -------------------------------------------------------------------------
+InitializeRecommendations() {
+    global recommendations
+    ObjRawSet(recommendations, "single_solid_small", {low: "No routine follow-up.", high: "Optional CT @12mo."})
+    ObjRawSet(recommendations, "single_solid_medium", {low: "CT @6-12mo, consider CT @18-24mo.", high: "CT @6-12mo + 18-24mo."})
+    ObjRawSet(recommendations, "single_solid_large", {low: "Consider CT @3mo, PET/CT, or biopsy.", high: "Same as low-risk (aggressive)."})
+    ObjRawSet(recommendations, "multiple_solid_small", {low: "No routine follow-up.", high: "Optional CT @12mo."})
+    ObjRawSet(recommendations, "multiple_solid_medium", {low: "CT @3-6mo, consider CT @18-24mo.", high: "CT @3-6mo + 18-24mo."})
+    ObjRawSet(recommendations, "multiple_solid_large", {low: "CT @3-6mo, consider CT @18-24mo.", high: "CT @3-6mo + 18-24mo."})
+    ObjRawSet(recommendations, "single_gg_small", "No routine follow-up.")
+    ObjRawSet(recommendations, "single_gg_large", "CT @6-12mo to confirm, then q2yr up to 5yrs.")
+    ObjRawSet(recommendations, "single_ps_small", "No routine follow-up.")
+    ObjRawSet(recommendations, "single_ps_large", "CT @3-6mo to confirm. If stable & <6mm solid part: annual x5yrs.")
+    ObjRawSet(recommendations, "multiple_subsolid_small", "CT @3-6mo, if stable consider CT @2 & 4yrs.")
+    ObjRawSet(recommendations, "multiple_subsolid_large", "CT @3-6mo; follow highest suspicion nodule.")
+}
+
+ProcessNodules(text) {
+    result := ""
+    sentences := PreprocessTextNodules(text)
+    nodules := []
+    globalHighRisk := CheckHighRiskConditions(text)
+    isMultiple := false
+
+    for _, line in sentences {
+        multiProb := CalculateMultipleNodulesProbability(line)
+        isMultiple := (multiProb>=0.45) or isMultiple
+
+        noduleDescs := SplitNoduleDescriptions(line)
+        for _, desc in noduleDescs {
+            try {
+                n := new Nodule(desc)
+                n.GlobalHighRisk := globalHighRisk
+                n.Multiplicity := isMultiple ? "multiple" : "single"
+                nodules.Push(n)
+            } catch e {
+                ; skip
+            }
+        }
+    }
+
+    if (nodules.Length()=0) {
+        if (
+            InStr(text, "micronodule")
+            || InStr(text,"micronodules")
+            || (InStr(text,"multiple") && InStr(text,"nodule"))
+        ) {
+            n := new Nodule("Multiple nodules measuring up to 5 mm")
+            n.GlobalHighRisk := globalHighRisk
+            n.Multiplicity := "multiple"
+            nodules.Push(n)
+        } else {
+            return "Error: No valid nodules found."
+        }
+    }
+
+    mostSignificant := nodules[1]
+    for _, nd in nodules {
+        nd.UpdateMString()
+        if (
+            nd.Size()>mostSignificant.Size()
+            || (nd.Size()=mostSignificant.Size() && IsMoreSignificant(nd, mostSignificant))
+        ) {
+            mostSignificant := nd
+        }
+    }
+
+    if (nodules.Length()>1 || isMultiple || InStr(text,"multiple") || InStr(text,"micronodules")) {
+        mostSignificant.Multiplicity := "multiple"
+    }
+
+    result := text . "`n`nFleischner 2017 assessment:`n"
+    if (mostSignificant.Multiplicity="multiple") {
+        result .= "Multiple nodules. Most significant nodule:`n"
+    } else {
+        result .= "A single pulmonary nodule:`n"
+    }
+    result .= "- Location: " . (mostSignificant.Location!=""?mostSignificant.Location:"Not specified") . "`n"
+    result .= "- Size Extracted: " . mostSignificant.mString . "`n"
+    result .= "- ~Size mm: " . Format("{:.1f}", mostSignificant.Size()) . " mm`n"
+    result .= "- Composition: " . (mostSignificant.Composition!=""?mostSignificant.Composition:"solid") . "`n"
+
+    if (mostSignificant.Calcified)
+        result .= "- Calcification: Present`n"
+    if (mostSignificant.Morphology!="")
+        result .= "- Morphology: " . mostSignificant.Morphology . "`n"
+
+    result .= "`nRecommendation:`n"
+    if ((globalHighRisk || mostSignificant.Morphology="spiculated") && !mostSignificant.Calcified) {
+        mostSignificant.HighRisk := true
+        rec := mostSignificant.Recommendation()
+        result .= AddFollowUpDates(rec, A_Now)
+    } else {
+        if (!mostSignificant.Calcified && (mostSignificant.Composition="solid" || mostSignificant.Composition="")) {
+            lr := mostSignificant.Recommendation()
+            result .= "Low-risk: " . AddFollowUpDates(lr, A_Now) . "`n"
+
+            mostSignificant.HighRisk := true
+            hr := mostSignificant.Recommendation()
+            result .= "`nHigh-risk: " . AddFollowUpDates(hr, A_Now)
+        } else if (!mostSignificant.Calcified && (mostSignificant.Composition="part solid" || mostSignificant.Composition="ground glass")) {
+            rec := mostSignificant.Recommendation()
+            result .= AddFollowUpDates(rec, A_Now)
+        } else {
+            result .= "Calcified nodule => no routine follow-up."
+        }
+    }
+
+    if (globalHighRisk || mostSignificant.Morphology="spiculated")
+        result .= "`n`nNote: patient has risk factors or suspicious morphology."
+
+    global ShowCitations
+    if (ShowCitations)
+        result .= "`n`nCitation: MacMahon H, Naidich DP, Goo JM, et al. Radiology 2017;284(1):228-243."
+
+    return result
+}
+
+class Nodule {
+    __New(nString) {
+        this.Description := nString
+        this.Composition := ""
+        this.Calcified := false
+        this.mString := ""
+        this.Units := ""
+        this.Measurements := []
+        this.HighRisk := false
+        this.Location := ""
+        this.Multiplicity := "single"
+        this.Perifissural := false
+        this.Morphology := ""
+        this.GlobalHighRisk := false
+        if (!this.ContainsNoduleReference(nString))
+            throw Exception("No nodule reference", -1)
+        this.ParseNoduleProperties(nString)
+        this.ExtractMeasurements(nString)
+        if (InStr(nString, "up to") && InStr(nString,"multiple")) {
+            this.Multiplicity := "multiple"
+        }
+    }
+
+    ContainsNoduleReference(nString) {
+        terms := ["nodule","nodules","mass","masses","opacity","opacities","lesion","lesions","micronodule","micronodules"]
+        for _, t in terms {
+            if (InStr(nString,t))
+                return true
+        }
+        return false
+    }
+
+    ParseNoduleProperties(nString) {
+        words := StrSplit(nString," ")
+        Loop, % words.Length() {
+            w := words[A_Index]
+            if (this.IsMultiplicityWord(w))
+                this.Multiplicity := "multiple"
+
+            if (this.FuzzyMatch(w,"solid")) {
+                if (this.Composition="")
+                    this.Composition := "solid"
+                else if (this.Composition="ground glass")
+                    this.Composition := "part solid"
+            }
+            if (
+                this.FuzzyMatch(w,"ground")
+                && A_Index<words.Length()
+                && this.FuzzyMatch(words[A_Index+1],"glass")
+            ) {
+                if (this.Composition="")
+                    this.Composition := "ground glass"
+                else if (this.Composition="solid")
+                    this.Composition := "part solid"
+            }
+            if (this.FuzzyMatch(w,"part-solid") || this.FuzzyMatch(w,"partsolid")) {
+                this.Composition := "part solid"
+            }
+            if (this.FuzzyMatch(w,"calcified") || this.FuzzyMatch(w,"calcification"))
+                this.Calcified := true
+            if (this.FuzzyMatch(w,"noncalcified") || this.FuzzyMatch(w,"non-calcified"))
+                this.Calcified := false
+
+            if (this.FuzzyMatch(w,"emphysema") || this.FuzzyMatch(w,"fibrosis"))
+                this.GlobalHighRisk := true
+
+            lobeKW := ["upper","middle","lower","lingula","apical","basal"]
+            for _, lkw in lobeKW {
+                if (this.FuzzyMatch(w,lkw)) {
+                    this.Location .= " " . w
+                }
+            }
+            if (this.FuzzyMatch(w,"right") || this.FuzzyMatch(w,"left")) {
+                this.Location .= " " . w
+            }
+
+            if (this.FuzzyMatch(w,"perifissural") || this.FuzzyMatch(w,"fissure"))
+                this.Perifissural := true
+
+            morphKW := ["spiculated","lobulated","irregular","smooth"]
+            for _, mk in morphKW {
+                if (this.FuzzyMatch(w,mk)) {
+                    this.Morphology := mk
+                    break
+                }
+            }
+        }
+        this.Location := Trim(this.Location)
+        if (InStr(nString,"multiple") || InStr(nString,"several") || InStr(nString,"numerous"))
+            this.Multiplicity := "multiple"
+    }
+
+    IsMultiplicityWord(word) {
+        multiWords := ["nodules","multiple","several","few","numerous","masses","opacities","lesions","micronodules"]
+        for _, mw in multiWords {
+            if (this.FuzzyMatch(word,mw))
+                return true
+        }
+        return false
+    }
+
+    FuzzyMatch(w1,w2, threshold:=2) {
+        return (LevenshteinDistance(w1,w2)<=threshold)
+    }
+
+    ExtractMeasurements(nString) {
+        needle := "i)(?:up to|~|approximately|about)?\s*((?:\d*\.)?\d+)\s*(?:x\s*((?:\d*\.)?\d+))?\s*(?:x\s*((?:\d*\.)?\d+))?\s*([cm]m)"
+        if (RegExMatch(nString, needle, match)) {
+            this.mString := match
+            this.Units := match4
+            Loop,3 {
+                if (match%A_Index%!="")
+                    this.Measurements.Push(match%A_Index%+0)
+            }
+        } else {
+            needle2 := "i)(?:up to|~|approximately|about)?\s*((?:\d*\.)?\d+)\s*([cm]m)"
+            if (RegExMatch(nString, needle2, m2)) {
+                this.mString := m2
+                this.Units := m22
+                this.Measurements.Push(m21+0)
+            } else if (InStr(nString,"micronodule") || InStr(nString,"micronodules")) {
+                this.mString := "5 mm"
+                this.Units := "mm"
+                this.Measurements.Push(5)
+            } else {
+                needle3 := "i)((?:\d*\.)?\d+)\s*([cm]m)"
+                if (RegExMatch(nString, needle3, m3)) {
+                    this.mString := m3
+                    this.Units := m32
+                    this.Measurements.Push(m31+0)
+                } else {
+                    throw Exception("No measurements found", -2)
+                }
+            }
+        }
+        this.OriginalMeasurements := this.Measurements.Clone()
+        this.OriginalUnits := this.Units
+    }
+
+    Size() {
+        if (this.Measurements.Length()=0)
+            return 0
+        sum := 0
+        for _, val in this.Measurements {
+            sum += val
+        }
+        avg := sum/this.Measurements.Length()
+        if (this.Units="cm")
+            return avg*10
+        return avg
+    }
+
+    UpdateMString() {
+        if (this.OriginalMeasurements.Length()=0)
+            return
+        sizes := []
+        for _, measurement in this.OriginalMeasurements {
+            sizes.Push(Format("{:.1f}",measurement))
+        }
+        this.mString := Join(sizes," x ") . " " . this.OriginalUnits
+    }
+
+    Category() {
+        s := this.Size()
+        if (this.Composition="solid" || this.Composition="") {
+            if (this.Multiplicity="multiple") {
+                if (s<6)
+                    return "multiple_solid_small"
+                else if (s<=8)
+                    return "multiple_solid_medium"
+                else
+                    return "multiple_solid_large"
+            } else {
+                if (s<6)
+                    return "single_solid_small"
+                else if (s<=8)
+                    return "single_solid_medium"
+                else
+                    return "single_solid_large"
+            }
+        } else if (this.Composition="ground glass") {
+            if (this.Multiplicity="multiple") {
+                if (s<6)
+                    return "multiple_subsolid_small"
+                else
+                    return "multiple_subsolid_large"
+            } else {
+                if (s<6)
+                    return "single_gg_small"
+                else
+                    return "single_gg_large"
+            }
+        } else if (this.Composition="part solid") {
+            if (this.Multiplicity="multiple") {
+                if (s<6)
+                    return "multiple_subsolid_small"
+                else
+                    return "multiple_subsolid_large"
+            } else {
+                if (s<6)
+                    return "single_ps_small"
+                else
+                    return "single_ps_large"
+            }
+        }
+    }
+
+    Recommendation() {
+        global recommendations
+        cat := this.Category()
+        risk := this.HighRisk ? "high" : "low"
+        if (recommendations.HasKey(cat)) {
+            if (IsObject(recommendations[cat]))
+                return recommendations[cat][risk]
+            else
+                return recommendations[cat]
+        }
+        return "No specific recommendation."
+    }
+}
+
+PreprocessTextNodules(text) {
+    lines := StrSplit(text,"`n","`r")
+    out := []
+    for _, line in lines {
+        line := RegExReplace(line,"^\s*[\*\-•]\s*","")
+        parts := StrSplit(line,".")
+        for idx,part in parts {
+            part := Trim(part)
+            if (part!="")
+                out.Push(part)
+        }
+    }
+    return out
+}
+
+CheckHighRiskConditions(text) {
+    StringLower text, text
+    hrTerms := ["emphysema","fibrosis","fibrotic","emphysematous"]
+    for _, t in hrTerms {
+        if (FuzzyMatchGlobal(text,t))
+            return true
+    }
+    return false
+}
+
+FuzzyMatchGlobal(word,term, threshold:=2) {
+    return (LevenshteinDistance(word,term)<=threshold)
+}
+
+CalculateMultipleNodulesProbability(line) {
+    prob := 0
+    if (InStr(line,"nodules") || InStr(line,"multiple") || InStr(line,"several") || InStr(line,"few"))
+        prob += 0.7
+    if (InStr(line,"scattered") && InStr(line,"micronodules"))
+        prob += 0.6
+
+    measureCount := 0
+    pos := 1
+    while (pos := RegExMatch(line,"i)(\d+(?:\.\d+)?\s*(mm|cm))",m,pos+StrLen(m))) {
+        measureCount++
+    }
+    if (measureCount>1)
+        prob += 0.5
+
+    lobes := ["upper","middle","lower","lingula","apical","basal","right","left"]
+    locs := {}
+    for _, lw in lobes {
+        if (InStr(line,lw))
+            locs[lw]:=true
+    }
+    if (locs.Count()>1)
+        prob += 0.3
+
+    nodCount := 0
+    pos2 := 1
+    while (pos2 := InStr(line,"nodule",false,pos2)) {
+        nodCount++
+        pos2 += 6
+    }
+    if (nodCount>1)
+        prob += 0.4
+
+    return (prob>1) ? 1 : prob
+}
+
+SplitNoduleDescriptions(text) {
+    descs := []
+    needle := "i)(?:(?:\d+(?:\.\d+)?\s*(?:x\s*\d+(?:\.\d+)?)*\s*(?:mm|cm)\s*)?(?:[a-z\s]+\s+)?(?:nodule|mass|opacity|lesion)s?)"
+    lines := StrSplit(text,"`n","`r")
+    for _, line in lines {
+        pos := 1
+        while (pos := RegExMatch(line, needle, m, pos)) {
+            descs.Push(Trim(m))
+            pos += StrLen(m)
+        }
+    }
+
+    if (descs.Length()=0) {
+        if (RegExMatch(text,"i)(?:multiple\s+nodules?.*(?:measure|up to).*\d+(?:\.\d+)?\s*(?:mm|cm))",mx)) {
+            descs.Push(mx)
+        } else if (InStr(text,"micronodule") || InStr(text,"micronodules")) {
+            descs.Push("Multiple micronodules")
+        } else if (InStr(text,"multiple") && InStr(text,"nodule")) {
+            descs.Push("Multiple nodules")
+        }
+    }
+    if (descs.Length()=0)
+        descs.Push(text)
+    return descs
+}
+
+IsMoreSignificant(n1,n2) {
+    cOrder := {"solid":3, "part solid":2, "ground glass":1, "":3}
+    return cOrder[n1.Composition]>cOrder[n2.Composition]
+}
+
+AddFollowUpDates(recommendation,currentDate) {
+    fups := []
+    if (InStr(recommendation,"3 months"))
+        fups.Push({min:90,max:90,text:"3 months"})
+    if (InStr(recommendation,"3-6mo"))
+        fups.Push({min:90,max:183,text:"3-6 months"})
+    if (InStr(recommendation,"6-12mo"))
+        fups.Push({min:180,max:365,text:"6-12 months"})
+    if (InStr(recommendation,"18-24mo"))
+        fups.Push({min:540,max:730,text:"18-24 months"})
+    if (InStr(recommendation,"q2yr up to 5yrs"))
+        fups.Push({min:730,max:1825,text:"2-5 yrs"})
+
+    if (fups.Length()>0) {
+        recommendation .= "`nSuggested follow-up windows:"
+        for _, fu in fups {
+            minDate := DateCalc(currentDate, fu.min)
+            maxDate := DateCalc(currentDate, fu.max)
+            FormatTime, fMin, %minDate%, MMM yyyy
+            FormatTime, fMax, %maxDate%, MMM yyyy
+            FormatTime, fNow, %currentDate%, MMM yyyy
+
+            if (fMin!=fMax)
+                recommendation .= " " . fu.text . " => " . fMin . " - " . fMax . " from " . fNow . "."
+            else
+                recommendation .= " " . fu.text . " => " . fMin . " from " . fNow . "."
+        }
+    }
+    return recommendation
+}
+
+; -------------------------------------------------------------------------
+; 16) Levenshtein Distance helper
+; -------------------------------------------------------------------------
+LevenshteinDistance(s, t) {
+    m := StrLen(s)
+    n := StrLen(t)
+    d := []
+    Loop, % m+1 {
+        d[A_Index] := []
+        d[A_Index,1] := A_Index-1
+    }
+    Loop, % n+1
+        d[1,A_Index] := A_Index-1
+
+    Loop, % m {
+        i := A_Index
+        Loop, % n {
+            j := A_Index
+            cost := (SubStr(s,i,1)=SubStr(t,j,1)) ? 0 : 1
+            d[i+1,j+1] := Min(d[i,j+1]+1, d[i+1,j]+1, d[i,j]+cost)
+        }
+    }
+    return d[m+1,n+1]
+}
+
+Join(arr, sep) {
+    out := ""
+    for i, element in arr {
+        if (i>1) out .= sep
+        out .= element
+    }
+    return out
+}
+; ------------------------------------------
+; Go to MESA website and get informatoin
+; ------------------------------------------
+DownloadToString(url, postData := "") {
+    static INTERNET_FLAG_RELOAD := 0x80000000
+    static INTERNET_FLAG_SECURE := 0x00800000
+    static SECURITY_FLAG_IGNORE_UNKNOWN_CA := 0x00000100
+    
+    hModule := DllCall("LoadLibrary", "Str", "wininet.dll", "Ptr")
+    if (!hModule)
+        return "Error: Failed to load wininet.dll. Error code: " . A_LastError
+    
+    hInternet := DllCall("wininet\InternetOpenA", "Str", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36", "UInt", 1, "Ptr", 0, "Ptr", 0, "UInt", 0, "Ptr")
+    if (!hInternet) {
+        DllCall("FreeLibrary", "Ptr", hModule)
+        return "Error: InternetOpen failed. Error code: " . A_LastError
+    }
+    
+    hConnect := DllCall("wininet\InternetConnectA", "Ptr", hInternet, "Str", "www.mesa-nhlbi.org", "UShort", 443, "Ptr", 0, "Ptr", 0, "UInt", 3, "UInt", 0, "Ptr", 0, "Ptr")
+    if (!hConnect) {
+        DllCall("wininet\InternetCloseHandle", "Ptr", hInternet)
+        DllCall("FreeLibrary", "Ptr", hModule)
+        return "Error: InternetConnect failed. Error code: " . A_LastError
+    }
+    
+    flags := INTERNET_FLAG_RELOAD | INTERNET_FLAG_SECURE | SECURITY_FLAG_IGNORE_UNKNOWN_CA
+    hRequest := DllCall("wininet\HttpOpenRequestA", "Ptr", hConnect, "Str", (postData ? "POST" : "GET"), "Str", "/Calcium/input.aspx", "Str", "HTTP/1.1", "Ptr", 0, "Ptr", 0, "UInt", flags, "Ptr", 0, "Ptr")
+    if (!hRequest) {
+        DllCall("wininet\InternetCloseHandle", "Ptr", hConnect)
+        DllCall("wininet\InternetCloseHandle", "Ptr", hInternet)
+        DllCall("FreeLibrary", "Ptr", hModule)
+        return "Error: HttpOpenRequest failed. Error code: " . A_LastError
+    }
+    
+    headers := "Content-Type: application/x-www-form-urlencoded`r`n"
+             . "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36`r`n"
+             . "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9`r`n"
+             . "Accept-Language: en-US,en;q=0.9`r`n"
+    DllCall("wininet\HttpAddRequestHeadersA", "Ptr", hRequest, "Str", headers, "UInt", -1, "UInt", 0x10000000, "Int")
+    
+    VarSetCapacity(buffer, 8192, 0)
+    if (postData) {
+        VarSetCapacity(postDataBuffer, StrLen(postData), 0)
+        StrPut(postData, &postDataBuffer, "UTF-8")
+        result := DllCall("wininet\HttpSendRequestA", "Ptr", hRequest, "Ptr", 0, "UInt", 0, "Ptr", &postDataBuffer, "UInt", StrLen(postData), "Int")
+    } else {
+        result := DllCall("wininet\HttpSendRequestA", "Ptr", hRequest, "Ptr", 0, "UInt", 0, "Ptr", 0, "UInt", 0, "Int")
+    }
+    
+    if (!result) {
+        errorCode := A_LastError
+        DllCall("wininet\InternetCloseHandle", "Ptr", hRequest)
+        DllCall("wininet\InternetCloseHandle", "Ptr", hConnect)
+        DllCall("wininet\InternetCloseHandle", "Ptr", hInternet)
+        DllCall("FreeLibrary", "Ptr", hModule)
+        return "Error: HttpSendRequest failed. Error code: " . errorCode
+    }
+    
+    VarSetCapacity(responseText, 1024*1024)  ; Allocate 1MB for the response
+    bytesRead := 0
+    totalBytesRead := 0
+    
+    Loop {
+        result := DllCall("wininet\InternetReadFile", "Ptr", hRequest, "Ptr", &buffer, "UInt", 8192, "Ptr", &bytesRead, "Int")
+        bytesRead := NumGet(bytesRead, 0, "UInt")
+        if (bytesRead == 0)
+            break
+        DllCall("RtlMoveMemory", "Ptr", &responseText + totalBytesRead, "Ptr", &buffer, "Ptr", bytesRead)
+        totalBytesRead += bytesRead
+    }
+    
+    responseText := StrGet(&responseText, totalBytesRead, "UTF-8")
+    
+    DllCall("wininet\InternetCloseHandle", "Ptr", hRequest)
+    DllCall("wininet\InternetCloseHandle", "Ptr", hConnect)
+    DllCall("wininet\InternetCloseHandle", "Ptr", hInternet)
+    DllCall("FreeLibrary", "Ptr", hModule)
+    
+    return responseText
+}
+
+
+GetRaceValue(race) {
+    switch race {
+        case "White": return 3
+        case "Black": return 0
+        case "Hispanic": return 2
+        case "Chinese": return 1
+    }
+}
+
+GetSexValue(sex) {
+    switch sex {
+        case "Male": return 1
+        case "Female": return 0
+    }
+}
+
+GetLastErrorMessage(errorCode) {
+    VarSetCapacity(msg, 1024)
+    DllCall("FormatMessage"
+        , "UInt", 0x1000      ; FORMAT_MESSAGE_FROM_SYSTEM
+        , "Ptr", 0
+        , "UInt", errorCode
+        , "UInt", 0           ; Default language
+        , "Str", msg
+        , "UInt", 1024
+        , "Ptr", 0)
+    return msg
+}
+
+SendHttpRequest(url, postData := "") {
+    try {
+        whr := ComObject("WinHttp.WinHttpRequest.5.1")
+        whr.Open(postData ? "POST" : "GET", url, true)
+        whr.SetRequestHeader("Content-Type", "application/x-www-form-urlencoded")
+        whr.SetRequestHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36")
+        whr.Send(postData)
+        whr.WaitForResponse()
+        return whr.ResponseText
+    }
+    catch e {
+        return "Error: " . e.message
+    }
+}
+
+UrlEncode(str) {
+    oldFormat := A_FormatInteger
+    SetFormat, Integer, Hex
+    VarSetCapacity(var, StrPut(str, "UTF-8"), 0)
+    StrPut(str, &var, "UTF-8")
+    StringLower, str, str
+    Loop
+    {
+        code := NumGet(var, A_Index - 1, "UChar")
+        If (!code)
+            break
+        If (code >= 0x30 && code <= 0x39 ; 0-9
+            || code >= 0x41 && code <= 0x5A ; A-Z
+            || code >= 0x61 && code <= 0x7A) ; a-z
+            result .= Chr(code)
+        Else
+            result .= "%" . SubStr(code + 0x100, -1)
+    }
+    SetFormat, Integer, %oldFormat%
+    return result
+}
+; ------------------------------------------
+; End of Script
+; ------------------------------------------
+ExitApp
