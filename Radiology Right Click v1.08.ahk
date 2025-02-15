@@ -1,6 +1,6 @@
 ; ==========================================
 ; Radiologist's Helper Script (No OCR)
-; Version: 1.08
+; Version: 1.10
 ; Description: This AutoHotkey script provides various calculation tools and utilities
 ;              for radiologists, including volume calculations, date estimations,
 ;              and other analyses, **without** OCR dependencies.
@@ -48,6 +48,16 @@ global TargetApps := ["ahk_class Notepad", "ahk_exe notepad.exe", "ahk_class Pow
 global ResultText
 global InvisibleControl
 global originalMouseX, originalMouseY
+
+; Some global reference variables
+global g_References := {}  ; Will store {name: {type: "url|file|mapped", path: "path", uses: 0}}
+global g_MaxReferences := 15
+global vRefPath
+global vRefType
+global vRefList
+global vRefName
+global vRefPat
+global RefList
 
 ; For Fleischner
 global g_Nodules := []
@@ -101,6 +111,17 @@ LoadPreferencesFromFile() {
         ; --- [Menu] or [Sorting] section ---
         IniRead, MenuSortingMethod, %preferencesFile%, Menu, SortingMethod, none
         IniRead, CustomMenuOrder, %preferencesFile%, Menu, CustomMenuOrder,
+		
+		; --- [References] section ---
+		IniRead, referencesList, %preferencesFile%, References, SavedReferences, %A_Space%
+		if (referencesList != "") {
+			references := StrSplit(referencesList, "|")
+			for _, ref in references {
+				refData := StrSplit(ref, ":::")
+				if (refData.Length() >= 4)
+					g_References[refData[1]] := {type: refData[2], path: refData[3], uses: refData[4]}
+			}
+		}
 
         ; Convert string "1" to boolean true, etc.
         DisplayUnits := (DisplayUnits = "1")
@@ -189,15 +210,18 @@ return
 ; Right-click context menu activation (only in specified apps)
 ; -------------------------------------------------------------------------
 CoordMode, Mouse, Screen
-
 RButton::
 {
-    ; Activate the window under cursor if not active
-    MouseGetPos, , , windowUnderCursor
+    ; Store original mouse position
+    CoordMode, Mouse, Screen  ; Ensure we're using screen coordinates
+    MouseGetPos, originalX, originalY, windowUnderCursor
+    
     if (windowUnderCursor != WinActive("A")) {
         WinActivate, ahk_id %windowUnderCursor%
+        Sleep, 50
+        ; Restore mouse position after activation
+        MouseMove, %originalX%, %originalY%, 0
     }
-    Sleep, 50
 
     ; Grab selected text
     g_SelectedText := GetSelectedText()
@@ -260,6 +284,11 @@ CreateCustomMenu() {
             Menu, CustomMenu, Add, % item.title, % item.command
         }
     }
+	
+	; Add References submenu
+    Menu, CustomMenu, Add  ; Separator
+    CreateReferencesMenu()
+    Menu, CustomMenu, Add, References, :ReferencesMenu
 
     ; Final items (always at bottom)
     Menu, CustomMenu, Add
@@ -884,6 +913,14 @@ SavePreferencesToFile() {
     ; [Menu]
     IniWrite, %MenuSortingMethod%, %preferencesFile%, Menu, SortingMethod
     IniWrite, %CustomMenuOrder%, %preferencesFile%, Menu, CustomMenuOrder
+	
+	referencesList := ""
+	for name, data in g_References {
+		if (referencesList != "")
+			referencesList .= "|"
+		referencesList .= name . ":::" . data.type . ":::" . data.path . ":::" . data.uses
+	}
+	IniWrite, %referencesList%, %preferencesFile%, References, SavedReferences
 }
 
 ; ------------------------------------------
@@ -2991,6 +3028,392 @@ LevenshteinDistance(s, t) {
 
     return d[m+1, n+1]
 }
+
+; -------------------------------------------------------------
+; References Management
+; -------------------------------------------------------------
+CreateReferencesMenu() {
+    Menu, ReferencesMenu, Add
+    Menu, ReferencesMenu, DeleteAll
+    
+    ; Add management options at top
+    Menu, ReferencesMenu, Add, Add Reference..., AddReference
+    ; Menu, ReferencesMenu, Add, Map External Reference..., MapReference
+    Menu, ReferencesMenu, Add, Remove References..., RemoveReferences
+    Menu, ReferencesMenu, Add  ; Separator
+    
+    ; Add saved references
+    count := 0
+    for name, data in g_References {
+        if (count >= g_MaxReferences)
+            break
+        Menu, ReferencesMenu, Add, %name%, OpenReference
+        count++
+    }
+}
+
+AddReference() {
+    global RefType, RefName, RefPath
+    
+    ; Get current mouse position
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    
+    ; Determine which monitor the mouse is on
+    SysGet, monitorCount, MonitorCount
+    Loop, %monitorCount%
+    {
+        SysGet, monArea, Monitor, %A_Index%
+        if (mouseX >= monAreaLeft && mouseX <= monAreaRight && mouseY >= monAreaTop && mouseY <= monAreaBottom)
+        {
+            activeMonitor := A_Index
+            break
+        }
+    }
+    
+    ; Get dimensions of the active monitor
+    SysGet, workArea, MonitorWorkArea, %activeMonitor%
+    monitorWidth := workAreaRight - workAreaLeft
+    monitorHeight := workAreaBottom - workAreaTop
+    
+    ; Calculate GUI dimensions and position
+    guiWidth := 300
+    guiHeight := 200
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+    
+    ; Ensure the GUI doesn't go off-screen
+    if (xPos + guiWidth > workAreaRight)
+        xPos := workAreaRight - guiWidth
+    if (yPos + guiHeight > workAreaBottom)
+        yPos := workAreaBottom - guiHeight
+    
+    Gui, AddRef:New, +AlwaysOnTop
+    Gui, AddRef:Add, Text,, Select type:
+    Gui, AddRef:Add, Radio, vRefType Checked, URL
+    Gui, AddRef:Add, Radio,, File
+    Gui, AddRef:Add, Edit, vRefName w280, Reference Name
+    Gui, AddRef:Add, Edit, vRefPath w280, URL or File Path
+    Gui, AddRef:Add, Button, gBrowseReference w90, Browse...
+    Gui, AddRef:Add, Button, gSaveReference w90, Save
+    Gui, AddRef:Add, Button, x+10 w90 gAddRefGuiClose, Cancel
+    Gui, AddRef:Show, x%xPos% y%yPos% w%guiWidth% h%guiHeight%, Add Reference
+}
+
+BrowseReference() {
+    global RefType, RefName, RefPath
+    Gui, AddRef:Submit, NoHide
+    if (RefType = 1) {  ; URL
+        return
+    }
+    
+    FileSelectFile, filePath, 3, , Select File, PDF files (*.pdf);;Excel files (*.xls; *.xlsx);;Word files (*.doc; *.docx)
+    if (filePath) {
+        GuiControl, AddRef:, RefPath, %filePath%
+        SplitPath, filePath, fileName
+        GuiControl, AddRef:, RefName, %fileName%
+    }
+}
+
+SaveReference() {
+    global RefType, RefName, RefPath
+    Gui, AddRef:Submit, NoHide
+    
+    RefName := Trim(RefName)  ; Trim any whitespace
+    RefPath := Trim(RefPath)  ; Trim any whitespace
+    
+    if (RefName = "") {
+        MsgBox, Please enter a reference name.
+        return
+    }
+    
+    if (RefType = 1) {  ; URL
+        if (!IsValidURL(RefPath)) {
+            MsgBox, Please enter a valid URL.
+            return
+        }
+        g_References[RefName] := {type: "url", path: RefPath, uses: 0}
+    } else {  ; File
+        if (!FileExist(RefPath)) {
+            MsgBox, File does not exist.
+            return
+        }
+        
+        SplitPath, RefPath, fileName, , fileExt
+        if !IsValidFileType(fileExt) {
+            MsgBox, Invalid file type. Only PDF, XLS, XLSX, DOC, and DOCX files are allowed.
+            return
+        }
+        
+        referencesDir := A_ScriptDir . "\References"
+        if (!FileExist(referencesDir))
+            FileCreateDir, %referencesDir%
+        
+        destPath := referencesDir . "\" . fileName
+        if (FileExist(destPath)) {
+            MsgBox, 4, File Exists, File already exists. Would you like to create a new copy?
+            IfMsgBox Yes
+            {
+                destPath := GetUniqueFilePath(referencesDir, fileName)
+                FileCopy, %RefPath%, %destPath%
+            }
+        } else {
+            FileCopy, %RefPath%, %destPath%
+        }
+        
+        g_References[RefName] := {type: "file", path: destPath, uses: 0}
+    }
+    
+    SavePreferencesToFile()
+    CreateReferencesMenu()  ; Refresh the menu after adding new reference
+    Gui, AddRef:Destroy
+}
+
+MapReference() {
+    ; Get current mouse position
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    
+    ; Determine which monitor the mouse is on
+    SysGet, monitorCount, MonitorCount
+    Loop, %monitorCount%
+    {
+        SysGet, monArea, Monitor, %A_Index%
+        if (mouseX >= monAreaLeft && mouseX <= monAreaRight && mouseY >= monAreaTop && mouseY <= monAreaBottom)
+        {
+            activeMonitor := A_Index
+            break
+        }
+    }
+    
+    ; Get dimensions of the active monitor
+    SysGet, workArea, MonitorWorkArea, %activeMonitor%
+    monitorWidth := workAreaRight - workAreaLeft
+    monitorHeight := workAreaBottom - workAreaTop
+    
+    ; Calculate GUI dimensions and position
+    guiWidth := 300
+    guiHeight := 180
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+    
+    ; Ensure the GUI doesn't go off-screen
+    if (xPos + guiWidth > workAreaRight)
+        xPos := workAreaRight - guiWidth
+    if (yPos + guiHeight > workAreaBottom)
+        yPos := workAreaBottom - guiHeight
+    
+    Gui, MapRef:New, +AlwaysOnTop
+    Gui, MapRef:Add, Text,, Select file to map:
+    Gui, MapRef:Add, Edit, vRefName w280, Reference Name
+    Gui, MapRef:Add, Edit, vRefPath w280, File Path
+    Gui, MapRef:Add, Button, gBrowseMapReference w90, Browse...
+    Gui, MapRef:Add, Button, gSaveMapReference w90, Save
+    Gui, MapRef:Add, Button, x+10 w90 gMapRefGuiClose, Cancel
+    Gui, MapRef:Show, x%xPos% y%yPos% w%guiWidth% h%guiHeight%, Map Reference
+}
+
+BrowseMapReference() {
+    FileSelectFile, filePath, 3, , Select File, PDF files (*.pdf);;Excel files (*.xls; *.xlsx);;Word files (*.doc; *.docx)
+    if (filePath) {
+        GuiControl, MapRef:, RefPath, %filePath%
+        SplitPath, filePath, fileName
+        GuiControl, MapRef:, RefName, %fileName%
+    }
+}
+
+SaveMapReference() {
+    Gui, MapRef:Submit, NoHide
+    
+    if (RefName = "") {
+        MsgBox, Please enter a reference name.
+        return
+    }
+    
+    if (!FileExist(RefPath)) {
+        MsgBox, File does not exist.
+        return
+    }
+    
+    SplitPath, RefPath, , , fileExt
+    if !IsValidFileType(fileExt) {
+        MsgBox, Invalid file type. Only PDF, XLS, XLSX, DOC, and DOCX files are allowed.
+        return
+    }
+    
+    g_References[RefName] := {type: "mapped", path: RefPath}
+    SavePreferencesToFile()
+    Gui, MapRef:Destroy
+}
+
+RemoveReferences() {
+    global RefType, RefName, RefPath
+    
+    ; Get current mouse position
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    
+    ; Determine which monitor the mouse is on
+    SysGet, monitorCount, MonitorCount
+    Loop, %monitorCount%
+    {
+        SysGet, monArea, Monitor, %A_Index%
+        if (mouseX >= monAreaLeft && mouseX <= monAreaRight && mouseY >= monAreaTop && mouseY <= monAreaBottom)
+        {
+            activeMonitor := A_Index
+            break
+        }
+    }
+    
+    ; Get dimensions of the active monitor
+    SysGet, workArea, MonitorWorkArea, %activeMonitor%
+    monitorWidth := workAreaRight - workAreaLeft
+    monitorHeight := workAreaBottom - workAreaTop
+    
+    ; Calculate GUI dimensions and position
+    guiWidth := 400
+    guiHeight := 300
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+    
+    ; Ensure the GUI doesn't go off-screen
+    if (xPos + guiWidth > workAreaRight)
+        xPos := workAreaRight - guiWidth
+    if (yPos + guiHeight > workAreaBottom)
+        yPos := workAreaBottom - guiHeight
+    
+    Gui, RemoveRef:New, +AlwaysOnTop
+    Gui, RemoveRef:Add, ListView, vRefList w380 h230 gRefListHandler -Multi, Reference|Type|Path
+    
+    ; In v1.1, objects are handled with key-value pairs
+    for name, data in g_References {
+        LV_Add("", name, data.type, data.path)
+    }
+    
+    Gui, RemoveRef:Add, Button, w120 gRemoveSelectedReferences, Remove Selected
+    Gui, RemoveRef:Add, Button, x+10 w120 gRemoveRefGuiClose, Close
+    Gui, RemoveRef:Show, x%xPos% y%yPos% w%guiWidth% h%guiHeight%, Remove References
+}
+
+RemoveSelectedReferences() {
+    ; Get the position of the Remove References GUI
+    Gui, RemoveRef:+LastFound
+    WinGetPos, guiX, guiY, guiW, guiH
+    
+    selectedRows := []
+    row := 0
+    
+    ; Collect all selected rows first
+    while (row := LV_GetNext(row)) {
+        selectedRows.Insert(row)
+    }
+    
+    removedCount := 0
+    
+    ; Process selected rows in reverse order to maintain correct indices
+    Loop % selectedRows.MaxIndex() {
+        row := selectedRows[selectedRows.MaxIndex() - A_Index + 1]
+        LV_GetText(name, row, 1)
+        
+        ; Calculate position for the MsgBox relative to the GUI
+        msgBoxX := guiX + (guiW / 2) - 150
+        msgBoxY := guiY + (guiH / 2) - 50
+        
+        ; Ensure message box stays on screen
+        SysGet, workArea, MonitorWorkArea
+        if (msgBoxX < workAreaLeft)
+            msgBoxX := workAreaLeft
+        if (msgBoxX + 300 > workAreaRight)
+            msgBoxX := workAreaRight - 300
+        if (msgBoxY < workAreaTop)
+            msgBoxY := workAreaTop
+        if (msgBoxY + 100 > workAreaBottom)
+            msgBoxY := workAreaBottom - 100
+        
+        ; Position and set AlwaysOnTop for the message box
+        SetTimer, MoveMsgBoxTop, 50
+        MsgBox, 4, Confirm Removal, Are you sure you want to remove "%name%"?
+        SetTimer, MoveMsgBoxTop, Off
+        
+        IfMsgBox Yes
+        {
+            g_References.Delete(name)
+            removedCount++
+        }
+    }
+    
+    if (removedCount > 0) {
+        SavePreferencesToFile()
+        Gui, RemoveRef:Destroy
+        RemoveReferences()  ; Refresh the list
+    }
+}
+
+MoveMsgBoxTop:
+    WinGetPos, guiX, guiY, guiW, guiH, Remove References
+    if WinExist("Confirm Removal") {
+        msgBoxX := guiX + (guiW / 2) - 150
+        msgBoxY := guiY + (guiH / 2) - 50
+        WinMove, Confirm Removal,, msgBoxX, msgBoxY
+        WinSet, AlwaysOnTop, On, Confirm Removal
+        ; Also activate the window to ensure focus
+        WinActivate, Confirm Removal
+    }
+return
+
+OpenReference(ItemName) {
+    if (g_References.HasKey(ItemName)) {
+        thisRef := g_References[ItemName]
+        refType := thisRef["type"]
+        refPath := thisRef["path"]
+        
+        if (refType = "url") {
+            Run, %A_ComSpec% /c start "" "%refPath%"
+            thisRef["uses"] += 1
+            SavePreferencesToFile()
+        } else {  ; file or mapped
+            if (FileExist(refPath)) {
+                Run, %refPath%
+                thisRef["uses"] += 1
+                SavePreferencesToFile()
+            } else {
+                ; MsgBox, File not found: %refPath%
+            }
+        }
+    }
+}
+
+IsValidURL(url) {
+    return RegExMatch(url, "i)^(?:(?:https?|ftp)://)?(?:\w+\.)?\w+\.\w+(?:/|$)")
+}
+
+IsValidFileType(ext) {
+    static validTypes := {pdf: 1, xls: 1, xlsx: 1, doc: 1, docx: 1}
+    StringLower, ext, ext
+    return validTypes.HasKey(ext)
+}
+
+GetUniqueFilePath(dir, fileName) {
+    SplitPath, fileName, , , ext, nameNoExt
+    newPath := dir . "\" . fileName
+    counter := 1
+    
+    while (FileExist(newPath)) {
+        newPath := dir . "\" . nameNoExt . " (" . counter . ")." . ext
+        counter++
+    }
+    
+    return newPath
+}
+
+AddRefGuiClose:
+MapRefGuiClose:
+RemoveRefGuiClose:
+    Gui, Destroy
+return
+
+RefListHandler:
+return
 
 ; ------------------------------------------
 ; End of Script
