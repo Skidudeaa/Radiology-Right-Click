@@ -1,12 +1,14 @@
-# Radiology Right Click v1.08
+# Radiology Right Click v1.10
 
 ## Description
 
-Radiology Right Click v1.08 is a radiologist's quantitative companion, designed to enhance quantitative radiology and streamline workflow. This AutoHotkey script provides a suite of tools accessible via right-click in PowerScribe at the point of dictation, offering quick calculations and reference information for various radiological measurements and assessments. The script is easily modifiable for non-PowerScribe environments. 
+Radiology Right Click is a radiologist's quantitative companion, designed to enhance quantitative radiology and streamline workflow. This AutoHotkey script provides a suite of tools accessible via right-click in PowerScribe at the point of dictation, offering quick calculations and reference information for various radiological measurements and assessments. The script is easily modifiable for non-PowerScribe environments. 
 
 ## UPDATES
 - Removed OCR as it never worked well.
 - Allow user to custom sort the right click context menu. 
+- Better multimonitor behavior
+- Added a references section to save URLs and files - still working on this.
 
 Key features:
 - Works by highlighting text in PowerScribe360 or NotePad (for troubleshooting)
