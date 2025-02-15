@@ -3038,22 +3038,64 @@ CreateReferencesMenu() {
     
     ; Add management options at top
     Menu, ReferencesMenu, Add, Add Reference..., AddReference
-    ; Menu, ReferencesMenu, Add, Map External Reference..., MapReference
     Menu, ReferencesMenu, Add, Remove References..., RemoveReferences
     Menu, ReferencesMenu, Add  ; Separator
     
-    ; Add saved references
-    count := 0
+    ; Create sorted array of references
+    refs := []
     for name, data in g_References {
+        refs.Push({name: name, uses: data.uses})
+    }
+    
+    ; Sort references by usage count (descending)
+    SortReferencesByUse(refs)
+    
+    ; Add sorted references to menu
+    count := 0
+    for _, ref in refs {
         if (count >= g_MaxReferences)
             break
-        Menu, ReferencesMenu, Add, %name%, OpenReference
+        Menu, ReferencesMenu, Add, % ref.name, OpenReference
         count++
     }
 }
 
+; Helper function to sort references by usage count
+SortReferencesByUse(ByRef refs) {
+    ; Create temporary arrays for sorting
+    tempArray := []
+    sortedArray := []
+    
+    ; Copy all items to temp array
+    for index, ref in refs {
+        tempArray.Push(ref)
+    }
+    
+    ; Sort by uses (descending)
+    while (tempArray.Length() > 0) {
+        highestUses := -1
+        highestIndex := 0
+        for index, ref in tempArray {
+            if (ref.uses > highestUses) {
+                highestUses := ref.uses
+                highestIndex := index
+            }
+        }
+        sortedArray.Push(tempArray[highestIndex])
+        tempArray.RemoveAt(highestIndex)
+    }
+    
+    ; Clear and repopulate refs with sorted items
+    refs := []
+    for _, ref in sortedArray {
+        refs.Push(ref)
+    }
+    
+    return refs
+}
+
 AddReference() {
-    global RefType, RefName, RefPath
+    global RefName, RefPath
     
     ; Get current mouse position
     CoordMode, Mouse, Screen
@@ -3078,7 +3120,7 @@ AddReference() {
     
     ; Calculate GUI dimensions and position
     guiWidth := 300
-    guiHeight := 200
+    guiHeight := 150
     xPos := mouseX + 10
     yPos := mouseY + 10
     
@@ -3089,11 +3131,9 @@ AddReference() {
         yPos := workAreaBottom - guiHeight
     
     Gui, AddRef:New, +AlwaysOnTop
-    Gui, AddRef:Add, Text,, Select type:
-    Gui, AddRef:Add, Radio, vRefType Checked, URL
-    Gui, AddRef:Add, Radio,, File
+    Gui, AddRef:Add, Text,, Enter reference details:
     Gui, AddRef:Add, Edit, vRefName w280, Reference Name
-    Gui, AddRef:Add, Edit, vRefPath w280, URL or File Path
+    Gui, AddRef:Add, Edit, vRefPath w280, Location (URL or File Path)
     Gui, AddRef:Add, Button, gBrowseReference w90, Browse...
     Gui, AddRef:Add, Button, gSaveReference w90, Save
     Gui, AddRef:Add, Button, x+10 w90 gAddRefGuiClose, Cancel
@@ -3101,13 +3141,7 @@ AddReference() {
 }
 
 BrowseReference() {
-    global RefType, RefName, RefPath
-    Gui, AddRef:Submit, NoHide
-    if (RefType = 1) {  ; URL
-        return
-    }
-    
-    FileSelectFile, filePath, 3, , Select File, PDF files (*.pdf);;Excel files (*.xls; *.xlsx);;Word files (*.doc; *.docx)
+    FileSelectFile, filePath, 3, , Select File, Documents (*.pdf; *.doc; *.docx; *.xls; *.xlsx)
     if (filePath) {
         GuiControl, AddRef:, RefPath, %filePath%
         SplitPath, filePath, fileName
@@ -3116,7 +3150,7 @@ BrowseReference() {
 }
 
 SaveReference() {
-    global RefType, RefName, RefPath
+    global RefName, RefPath, g_References
     Gui, AddRef:Submit, NoHide
     
     RefName := Trim(RefName)  ; Trim any whitespace
@@ -3127,18 +3161,14 @@ SaveReference() {
         return
     }
     
-    if (RefType = 1) {  ; URL
-        if (!IsValidURL(RefPath)) {
-            MsgBox, Please enter a valid URL.
-            return
-        }
-        g_References[RefName] := {type: "url", path: RefPath, uses: 0}
-    } else {  ; File
-        if (!FileExist(RefPath)) {
-            MsgBox, File does not exist.
-            return
-        }
-        
+    if (RefPath = "") {
+        MsgBox, Please enter a URL or file path.
+        return
+    }
+
+    ; Automatically determine if it's a file or URL
+    if (FileExist(RefPath)) {
+        ; It's a file
         SplitPath, RefPath, fileName, , fileExt
         if !IsValidFileType(fileExt) {
             MsgBox, Invalid file type. Only PDF, XLS, XLSX, DOC, and DOCX files are allowed.
@@ -3162,6 +3192,12 @@ SaveReference() {
         }
         
         g_References[RefName] := {type: "file", path: destPath, uses: 0}
+    } else if (IsValidURL(RefPath)) {
+        ; It's a URL
+        g_References[RefName] := {type: "url", path: RefPath, uses: 0}
+    } else {
+        MsgBox, The location must be either a valid file path or URL.
+        return
     }
     
     SavePreferencesToFile()
@@ -3377,7 +3413,7 @@ OpenReference(ItemName) {
                 thisRef["uses"] += 1
                 SavePreferencesToFile()
             } else {
-                ; MsgBox, File not found: %refPath%
+                MsgBox, File not found: %refPath%
             }
         }
     }
@@ -3407,6 +3443,8 @@ GetUniqueFilePath(dir, fileName) {
 }
 
 AddRefGuiClose:
+    Gui, Destroy
+return
 MapRefGuiClose:
 RemoveRefGuiClose:
     Gui, Destroy
