@@ -1,6 +1,6 @@
 # Radiology Right Click v1.20
 
-A radiologist's quantitative companion designed to enhance workflow through right-click calculations and reference tools. This AutoHotkey script provides quick access to common radiological measurements and assessments directly in PowerScribe or other supported environments.
+A radiologist's quantitative companion designed to enhance workflow through right-click calculations, reference tools and collecting commonly used LLM prompts. This AutoHotkey script provides quick access to common radiological measurements and assessments directly in PowerScribe or other supported environments.
 
 ## What's New in v1.20
 
