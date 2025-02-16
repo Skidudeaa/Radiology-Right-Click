@@ -209,4 +209,4 @@ GNU General Public License v3.0
 
 ## Disclaimer
 
-For educational and research purposes only. Not a substitute for professional medical judgment. Users must verify all calculations. The developers and software are not responsible for clinical decisions or errors.
+For educational and research purposes only. Not a substitute for professional medical judgment. Users must verify all calculations. The developers and software are not responsible for clinical decisions or errors. Do NOT send PHI to third parties.
