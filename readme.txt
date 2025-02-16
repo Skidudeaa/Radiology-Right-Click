@@ -157,22 +157,22 @@ A radiologist's quantitative companion designed to enhance workflow through righ
    - Highlight text (e.g., report section)
    - Right-click → AI Assistant → [Select prompt]
    - Choose to proceed with external AI warning
-   - Text opens in Claude or ChatGPT based on settings
+   - Promot and highlighted text opens in Claude or ChatGPT based on settings
 
 2. **Managing Prompts**
    - Right-click → AI Assistant → Add Prompt
-   - Enter prompt name and template
+   - Enter prompt name and template. The promot name will be shown in the right click menu. The promot template will be appended to AI queries.
    - Use Manage Prompts to edit/remove
    - Default prompts include:
      - Edit Report (grammar, clarity, structure)
-     - Generate Impression (structured format)
+     - Generate Impression 
 
 3. **AI Settings**
    - Right-click → AI Assistant → AI Settings
    - Select preferred AI (Claude/ChatGPT)
-   - Restore default prompts if needed
+   - Restore default prompts if needed (removed any saved or custom prompts).
 
-Note: The AI Assistant requires external access to AI services. Do not send PHI or sensitive information to external AI services.
+Note: The AI Assistant requires external access to AI services. Do not send PHI or sensitive information to external AI services. Attempts are made to sanatize but cannot he confirmed to work in every case. 
 
 ## Troubleshooting
 
