@@ -1,67 +1,47 @@
-# Radiology Right Click v1.10
+# Radiology Right Click v1.20
 
-## Description
+A radiologist's quantitative companion designed to enhance workflow through right-click calculations and reference tools. This AutoHotkey script provides quick access to common radiological measurements and assessments directly in PowerScribe or other supported environments.
 
-Radiology Right Click is a radiologist's quantitative companion, designed to enhance quantitative radiology and streamline workflow. This AutoHotkey script provides a suite of tools accessible via right-click in PowerScribe at the point of dictation, offering quick calculations and reference information for various radiological measurements and assessments. The script is easily modifiable for non-PowerScribe environments. 
+## What's New in v1.20
 
-## UPDATES
-- Removed OCR as it never worked well.
-- Allow user to custom sort the right click context menu. 
-- Better multimonitor behavior
-- Added a references section to save URLs and files - still working on this.
+- Removed OCR dependency for improved reliability
+- Added customizable menu sorting
+- Improved multi-monitor support 
+- New references section for saving URLs and files
+- Added AI integration with Claude/ChatGPT prompt templates
+- Enhanced Fleischner criteria calculations
 
-Key features:
-- Works by highlighting text in PowerScribe360 or NotePad (for troubleshooting)
-- Customizable right-click menu with various useful functions
-- Pause feature to access the default right-click menu
+## Features
+
+- Works by highlighting text in PowerScribe360 or NotePad
+- Customizable right-click menu with various calculations
+- Pause feature to access default right-click menu
 - User-configurable calculator visibility
-- Can sort right click menu
+- Custom menu sorting options
+- References management for quick access to resources
+- AI assistant integration for report analysis
 
-## Author
+## Calculations & Tools
 
-Created by GitHub user Magnetron85, an amateur programming enthusiast with a passion for radiology, in collaboration with Claude, an AI assistant.
-
-Contributions for Fleischner module by Eric Van Bogaert (https://github.com/EricVanBogaert/AutoHotKey-for-Radiology)
-
-## Features and Usage
-
-Below are detailed descriptions of each available function, along with example inputs and notes on edge cases:
-
-1. **Coronary Artery Calcium Score Percentile Calculator (MESA and Hoff methods)**
-   Description: Calculates age and sex-matched coronary artery calcification percentile.
-   Example input:
+1. **Coronary Artery Calcium Score Percentile (MESA/Hoff)**
    ```
    Age: 56
    Sex: Male
    Race: White
    YOUR CORONARY ARTERY CALCIUM SCORE: 56 (Agatston)
    ```
-   Notes: 
-   - Race is optional; if omitted, Hoff method is used.
-   - Supports ages 45-84 for MESA, 30-74 for Hoff. If age < 45, Hoff is used even if race is provided
 
-2. **Ellipsoid Volume Calculator**
-   Description: Calculates volume of an ellipsoid based on three dimensions.
-   Example input:
+2. **Ellipsoid Volume**
    ```
    3.5 x 2.6 x 4.1 cm
    ```
-   Notes:
-   - Accepts measurements in cm or mm.
-   - Assumes cm if decimal points are present, mm otherwise.
 
-3. **Bullet Volume Calculator**
-   Description: Calculates volume using the bullet method.
-   Example input:
+3. **Bullet Volume**
    ```
    3.5 x 2.6 x 4.1 cm
    ```
-   Notes:
-   - Input format same as Ellipsoid Volume Calculator.
 
-4. **PSA Density Calculator**
-   Description: Calculates PSA density given PSA level and prostate volume or dimensions.
-   Example inputs:
+4. **PSA Density**
    ```
    PSA level: 4.5 ng/mL, Prostate volume: 30 cc
    ```
@@ -69,13 +49,8 @@ Below are detailed descriptions of each available function, along with example i
    ```
    PSA level: 4.5 ng/ml, Prostate Size: 4.5 x 4.2 x 4.1 cm
    ```
-   Notes:
-   - Can calculate volume if dimensions are provided.
-   - Switches to Ellipsoid volume if calculated Bullet volume > 55 cc.
 
-5. **Pregnancy Date Calculator**
-   Description: Calculates LMP, current gestational age, and expected delivery date.
-   Example inputs:
+5. **Pregnancy Dates**
    ```
    LMP: 01/15/2023
    ```
@@ -83,219 +58,155 @@ Below are detailed descriptions of each available function, along with example i
    ```
    GA: 12 weeks and 3 days as of today
    ```
-   or
-   ```
-   GA: 12 weeks and 3 days as of 01/01/2021
-   ```
-   Notes:
-   - Accepts various date formats and gestational age inputs.
 
-6. **Menstrual Phase Estimator**
-   Description: Calculates the current date of menstrual cycle based on a 28-day cycle.
-   Example input:
+6. **Menstrual Phase**
    ```
    LMP: 05/01/2023
    ```
 
-7. **Adrenal Washout Calculator**
-   Description: Calculates absolute and relative washout for adrenal lesions.
-   Example input:
+7. **Adrenal Washout**
    ```
    Unenhanced: 10 HU, Enhanced: 80 HU, Delayed: 40 HU
    ```
-   Notes:
-   - Can calculate relative washout if only enhanced and delayed values are provided.
 
-8. **Thymus Chemical Shift Calculator**
-   Description: Calculates thymic chemical shift ratio and/or signal intensity index.
-   Example input:
+8. **Thymus Chemical Shift**
    ```
    Thymus IP: 100, OP: 80, Paraspinous IP: 90, OP: 85
    ```
-   Notes:
-   - Can calculate signal intensity index if only thymus values are provided.
 
-9. **Hepatic Steatosis Estimator**
-   Description: Estimates liver fat fraction based on in-phase and out-of-phase MRI.
-   Example input:
+9. **Hepatic Steatosis**
    ```
    Liver IP: 100, OP: 80, Spleen IP: 90, OP: 88
    ```
-   Notes:
-   - Can calculate fat fraction without spleen values, but less accurate.
 
-10. **MRI Liver Iron Content Estimator**
-    Description: Estimates liver iron content based on R2* values.
-    Example input:
+10. **MRI Liver Iron Content**
     ```
     1.5T, R2*: 50 Hz
     ```
-    Notes:
-    - Supports 1.5T and 3.0T field strengths.
 
-11. **Nodule Size Comparison and Sorting**
-    Description: Compares nodule sizes over time and sorts measurements.
-    Example inputs:
+11. **Nodule Comparison & Sorting**
     ```
     4.1 x 2.9 x 3.3 cm (previously 3.9 x 2.8 x 3.0 cm)
     ```
-    or
-    ```
-    4.1 cm, previously 3.9 cm on 01/01/2000
-    ```
-    Notes:
-    - Accepts various input formats, including dates if provided.
-    - Calculates volume change, doubling time, and growth rate when possible.
 
 12. **Number Statistics**
-    Description: Calculates various statistics for a set of numbers.
-    Example input:
     ```
     3, 12, 5, 8, 15, 7
     ```
-    Notes:
-    - Provides more detailed statistics for larger datasets (9+ numbers).
 
-13. **Measurement Formatting Correction**
-    Description: Corrects and standardizes measurement formatting.
-    Example input:
+13. **Measurement Formatting**
     ```
     3.5 x 2.6 x 4.2 cm
     ```
-    Notes:
-    - Sorts measurements in descending order.
-    - Handles multiple sets of measurements in a single input.
-
 
 14. **Fleischner 2017 Recommendations**
-    Description: Provides Fleischner Society 2017 recommendations for pulmonary nodules.
-    Example input:
     ```
-    Incidental right upper lobe solid noncalcified pulmonary nodule measuring 7 x 8 mm (series 1, image 30).
+    Incidental right upper lobe solid noncalcified pulmonary nodule measuring 7 x 8 mm
     ```
-    Notes:
-    - Handles multiple nodules and various descriptors (solid, ground-glass, part-solid).
-    - Accounts for patient risk factors.
-    - Provides follow-up dates based on current date.
 
-15. **Contrast Premedication Calculator**
-    Description: Calculates contrast premedication schedule based on scan time.
-    Notes:
-    - Provides options for prednisone and methylprednisolone protocols.
-    - Includes optional diphenhydramine dosing.
+15. **Contrast Premedication**
+    - Interactive calculator for premedication timing
 
 16. **NASCET Calculator**
-    Description: Calculates the North American Symptomatic Carotid Endarterectomy Trial (NASCET) value for carotid artery stenosis.
-    Example inputs:
     ```
     Distal ICA: 5mm, stenosis: 2mm
-    5 mm, 0.2 cm
-    The narrowest lumen measures 2 mm. The distal lumen measures 5 mm.
-    The tightest lumen measures 0.3 cm. The patent lumen measures 9 mm.
     ```
-    Notes: 
-    - Accepts measurements in mm or cm.
-    - Can handle various descriptive terms for stenosis (e.g., "narrowest", "tightest") and normal lumen (e.g., "distal", "patent").
-    - Intelligently infers which measurement is the stenosis (smaller) and which is the distal ICA (larger) when labels are unclear.
-    - Provides NASCET percentage and interpretation (mild, moderate, or severe stenosis).
-    - Includes citation for the NASCET study when citations are enabled.
 
-## Installation and Usage
+## Installation
 
-The script does not require installation on a hospital-owned workstation. However, you may or may not have permission to download .exe files.
+### Method 1: Pre-compiled Executable
+1. Download the .exe from GitHub
+2. Run directly or transfer via USB if download restrictions exist
+3. Double-click to start
 
-### Pathway #1: Using the pre-compiled executable
+### Method 2: Compile from Source
+1. Install AutoHotKey v1.1
+2. Download source code
+3. Compile using AHK Compiler
+4. Transfer and run the generated .exe
 
-1. Download the .exe file from GitHub.
-2. Double-click the .exe file to run.
-3. Highlight text in Powerscribe, right click, select function and see result.
+## Usage
 
-If you do not have permission to download .exe files:
-1. Download on a personal computer and place on a USB stick.
-2. Plug the USB stick into your work computer, then double-click and run.
+### Basic Usage
+1. Highlight text in PowerScribe360 or NotePad
+2. Right-click
+3. Select calculation from menu
+4. Review results in popup (automatically copied to clipboard)
+5. To exit: Find green H icon in system tray → right-click → Exit
 
-### Pathway #2: Compiling from source
+### References Management
+1. **Adding References**
+   - Right-click → References → Add Reference
+   - Enter reference name and URL/file path
+   - For files: Browse to select, file will be copied to References folder
+   - For URLs: Enter complete web address
 
-1. Download AutoHotKey v1.1 on a PC where you have permission to install software (often a personal PC).
-2. Download the script from GitHub on the same PC where you installed AutoHotKey v1.1.
-3. Compile the script using the AutoHotKey v1.1 Compiler.
-4. (Optional) Place the generated .exe file on a USB stick to transfer to your PACS workstation.
-5. Plug the USB stick into your PACS workstation (if using this method).
-6. Start the script by double-clicking the .exe file generated by the AutoHotKey v1.1 Compiler.
+2. **Using References**
+   - Right-click → References → [Select saved reference]
+   - Files will open in default application
+   - URLs will open in default browser
+   - Most used references appear at top of menu
 
-### Usage
+3. **Managing References**
+   - Right-click → References → Remove References
+   - Select references to remove
+   - Confirm deletion
 
-1. Highlight text to process in PowerScribe360 (or NotePad in test environment).
-2. Right-click with the mouse.
-3. Select a menu choice from the new right-click menu that appears.
-4. Functions return results in message boxes with output also pasted to your clipboard. Input format is (usually) preserved on the clipboard to allow you to directly paste into reports with minimal editing.
-5. To turn off the script, click "Show Hidden Icons" on the Windows taskbar (^ carrot), find the Green letter H indicating an AutoHotKey script is running, right-click on the script and select "exit".
+### AI Assistant Integration
+1. **Using Built-in Prompts**
+   - Highlight text (e.g., report section)
+   - Right-click → AI Assistant → [Select prompt]
+   - Choose to proceed with external AI warning
+   - Text opens in Claude or ChatGPT based on settings
+
+2. **Managing Prompts**
+   - Right-click → AI Assistant → Add Prompt
+   - Enter prompt name and template
+   - Use Manage Prompts to edit/remove
+   - Default prompts include:
+     - Edit Report (grammar, clarity, structure)
+     - Generate Impression (structured format)
+
+3. **AI Settings**
+   - Right-click → AI Assistant → AI Settings
+   - Select preferred AI (Claude/ChatGPT)
+   - Restore default prompts if needed
+
+Note: The AI Assistant requires external access to AI services. Do not send PHI or sensitive information to external AI services.
 
 ## Troubleshooting
 
-1. Ensure you are only running one instance of the script if there is unexpected behavior:
-   - Go to the "Show Hidden Icons" in the Windows Task Bar.
-   - Make sure only 1 green letter H is present.
-   - Exit duplicate instances as needed.
+- Check for duplicate instances (green H in system tray)
+- Verify supported application (PowerScribe360/Notepad)
+- Use pause feature if conflicting with other software
+- Review input format against examples
+- For Fleischner recommendations, ensure complete nodule description
 
-2. If the script is not responding to right-clicks:
-   - Check if the script is running (look for the green H icon in the system tray).
-   - Ensure you're using it in a supported application (PowerScribe360 or Notepad).
-   - Try restarting the script.
-   
-3. If calculations seem incorrect:
-   - Double-check your input format against the examples provided in the README.
-   - Remember that some functions make assumptions (e.g., cm vs mm) based on the presence of decimal points.
+## Contributing
 
-4. If the script is conflicting with other software:
-   - Use the pause feature to temporarily disable the script.
-   - Consider adjusting the script's target applications in the code.
+We welcome contributions in:
 
-5. If you're getting unexpected results from the Fleischner recommendations:
-   - Ensure your input includes all relevant information (size, composition, patient risk factors).
-   - Check that the nodule description is clear and follows the expected format.
-
-## Contributions
-
-We welcome contributions, suggestions, and bug reports. Here are some specific areas where we're looking for help:
-
-1. **New Calculation Packages**: Develop new modules for various radiology subspecialties, including nuclear medicine.
-
-2. **Advanced Text Processing**: Implement innovative solutions for text processing within hospital security constraints. This could include:
-   - Spelling and grammar checking
-   - Dictation error detection
-   - Medical abbreviation expansion
-
-3. **RADS Modules**: Develop decision support algorithms for various RADS (Reporting and Data Systems) used in radiology.
-
-4. **Language Support**: Help with translations and localization to make the tool accessible to non-English speaking radiologists.
-
-5. **Integration**: Contribute expertise in PACS integration and EHR systems to improve the tool's interoperability.
-
-6. **Automated Data Capture**: Implement systems for automated measurement capture from PACS or reports.
-
-7. **Natural Language Processing**: Develop more advanced NLP capabilities for parsing radiology reports and extracting relevant information.
-
-8. **User Interface Improvements**: Enhance the tool's UI for better user experience, potentially moving beyond AutoHotkey's limitations.
-
-9. **Documentation**: Improve and expand the documentation, including creating user guides and API documentation for developers.
-
-10. **Testing and Quality Assurance**: Help develop a comprehensive testing suite to ensure the tool's accuracy and reliability.
+- New calculation modules
+- Text processing improvements
+- RADS system implementations
+- Language support
+- PACS/EHR integration
+- Automated data capture
+- NLP capabilities
+- UI enhancements
+- Documentation
+- Testing
 
 To contribute:
+1. Fork repository
+2. Create feature branch
+3. Commit changes
+4. Submit pull request
 
-1. Fork the repository on GitHub.
-2. Create a new branch for your feature or bug fix.
-3. Commit your changes with clear, descriptive commit messages.
-4. Push your branch and submit a pull request with a clear description of your changes.
-
-Please ensure your code adheres to the existing style for consistency. For major changes, please open an issue first to discuss what you would like to change.
-
-We also appreciate bug reports and feature requests. Please use the GitHub issue tracker for these.
 ## License
 
-Radiology Right Click v1.04 is licensed under the GNU General Public License v3.0. See the LICENSE file for full details.
+GNU General Public License v3.0
 
 ## Disclaimer
 
-This software is provided for educational and research purposes only. It should not be used as a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other qualified health provider with any questions you may have regarding a medical condition. Users should exercise caution and verify all calculations for patient safety. The developers and software are not responsible for clinical decisions or errors resulting from the use of this tool.
+For educational and research purposes only. Not a substitute for professional medical judgment. Users must verify all calculations. The developers and software are not responsible for clinical decisions or errors.
