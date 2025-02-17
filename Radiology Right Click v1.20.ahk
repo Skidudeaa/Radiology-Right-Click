@@ -3781,9 +3781,6 @@ ExecuteAIPrompt(ItemName) {
     if (!g_AIPrompts.HasKey(ItemName))
         return
     
-    MsgBox, 4, Warning, IMPORTANT: Do not send protected health information (PHI) to external AI services. Continue?
-    IfMsgBox No
-        return
     
     selectedText := g_SelectedText
     if (!selectedText) {
@@ -3796,7 +3793,12 @@ ExecuteAIPrompt(ItemName) {
 	
 	; First update the clipboard with the new content
     Clipboard := promptText . "`n`n" . SanitizePHI(selectedText)
+	; ShowResult(promptText . "`n`n" . SanitizePHI(selectedText)) ; debug
     ClipWait, 2  ; Wait for the clipboard to be ready
+
+	MsgBox, 4, Warning, IMPORTANT: Do not send protected health information (PHI) to external AI services. Continue?
+    IfMsgBox No
+        return
     
     if (g_PreferredAI = "claude") {
         Run, https://claude.ai
@@ -3881,24 +3883,19 @@ SaveEditedPrompt() {
 }
 
 SanitizePHI(text) {
-    ; 1. Names (enhanced patterns)
-    ; Names with labels
-    text := RegExReplace(text, "(?:Name|Patient):\s*[A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z\-']+", "Name: [NAME]")
-    text := RegExReplace(text, "i)(?:mr\.?|dr\.?|mrs\.?|ms\.?|miss|rev\.?|hon\.?|prof\.?)\s+[a-z\-']+(?:\s+[a-z\-']+)?", "[NAME]")
-    
-    ; Standalone names (common patterns at start of lines or after line breaks)
-    text := RegExReplace(text, "m)^[A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z\-']+$", "[NAME]")  ; Full names at start of line
-    text := RegExReplace(text, "m)^[A-Z][a-z]+,\s+[A-Z][a-z\-']+$", "[NAME]")  ; Names with comma
-    text := RegExReplace(text, "(?:^|\n|\r)[A-Z][a-z]{1,20}\s+[A-Z][a-z\-']{1,20}(?=\r|\n|$)", "[NAME]")  ; Names between line breaks
-    
-    ; Asian name patterns (shorter names, different patterns)
-    text := RegExReplace(text, "(?:^|\n|\r)[A-Z][a-z]{0,1}\s+[A-Z][a-z]{1,10}(?=\r|\n|$)", "[NAME]")  ; Short names like "Xu Tang"
-    
-    ; Names in header position (before common report headers)
-    text := RegExReplace(text, "m)^[A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z\-']+(?=\R+(?:MRI|CT|CLINICAL|TECHNIQUE|FINDINGS|IMPRESSION))", "[NAME]")
-    
-    ; Relative names (with relationship labels)
-    text := RegExReplace(text, "(?:Father|Mother|Brother|Sister|Son|Daughter|Wife|Husband|Spouse)'s? (?:name|history):\s*[A-Z][a-z]+\s+[A-Z][a-z\-']+", "[RELATIVE]")
+    ; 1. Names with labels 
+	text := RegExReplace(text, "i)(?:name|patient):\s*[a-zA-Z][a-z]+(?:\s+[a-zA-Z]\.?)?\s+[a-zA-Z][a-z\-']+\b", "Name: [NAME]")
+	text := RegExReplace(text, "i)(?<![\w'])\b(?:mr|dr|mrs|ms|miss|rev|hon|prof)(?:\.|\b)\s+[a-zA-Z][a-z\-']+(?:\s+[a-zA-Z][a-z\-']+)?\b", "[NAME]")
+
+	; 2. Standalone names at start of lines/sections
+	text := RegExReplace(text, "mi)^(?!(?:MRN|ACC|INDICATIONS|TECHNIQUE|COMPARISON|FINDINGS|IMPRESSION|HISTORY|EXAM|CLINICAL)\b)[a-zA-Z][a-z]+(?:\s+[a-zA-Z]\.?)?\s+[a-zA-Z][a-z]+(?:\s*$|\R)", "[NAME]")
+	text := RegExReplace(text, "mi)^(?!(?:MRN|ACC|CT|MRI)\b)[a-zA-Z][a-z]+,\s+[a-zA-Z][a-z]+(?:\s*$|\R)", "[NAME]")
+
+	; 3. Names before medical report headers
+	text := RegExReplace(text, "mi)^(?!(?:MRN|ACC|CT|MRI)\b)[a-zA-Z][a-z]+(?:\s+[a-zA-Z]\.?)?\s+[a-zA-Z][a-z\-']+(?=\R+(?:MRI|CT|CLINICAL|TECHNIQUE|FINDINGS|IMPRESSION|HISTORY|EXAM)\b)", "[NAME]")
+
+	; 4. Relative names
+	text := RegExReplace(text, "i)(?:Father|Mother|Brother|Sister|Son|Daughter|Wife|Husband|Spouse)'s?\s+(?:name|history):\s*[a-zA-Z][a-z]+\s+[a-zA-Z][a-z\-']+\b", "[RELATIVE]")
     
     ; 2. Geographic Subdivisions
     text := RegExReplace(text, "\b(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b(?=\s+\d{5})", "[STATE]")  ; State abbreviations
@@ -3908,9 +3905,9 @@ SanitizePHI(text) {
     text := RegExReplace(text, "\b(?:North|South|East|West|N|S|E|W)\s+[A-Z][a-z\.]+(?: Street| St| Avenue| Ave| Road| Rd)\b", "[ADDRESS]")  ; Directional streets
 
     ; 3. Dates
-    text := RegExReplace(text, "(?<!\d\s)(?:\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{4}[-/]\d{1,2}[-/]\d{1,2})", "[DATE]")  ; All date formats
-    text := RegExReplace(text, "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}", "[DATE]")  ; Written dates
-    text := RegExReplace(text, "i)DOB:?\s*.*?(?=\s|$)", "DOB: [DOB]")  ; Date of birth variations
+    ; text := RegExReplace(text, "(?<!\d\s)(?:\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{4}[-/]\d{1,2}[-/]\d{1,2})", "[DATE]")  ; All date formats
+    ; text := RegExReplace(text, "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}", "[DATE]")  ; Written dates
+    ; text := RegExReplace(text, "i)DOB:?\s*.*?(?=\s|$)", "DOB: [DOB]")  ; Date of birth variations
     
     ; 4. Telephone Numbers
     text := RegExReplace(text, "(?:Tel|Telephone|Phone|Mobile|Cell|Home|Work|Fax)(?:\s*#|\s*:|\s+)\s*(?:\+\d{1,2}\s*)?(?:\(?\d{3}\)?[-\.\s]?)?\d{3}[-\.\s]?\d{4}", "[PHONE]")  ; Phone numbers with labels
@@ -3918,7 +3915,7 @@ SanitizePHI(text) {
     text := RegExReplace(text, "Extension\s*:?\s*\d+", "[EXT]")  ; Extensions
     
     ; 5. Fax Numbers
-    text := RegExReplace(text, "(?:Fax|Facsimile)(?:\s*#|\s*:|\s+)\s*(?:\+\d{1,2}\s*)?(?:\(?\d{3}\)?[-\.\s]?)?\d{3}[-\.\s]?\d{4}", "[FAX]")  ; Fax numbers
+    ; text := RegExReplace(text, "(?:Fax|Facsimile)(?:\s*#|\s*:|\s+)\s*(?:\+\d{1,2}\s*)?(?:\(?\d{3}\)?[-\.\s]?)?\d{3}[-\.\s]?\d{4}", "[FAX]")  ; Fax numbers
     
     ; 6. Email Addresses
     text := RegExReplace(text, "\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", "[EMAIL]")  ; Email addresses
@@ -3937,7 +3934,7 @@ SanitizePHI(text) {
     text := RegExReplace(text, "i)Insurance:?\s*[A-Za-z0-9\-\._/\\]+", "[INSURANCE]")  ; Additional insurance pattern
     
     ; 10. Account Numbers
-    text := RegExReplace(text, "i)(?:Account|Acct|Study|Order|Exam|Reference|Visit|Encounter)(?:\s*#|\s*:|\s*ID:?|\s+)\s*[A-Za-z0-9\-\._/\\]+", "[ACCOUNT]")  ; Account numbers
+    text := RegExReplace(text, "i)(?:Account|Acct|Order|Reference|Visit|Encounter)(?:\s*#|\s*:|\s*ID:?|\s+)\s*[A-Za-z0-9\-\._/\\]+", "[ACCOUNT]")  ; Account numbers
     text := RegExReplace(text, "i)(?:Account|Acct):?\s*[A-Za-z0-9\-\._/\\]+", "[ACCOUNT]")  ; Additional account pattern
     
     ; 11. Certificate/License Numbers
@@ -3945,26 +3942,27 @@ SanitizePHI(text) {
     text := RegExReplace(text, "i)(?:License|Cert):?\s*[A-Za-z0-9\-\._/\\]+", "[LICENSE]")  ; Additional license pattern
     
     ; 12. Vehicle Identifiers
-    text := RegExReplace(text, "i)\b[A-Za-z0-9]{17}\b", "[VIN]")  ; VINs (includes letters)
-    text := RegExReplace(text, "i)(?:Vehicle|Car|Auto|License|Tag|Plate)(?:\s*#|\s*:|\s*ID:?|\s+)\s*[A-Za-z0-9\-\._/\\]+", "[VEHICLE]")  ; Vehicle identifiers
-    text := RegExReplace(text, "i)(?:VIN|Vehicle):?\s*[A-Za-z0-9\-\._/\\]+", "[VEHICLE]")  ; Additional vehicle pattern
+    ; text := RegExReplace(text, "i)\b[A-Za-z0-9]{17}\b", "[VIN]")  ; VINs (includes letters)
+    ; text := RegExReplace(text, "i)(?:Vehicle|Car|Auto|License|Tag)(?:\s*#|\s*:|\s*ID:?|\s+)\s*[A-Za-z0-9\-\._/\\]+", "[VEHICLE]")  ; Removed "Plate" from this group
+	; text := RegExReplace(text, "i)(?:Plate\s*#|Plate\s*:|Plate\s*ID:?|\bPlate\s+)[A-Za-z0-9\-\._/\\]+", "[VEHICLE]")  ; Separate pattern for "Plate" with identifiers
+    ; text := RegExReplace(text, "i)(?:VIN|Vehicle):?\s*[A-Za-z0-9\-\._/\\]+", "[VEHICLE]")  ; Additional vehicle pattern
     
     ; 13. Device Identifiers
     text := RegExReplace(text, "i)(?:Device|Serial|Model|Equipment|Unit|Product)(?:\s*#|\s*:|\s*ID:?|\s+)\s*[A-Za-z0-9\-\._/\\]+", "[DEVICE]")  ; Device IDs
     text := RegExReplace(text, "i)(?:Serial|Model):?\s*[A-Za-z0-9\-\._/\\]+", "[DEVICE]")  ; Additional device pattern
     
     ; 14. Web URLs
-    text := RegExReplace(text, "https?://[^\s<>""]+", "[URL]")  ; URLs
+    ; text := RegExReplace(text, "https?://[^\s<>""]+", "[URL]")  ; URLs
     
     ; 15. IP Addresses
     text := RegExReplace(text, "\b(?:\d{1,3}\.){3}\d{1,3}\b", "[IP]")  ; IPv4 addresses
     text := RegExReplace(text, "\b(?:[A-F0-9]{1,4}:){7}[A-F0-9]{1,4}\b", "[IP]")  ; IPv6 addresses
     
     ; 16. Biometric Identifiers
-    text := RegExReplace(text, "(?:Fingerprint|Retinal|Iris|Face|Voice)(?:\s*Scan|\s*Image|\s*Print|\s*ID)(?:\s*#|\s*:|\s+)\s*[A-Z0-9\-]+", "[BIOMETRIC]")  ; Biometric data
+    ; text := RegExReplace(text, "(?:Fingerprint|Retinal|Iris|Face|Voice)(?:\s*Scan|\s*Image|\s*Print|\s*ID)(?:\s*#|\s*:|\s+)\s*[A-Z0-9\-]+", "[BIOMETRIC]")  ; Biometric data
     
     ; 17. Photographic Images
-    text := RegExReplace(text, "(?:Photo|Image|Picture|Portrait)(?:\s*#|\s*:|\s+)\s*[A-Z0-9\-]+", "[PHOTO]")  ; Photo references
+    ; text := RegExReplace(text, "(?:Photo|Image|Picture|Portrait)(?:\s*#|\s*:|\s+)\s*[A-Z0-9\-]+", "[PHOTO]")  ; Photo references
     
     ; 18. Any other unique identifying number, characteristic, or code
     text := RegExReplace(text, "\b\d{6,}\b(?!\s*(?:mm|cm|tesla))", "[ID]")  ; Long number sequences (avoiding measurements)
