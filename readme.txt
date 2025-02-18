@@ -19,7 +19,7 @@ A radiologist's quantitative companion designed to enhance workflow through righ
 - User-configurable calculator visibility
 - Custom menu sorting options
 - References management for quick access to resources
-- AI assistant integration for report analysis
+- AI assistant integration for report analysis, proof of concept, Not to be used clinically due to privacy.
 
 ## Calculations & Tools
 
