@@ -7,7 +7,7 @@ A radiologist's quantitative companion designed to enhance workflow through righ
 - Added customizable menu sorting
 - Improved multi-monitor support 
 - New references section for saving URLs and files
-- Added a spell check that looks up works with google 
+- Added a spell check that looks up highlighted words with google 
 - Added experimental AI integration with Claude/ChatGPT prompt templates 
 - v1.22 local does not include external web calls (No MESA website lookup, no AI option, no google spell check)
 
