@@ -1,15 +1,16 @@
-# Radiology Right Click v1.20
+# Radiology Right Click v1.22 and v1.22 local
 
 A radiologist's quantitative companion designed to enhance workflow through right-click calculations, reference tools and collecting commonly used LLM prompts. This AutoHotkey script provides quick access to common radiological measurements and assessments directly in PowerScribe or other supported environments.
 
-## What's New in v1.20
+## What's New in v1.22
 
-- Removed OCR dependency for improved reliability
 - Added customizable menu sorting
 - Improved multi-monitor support 
 - New references section for saving URLs and files
-- Added AI integration with Claude/ChatGPT prompt templates
-- Enhanced Fleischner criteria calculations
+- Added a spell check that looks up works with google 
+- Added experimental AI integration with Claude/ChatGPT prompt templates 
+- v1.22 local does not include external web calls (No MESA website lookup, no AI option, no google spell check)
+
 
 ## Features
 
@@ -23,7 +24,7 @@ A radiologist's quantitative companion designed to enhance workflow through righ
 
 ## Calculations & Tools
 
-1. **Coronary Artery Calcium Score Percentile (MESA/Hoff)**
+1. **Coronary Artery Calcium Score Percentile (MESA/Hoff in v1.22 and Hoff in v1.22-local)**
    ```
    Age: 56
    Sex: Male
