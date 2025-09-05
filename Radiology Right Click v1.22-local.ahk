@@ -1617,12 +1617,7 @@ EstimateIronContent(input) {
 	    ironContent := 0
 	}
 
-    result := input . "`nEstimated Iron Content: " . Round(ironContent, 2) . " mg Fe/g dry liver`n"
-	
-    if (DisplayAllValues) {
-        result .= "`nMagnetic Field Strength: " . fieldStrength1 . "T`n"
-        result .= "R2* Value: " . R2StarValue . " Hz`n"
-    }
+    result := input . "`nEstimated Iron Content: " . Round(ironContent, 1) . " mg Fe/g dry liver`n"
 	
 	if (ShowCitations=1){
 		result .= "`nGuglielmo FF, Barr RG, Yokoo T, Ferraioli G, Lee JT, Dillman JR, Horowitz JM, Jhaveri KS, Miller FH, Modi RY, Mojtahed A, Ohliger MA, Pirasteh A, Reeder SB, Shanbhogue K, Silva AC, Smith EN, Surabhi VR, Taouli B, Welle CL, Yeh BM, Venkatesh SK. Liver Fibrosis, Fat, and Iron Evaluation with MRI and Fibrosis and Fat Evaluation with US: A Practical Guide for Radiologists. Radiographics. 2023 Jun;43(6):e220181. doi: 10.1148/rg.220181. PMID: 37227944.`n"
@@ -3311,4 +3306,5 @@ return
 ; End of Script
 ; ------------------------------------------
 ExitApp
+
 
