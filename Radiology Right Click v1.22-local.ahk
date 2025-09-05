@@ -1593,9 +1593,9 @@ InterpretHepaticSteatosis(hepaticFatFraction) {
 EstimateIronContent(input) {
 	global ShowCitations
 
-    RegExMatch(input, "i)(?:\b|^)(1[.,]5|3[.,]0|1\.5|3\.0)(?:\s*-?\s*)?T(?:esla)?", fieldStrength)
+    RegExMatch(input, "i)(?:\b|^)(1[.,]5|3[.,]0|1\.5|3\.0|2\.89)(?:\s*-?\s*)?T(?:esla)?", fieldStrength)
     if (!fieldStrength1) {
-        return "Error: Magnetic field strength (1.5T or 3.0T) not found in the input."
+        return "Error: Magnetic field strength (1.5T, 2.89T or 3.0T) not found in the input."
     }
     fieldStrength1 := StrReplace(fieldStrength1, ",", ".")
 
@@ -1608,12 +1608,16 @@ EstimateIronContent(input) {
     R2StarValue += 0
 
     if (fieldStrength1 == "1.5") {
-		ironContent := -0.04 + 2.62 * 10 ** -2 * R2StarValue
-    } else {
-        ironContent := 1.41 * 10 ** -2 * R2StarValue
-    }
+		ironContent :=  0.02603 * R2StarValue - 0.16
+    } else if (fieldStrength1 == "2.89") {
+	    ironContent := 0.01400 * R2StarValue - 0.03
+	} else if (fieldStrength1 == "3.0") {
+        ironContent := 0.01349 * R2StarValue - 0.03
+    } else { 
+	    ironContent := 0
+	}
 
-    result := input . " (" . Round(ironContent, 2) . " mg Fe/g dry liver)"
+    result := input . "`nEstimated Iron Content: " . Round(ironContent, 2) . " mg Fe/g dry liver`n"
 	
     if (DisplayAllValues) {
         result .= "`nMagnetic Field Strength: " . fieldStrength1 . "T`n"
@@ -1621,7 +1625,7 @@ EstimateIronContent(input) {
     }
 	
 	if (ShowCitations=1){
-		result .= "`nHernando D, Cook RJ, Qazi N, Longhurst CA, Diamond CA, Reeder SB. Complex confounder-corrected R2* mapping for liver iron quantification with MRI. Eur Radiol. 2021 Jan;31(1):264-275. doi: 10.1007/s00330-020-07123-x. Epub 2020 Aug 12. PMID: 32785766; PMCID: PMC7755713.`n"
+		result .= "`nGuglielmo FF, Barr RG, Yokoo T, Ferraioli G, Lee JT, Dillman JR, Horowitz JM, Jhaveri KS, Miller FH, Modi RY, Mojtahed A, Ohliger MA, Pirasteh A, Reeder SB, Shanbhogue K, Silva AC, Smith EN, Surabhi VR, Taouli B, Welle CL, Yeh BM, Venkatesh SK. Liver Fibrosis, Fat, and Iron Evaluation with MRI and Fibrosis and Fat Evaluation with US: A Practical Guide for Radiologists. Radiographics. 2023 Jun;43(6):e220181. doi: 10.1148/rg.220181. PMID: 37227944.`n"
 	}
     return result
 }
@@ -3307,3 +3311,4 @@ return
 ; End of Script
 ; ------------------------------------------
 ExitApp
+
