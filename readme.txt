@@ -115,12 +115,7 @@ A radiologist's quantitative companion designed to enhance workflow through righ
 
 ## Installation
 
-### Method 1: Pre-compiled Executable
-1. Download the .exe from GitHub
-2. Run directly or transfer via USB if download restrictions exist
-3. Double-click to start
-
-### Method 2: Compile from Source
+### Compile from Source
 1. Install AutoHotKey v1.1
 2. Download source code
 3. Compile using AHK Compiler
