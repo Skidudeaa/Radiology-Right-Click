@@ -19,6 +19,14 @@ global IncludeDatamining := true
 global ShowCitations := true
 
 ; -----------------------------------------
+; Global Hotkey: Ctrl+Shift+H - Sectra History Copy
+; (Can be mapped to Contour ShuttlePRO button)
+; -----------------------------------------
+^+h::
+    CopySectraHistory()
+return
+
+; -----------------------------------------
 ; Shift+Right-Click Menu Handler
 ; -----------------------------------------
 +RButton::
@@ -53,11 +61,14 @@ global ShowCitations := true
 
     Menu, RadAssistMenu, Add, Ellipsoid Volume, MenuEllipsoidVolume
     Menu, RadAssistMenu, Add, Adrenal Washout, MenuAdrenalWashout
-    Menu, RadAssistMenu, Add, NASCET Stenosis, MenuNASCET
+    Menu, RadAssistMenu, Add
+    Menu, RadAssistMenu, Add, NASCET (Carotid), MenuNASCET
+    Menu, RadAssistMenu, Add, Vessel Stenosis (General), MenuStenosis
     Menu, RadAssistMenu, Add, RV/LV Ratio, MenuRVLV
+    Menu, RadAssistMenu, Add
     Menu, RadAssistMenu, Add, Fleischner 2017, MenuFleischner
     Menu, RadAssistMenu, Add
-    Menu, RadAssistMenu, Add, Copy Sectra History, MenuSectraHistory
+    Menu, RadAssistMenu, Add, Copy Sectra History (Ctrl+Shift+H), MenuSectraHistory
     Menu, RadAssistMenu, Add
     Menu, RadAssistMenu, Add, Settings, MenuSettings
 
@@ -85,6 +96,10 @@ MenuNASCET:
         }
     }
     ShowNASCETGui()
+return
+
+MenuStenosis:
+    ShowStenosisGui()
 return
 
 MenuRVLV:
@@ -115,17 +130,17 @@ ShowEllipsoidVolumeGui() {
 
     Gui, EllipsoidGui:New, +AlwaysOnTop
     Gui, EllipsoidGui:Add, Text, x10 y10 w280, Ellipsoid Volume Calculator
-    Gui, EllipsoidGui:Add, Text, x10 y35, Dimension 1:
-    Gui, EllipsoidGui:Add, Edit, x100 y32 w60 vEllipDim1
-    Gui, EllipsoidGui:Add, Text, x10 y60, Dimension 2:
-    Gui, EllipsoidGui:Add, Edit, x100 y57 w60 vEllipDim2
-    Gui, EllipsoidGui:Add, Text, x10 y85, Dimension 3:
-    Gui, EllipsoidGui:Add, Edit, x100 y82 w60 vEllipDim3
-    Gui, EllipsoidGui:Add, Text, x10 y115, Units:
-    Gui, EllipsoidGui:Add, DropDownList, x100 y112 w60 vEllipUnits Choose1, mm|cm
-    Gui, EllipsoidGui:Add, Button, x10 y145 w80 gCalcEllipsoid, Calculate
-    Gui, EllipsoidGui:Add, Button, x100 y145 w80 gEllipsoidGuiClose, Cancel
-    Gui, EllipsoidGui:Show, x%xPos% y%yPos% w200 h180, Ellipsoid Volume
+    Gui, EllipsoidGui:Add, Text, x10 y35, AP (L):
+    Gui, EllipsoidGui:Add, Edit, x80 y32 w50 vEllipDim1
+    Gui, EllipsoidGui:Add, Text, x135 y35, x   T (W):
+    Gui, EllipsoidGui:Add, Edit, x185 y32 w50 vEllipDim2
+    Gui, EllipsoidGui:Add, Text, x10 y60, CC (H):
+    Gui, EllipsoidGui:Add, Edit, x80 y57 w50 vEllipDim3
+    Gui, EllipsoidGui:Add, Text, x135 y60, Units:
+    Gui, EllipsoidGui:Add, DropDownList, x185 y57 w50 vEllipUnits Choose1, mm|cm
+    Gui, EllipsoidGui:Add, Button, x10 y95 w100 gCalcEllipsoid, Calculate
+    Gui, EllipsoidGui:Add, Button, x120 y95 w80 gEllipsoidGuiClose, Cancel
+    Gui, EllipsoidGui:Show, x%xPos% y%yPos% w250 h135, Ellipsoid Volume
     return
 }
 
@@ -362,6 +377,81 @@ CalcNASCETGui:
 
     result := CalculateNASCETResult(distal, stenosis)
     Gui, NASCETGui:Destroy
+    ShowResult(result)
+return
+
+; =========================================
+; CALCULATOR 3B: General Vessel Stenosis
+; (Same cutoffs as NASCET, for any vessel)
+; =========================================
+ShowStenosisGui() {
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+
+    Gui, StenosisGui:New, +AlwaysOnTop
+    Gui, StenosisGui:Add, Text, x10 y10 w280, Vessel Stenosis Calculator
+    Gui, StenosisGui:Add, Text, x10 y35, Vessel (optional):
+    Gui, StenosisGui:Add, Edit, x120 y32 w130 vStenosisVessel,
+    Gui, StenosisGui:Add, Text, x10 y65, Normal diameter (mm):
+    Gui, StenosisGui:Add, Edit, x140 y62 w60 vStenosisNormal
+    Gui, StenosisGui:Add, Text, x10 y95, Stenosis diameter (mm):
+    Gui, StenosisGui:Add, Edit, x140 y92 w60 vStenosisMeasure
+    Gui, StenosisGui:Add, Button, x10 y130 w90 gCalcStenosis, Calculate
+    Gui, StenosisGui:Add, Button, x110 y130 w80 gStenosisGuiClose, Cancel
+    Gui, StenosisGui:Show, x%xPos% y%yPos% w270 h170, Stenosis Calculator
+    return
+}
+
+StenosisGuiClose:
+    Gui, StenosisGui:Destroy
+return
+
+CalcStenosis:
+    Gui, StenosisGui:Submit, NoHide
+    global ShowCitations
+
+    if (StenosisNormal = "" || StenosisMeasure = "") {
+        MsgBox, 16, Error, Please enter both diameter measurements.
+        return
+    }
+
+    normal := StenosisNormal + 0
+    stenosis := StenosisMeasure + 0
+
+    if (normal <= 0) {
+        MsgBox, 16, Error, Normal diameter must be greater than 0.
+        return
+    }
+
+    if (stenosis >= normal) {
+        MsgBox, 16, Error, Stenosis should be less than normal diameter.
+        return
+    }
+
+    ; Calculate percent stenosis
+    stenosisPercent := ((normal - stenosis) / normal) * 100
+    stenosisPercent := Round(stenosisPercent, 1)
+
+    vesselName := StenosisVessel != "" ? StenosisVessel : "Vessel"
+
+    result := "Stenosis Calculation:`n"
+    result .= vesselName . "`n"
+    result .= "Normal diameter: " . normal . " mm`n"
+    result .= "Stenosis diameter: " . stenosis . " mm`n"
+    result .= "Stenosis: " . stenosisPercent . "%`n`n"
+
+    ; Same severity cutoffs as NASCET
+    if (stenosisPercent < 50) {
+        result .= "Interpretation: Mild stenosis (<50%)"
+    } else if (stenosisPercent < 70) {
+        result .= "Interpretation: Moderate stenosis (50-69%)"
+    } else {
+        result .= "Interpretation: Severe stenosis (≥70%)"
+    }
+
+    Gui, StenosisGui:Destroy
     ShowResult(result)
 return
 
