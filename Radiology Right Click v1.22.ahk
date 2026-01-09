@@ -34,12 +34,13 @@ global ShowArterialAge := true
 global ShowContrastPremedication := true
 global ShowFleischnerCriteria := true
 global ShowNASCETCalculator := true
+global ShowRVLVCalculator := true
 global ShowSpellCheck := true
 
 ; -------------- NEW/CHANGED CODE --------------
 ; Menu-sorting-related Globals
 global MenuSortingMethod := "frequency"         ; can be "none", "frequency", or "custom"
-global DefaultCustomMenuOrder := "CalculateEllipsoidVolume,CalculateBulletVolume,CalculatePSADensity,CompareNoduleSizes,SortNoduleSizes,CalculateStatistics,Range,CalculateCalciumScorePercentile,CalculatePregnancyDates,CalculateMenstrualPhase,CalculateAdrenalWashout,CalculateThymusChemicalShift,CalculateHepaticSteatosis,CalculateIronContent,CalculateContrastPremedication,CalculateFleischnerCriteria,CalculateNASCET"
+global DefaultCustomMenuOrder := "CalculateEllipsoidVolume,CalculateBulletVolume,CalculatePSADensity,CompareNoduleSizes,SortNoduleSizes,CalculateStatistics,Range,CalculateCalciumScorePercentile,CalculatePregnancyDates,CalculateMenstrualPhase,CalculateAdrenalWashout,CalculateThymusChemicalShift,CalculateHepaticSteatosis,CalculateIronContent,CalculateContrastPremedication,CalculateFleischnerCriteria,CalculateNASCET,CalculateRVLV"
 global CustomMenuOrder := ""  ; comma-separated function-list from .ini
 global g_FunctionFrequency := {}  ; stores usage frequency per function
 
@@ -99,7 +100,7 @@ LoadPreferencesFromFile() {
     global ShowThymusChemicalShift, ShowHepaticSteatosis, ShowMRILiverIron
     global ShowStatistics, ShowNumberRange, PauseDuration, DarkMode
     global ShowCalciumScorePercentile, ShowCitations, ShowArterialAge
-    global ShowContrastPremedication, ShowFleischnerCriteria, ShowNASCETCalculator
+    global ShowContrastPremedication, ShowFleischnerCriteria, ShowNASCETCalculator, ShowRVLVCalculator
     global MenuSortingMethod, CustomMenuOrder
     global g_FunctionFrequency
 	
@@ -132,6 +133,7 @@ LoadPreferencesFromFile() {
         IniRead, ShowContrastPremedication, %preferencesFile%, Calculations, ShowContrastPremedication, 1
         IniRead, ShowFleischnerCriteria, %preferencesFile%, Calculations, ShowFleischnerCriteria, 1
         IniRead, ShowNASCETCalculator, %preferencesFile%, Calculations, ShowNASCETCalculator, 1
+        IniRead, ShowRVLVCalculator, %preferencesFile%, Calculations, ShowRVLVCalculator, 1
 
         ; --- [Script] section ---
         IniRead, PauseDuration, %preferencesFile%, Script, PauseDuration, 180000
@@ -197,6 +199,7 @@ LoadPreferencesFromFile() {
         ShowContrastPremedication := (ShowContrastPremedication = "1")
         ShowFleischnerCriteria := (ShowFleischnerCriteria = "1")
         ShowNASCETCalculator := (ShowNASCETCalculator = "1")
+        ShowRVLVCalculator := (ShowRVLVCalculator = "1")
         PauseDuration += 0
 		ShowSpellCheck := (ShowSpellCheck = "1")
 
@@ -368,7 +371,7 @@ BuildMenuItemsArray() {
     global ShowCalciumScorePercentile, ShowEllipsoidVolume, ShowBulletVolume, ShowPSADensity
     global ShowPregnancyDates, ShowMenstrualPhase, ShowAdrenalWashout, ShowThymusChemicalShift, ShowHepaticSteatosis
     global ShowMRILiverIron, ShowStatistics, ShowNumberRange, ShowContrastPremedication
-    global ShowFleischnerCriteria, ShowNASCETCalculator, g_FunctionFrequency
+    global ShowFleischnerCriteria, ShowNASCETCalculator, ShowRVLVCalculator, g_FunctionFrequency
 
     items := []
     ; Each entry => {title, command, freq, show, customKey}
@@ -393,6 +396,7 @@ BuildMenuItemsArray() {
     items.Push({title: "Calculate Contrast Premedication", command: "CalculateContrastPremedication", freq: g_FunctionFrequency["CalculateContrastPremedication"]+0, show: ShowContrastPremedication, customKey: "CalculateContrastPremedication"})
     items.Push({title: "Calculate Fleischner Criteria", command: "CalculateFleischnerCriteria", freq: g_FunctionFrequency["CalculateFleischnerCriteria"]+0, show: ShowFleischnerCriteria, customKey: "CalculateFleischnerCriteria"})
     items.Push({title: "Calculate NASCET", command: "CalculateNASCET", freq: g_FunctionFrequency["CalculateNASCET"]+0, show: ShowNASCETCalculator, customKey: "CalculateNASCET"})
+    items.Push({title: "Calculate RV/LV Ratio", command: "CalculateRVLV", freq: g_FunctionFrequency["CalculateRVLV"]+0, show: ShowRVLVCalculator, customKey: "CalculateRVLV"})
 	; items.Push({title: "Check Spelling", command: "CheckSpelling", freq: g_FunctionFrequency["CheckSpelling"]+0, show: ShowSpellCheck, customKey: "CheckSpelling"})
 
     return items
@@ -707,14 +711,27 @@ return
 
 CalculateNASCET:
     IncrementFunctionFrequency("CalculateNASCET")
-    Result := CalculateNASCET(g_SelectedText)
-    ShowResult(Result)
+    ; Try text parsing first; if fails or no text, show GUI
+    if (g_SelectedText != "") {
+        Result := CalculateNASCET(g_SelectedText)
+        if (!InStr(Result, "Could not find two diameters")) {
+            ShowResult(Result)
+            return
+        }
+    }
+    ; Fall back to GUI input
+    ShowNASCETGui()
 return
 
 CalculateContrastPremedication:
     IncrementFunctionFrequency("CalculateContrastPremedication")
     Result := ""  ; We'll trigger a small UI for premed
     CalculateContrastPremedication()
+return
+
+CalculateRVLV:
+    IncrementFunctionFrequency("CalculateRVLV")
+    CalculateRVLV()
 return
 
 CheckSpelling:
@@ -785,7 +802,7 @@ ShowPreferences() {
     global ShowPregnancyDates, ShowMenstrualPhase, PauseDuration, ShowAdrenalWashout
     global ShowThymusChemicalShift, ShowHepaticSteatosis, ShowMRILiverIron, ShowStatistics
     global ShowNumberRange, DarkMode, ShowCalciumScorePercentile, ShowCitations, ShowArterialAge
-    global ShowContrastPremedication, ShowFleischnerCriteria, ShowNASCETCalculator
+    global ShowContrastPremedication, ShowFleischnerCriteria, ShowNASCETCalculator, ShowRVLVCalculator
     global MenuSortingMethod, CustomMenuOrder
 
     ; Position near mouse
@@ -881,6 +898,8 @@ ShowPreferences() {
     Gui, Add, Checkbox, x10 y%y% w200 vShowFleischnerCriteria Checked%ShowFleischnerCriteria%, Fleischner Criteria
     y += 30
     Gui, Add, Checkbox, x10 y%y% w200 vShowNASCETCalculator Checked%ShowNASCETCalculator%, NASCET Calculator
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w200 vShowRVLVCalculator Checked%ShowRVLVCalculator%, RV/LV Ratio Calculator
 	y += 30
 	Gui, Add, Checkbox, x10 y%y% w200 vShowSpellCheck Checked%ShowSpellCheck%, Spell Check
 
@@ -936,7 +955,7 @@ SavePreferences:
     global ShowHepaticSteatosis, ShowMRILiverIron, ShowStatistics, ShowNumberRange
     global PauseDuration, ShowCitations, ShowArterialAge
     global ShowCalciumScorePercentile, ShowContrastPremedication
-    global ShowFleischnerCriteria, ShowNASCETCalculator
+    global ShowFleischnerCriteria, ShowNASCETCalculator, ShowRVLVCalculator
     global MenuSortingMethod, CustomMenuOrder
     global MenuSortingMethodChoice, CustomMenuOrderBox
 
@@ -1032,6 +1051,7 @@ SavePreferencesToFile() {
     IniWrite, %ShowContrastPremedication%, %tempFile%, Calculations, ShowContrastPremedication
     IniWrite, %ShowFleischnerCriteria%, %tempFile%, Calculations, ShowFleischnerCriteria
     IniWrite, %ShowNASCETCalculator%, %tempFile%, Calculations, ShowNASCETCalculator
+    IniWrite, %ShowRVLVCalculator%, %tempFile%, Calculations, ShowRVLVCalculator
     IniWrite, %ShowSpellCheck%, %tempFile%, Calculations, ShowSpellCheck
 
     ; Write script settings
@@ -1996,6 +2016,239 @@ CalculateNASCET(input) {
     }
     return result
 }
+
+; -------------------------------------------------------------
+; NASCET GUI - Direct input GUI for easier measurement entry
+; WHY: Original text parsing requires specific format; GUI allows direct entry.
+; ARCHITECTURE: Mirrors ContrastPremedication GUI pattern for consistency.
+; -------------------------------------------------------------
+ShowNASCETGui() {
+    global ShowCitations
+
+    ; Get current mouse position for GUI placement
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+
+    ; Determine which monitor the mouse is on
+    SysGet, monitorCount, MonitorCount
+    Loop, %monitorCount%
+    {
+        SysGet, monArea, Monitor, %A_Index%
+        if (mouseX >= monAreaLeft && mouseX <= monAreaRight && mouseY >= monAreaTop && mouseY <= monAreaBottom)
+        {
+            activeMonitor := A_Index
+            break
+        }
+    }
+
+    ; Get dimensions of the active monitor
+    SysGet, workArea, MonitorWorkArea, %activeMonitor%
+
+    ; Calculate GUI dimensions and position
+    guiWidth := 320
+    guiHeight := 200
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+
+    ; Ensure the GUI doesn't go off-screen
+    if (xPos + guiWidth > workAreaRight)
+        xPos := workAreaRight - guiWidth
+    if (yPos + guiHeight > workAreaBottom)
+        yPos := workAreaBottom - guiHeight
+
+    ; Create GUI
+    Gui, NASCETCalc:New, +AlwaysOnTop
+    Gui, NASCETCalc:Add, Text, x10 y10 w300, NASCET Carotid Stenosis Calculator
+    Gui, NASCETCalc:Add, Text, x10 y35 w300, (North American Symptomatic Carotid Endarterectomy Trial)
+    Gui, NASCETCalc:Add, Text, x10 y65, Distal ICA diameter (normal segment):
+    Gui, NASCETCalc:Add, Edit, x10 y85 w80 vNASCETDistal
+    Gui, NASCETCalc:Add, Text, x95 y88, mm
+    Gui, NASCETCalc:Add, Text, x10 y115, Stenosis diameter (narrowest point):
+    Gui, NASCETCalc:Add, Edit, x10 y135 w80 vNASCETStenosis
+    Gui, NASCETCalc:Add, Text, x95 y138, mm
+    Gui, NASCETCalc:Add, Button, x10 y170 w100 gCalculateNASCETFromGui, Calculate
+    Gui, NASCETCalc:Add, Button, x120 y170 w80 gNASCETGuiClose, Cancel
+    Gui, NASCETCalc:Show, x%xPos% y%yPos% w%guiWidth% h%guiHeight%, NASCET Calculator
+
+    return
+}
+
+NASCETGuiClose:
+    Gui, NASCETCalc:Destroy
+return
+
+CalculateNASCETFromGui:
+    Gui, NASCETCalc:Submit, NoHide
+    global ShowCitations
+
+    ; Validate inputs
+    if (NASCETDistal = "" || NASCETStenosis = "") {
+        MsgBox, 0, Error, Please enter both distal ICA and stenosis diameters.
+        return
+    }
+
+    distal := NASCETDistal + 0
+    stenosis := NASCETStenosis + 0
+
+    if (distal <= 0) {
+        MsgBox, 0, Error, Distal ICA diameter must be greater than 0.
+        return
+    }
+
+    if (stenosis < 0) {
+        MsgBox, 0, Error, Stenosis diameter cannot be negative.
+        return
+    }
+
+    if (stenosis >= distal) {
+        MsgBox, 0, Error, Stenosis diameter should be less than distal ICA diameter.
+        return
+    }
+
+    ; Calculate NASCET
+    nascetVal := (distal - stenosis) / distal * 100
+    nascetVal := Round(nascetVal, 1)
+
+    ; Build result string
+    result := "NASCET Calculation:`n"
+    result .= "Distal ICA: " . distal . " mm`n"
+    result .= "Stenosis: " . stenosis . " mm`n"
+    result .= "NASCET: " . nascetVal . "%`n`n"
+
+    ; Clinical interpretation
+    if (nascetVal < 50) {
+        result .= "Interpretation: Mild stenosis (<50%)`n"
+        result .= "- Medical management typically recommended."
+    } else if (nascetVal < 70) {
+        result .= "Interpretation: Moderate stenosis (50-69%)`n"
+        result .= "- Consider intervention in symptomatic patients."
+    } else {
+        result .= "Interpretation: Severe stenosis (≥70%)`n"
+        result .= "- Strong indication for CEA/CAS in symptomatic patients."
+    }
+
+    if (ShowCitations = 1) {
+        result .= "`n`nCitation: NASCET (N Engl J Med 1991;325:445-53)."
+    }
+
+    ; Close GUI and show result
+    Gui, NASCETCalc:Destroy
+    ShowResult(result)
+return
+
+; -------------------------------------------------------------
+; 15) CalculateRVLV - RV/LV Ratio Calculator for CTPA/PE
+; WHY: RV/LV ratio is a key prognostic marker for pulmonary embolism severity.
+;      Ratio >= 1.0 indicates significant right heart strain.
+; ARCHITECTURE: GUI-based input for direct measurement entry with clinical interpretation.
+; -------------------------------------------------------------
+CalculateRVLV() {
+    global ShowCitations
+
+    ; Get current mouse position for GUI placement
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+
+    ; Determine which monitor the mouse is on
+    SysGet, monitorCount, MonitorCount
+    Loop, %monitorCount%
+    {
+        SysGet, monArea, Monitor, %A_Index%
+        if (mouseX >= monAreaLeft && mouseX <= monAreaRight && mouseY >= monAreaTop && mouseY <= monAreaBottom)
+        {
+            activeMonitor := A_Index
+            break
+        }
+    }
+
+    ; Get dimensions of the active monitor
+    SysGet, workArea, MonitorWorkArea, %activeMonitor%
+
+    ; Calculate GUI dimensions and position
+    guiWidth := 300
+    guiHeight := 200
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+
+    ; Ensure the GUI doesn't go off-screen
+    if (xPos + guiWidth > workAreaRight)
+        xPos := workAreaRight - guiWidth
+    if (yPos + guiHeight > workAreaBottom)
+        yPos := workAreaBottom - guiHeight
+
+    ; Create GUI
+    Gui, RVLVCalc:New, +AlwaysOnTop
+    Gui, RVLVCalc:Add, Text, x10 y10 w280, RV/LV Ratio Calculator (4-chamber axial)
+    Gui, RVLVCalc:Add, Text, x10 y35, Right Ventricle (RV) diameter:
+    Gui, RVLVCalc:Add, Edit, x10 y55 w80 vRVDiameter
+    Gui, RVLVCalc:Add, Text, x95 y58, mm
+    Gui, RVLVCalc:Add, Text, x10 y85, Left Ventricle (LV) diameter:
+    Gui, RVLVCalc:Add, Edit, x10 y105 w80 vLVDiameter
+    Gui, RVLVCalc:Add, Text, x95 y108, mm
+    Gui, RVLVCalc:Add, Button, x10 y140 w100 gCalculateRVLVRatio, Calculate
+    Gui, RVLVCalc:Add, Button, x120 y140 w80 gRVLVGuiClose, Cancel
+    Gui, RVLVCalc:Show, x%xPos% y%yPos% w%guiWidth% h%guiHeight%, RV/LV Ratio
+
+    return
+}
+
+RVLVGuiClose:
+    Gui, RVLVCalc:Destroy
+return
+
+CalculateRVLVRatio:
+    Gui, RVLVCalc:Submit, NoHide
+    global ShowCitations
+
+    ; Validate inputs
+    if (RVDiameter = "" || LVDiameter = "") {
+        MsgBox, 0, Error, Please enter both RV and LV diameters.
+        return
+    }
+
+    rv := RVDiameter + 0
+    lv := LVDiameter + 0
+
+    if (lv <= 0) {
+        MsgBox, 0, Error, LV diameter must be greater than 0.
+        return
+    }
+
+    ; Calculate ratio
+    ratio := rv / lv
+    ratio := Round(ratio, 2)
+
+    ; Build result string
+    result := "RV/LV Ratio Calculation:`n"
+    result .= "RV diameter: " . rv . " mm`n"
+    result .= "LV diameter: " . lv . " mm`n"
+    result .= "RV/LV Ratio: " . ratio . "`n`n"
+
+    ; Clinical interpretation based on user-provided thresholds
+    if (ratio >= 1.0) {
+        result .= "Interpretation: Significant right heart strain`n"
+        result .= "- Suggestive of severe pulmonary embolism or chronic pulmonary hypertension.`n"
+        result .= "- Consider ICU admission and advanced therapies."
+    } else if (ratio >= 0.9) {
+        result .= "Interpretation: Suggestive of right heart strain`n"
+        result .= "- Ratio 0.9-0.99 is associated with increased risk of adverse events in acute PE.`n"
+        result .= "- Close monitoring recommended."
+    } else {
+        result .= "Interpretation: Normal`n"
+        result .= "- RV size normal relative to LV.`n"
+        result .= "- Low risk for RV dysfunction in setting of PE."
+    }
+
+    if (ShowCitations = 1) {
+        result .= "`n`nReferences:`n"
+        result .= "- Meinel et al. Radiology 2015;275:583-591`n"
+        result .= "- Defined on axial images at level of maximum chamber diameter"
+    }
+
+    ; Close GUI and show result
+    Gui, RVLVCalc:Destroy
+    ShowResult(result)
+return
 
 ; ------------------------------------------
 ; Utility Subfunctions
