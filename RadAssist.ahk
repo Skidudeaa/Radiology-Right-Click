@@ -18,6 +18,7 @@ global SectraWindowTitle := "Sectra"
 global DataminingPhrase := "SSM lung nodule"
 global IncludeDatamining := true
 global ShowCitations := true
+global DefaultSmartParse := "Volume"  ; Options: Volume, RVLV, NASCET, Adrenal, Fleischner
 
 ; -----------------------------------------
 ; Global Hotkey: Ctrl+Shift+H - Sectra History Copy
@@ -71,6 +72,7 @@ return
     Menu, SmartParseMenu, Add, Parse Nodules (Fleischner), MenuSmartFleischner
 
     Menu, RadAssistMenu, Add, Smart Parse, :SmartParseMenu
+    Menu, RadAssistMenu, Add, Quick Parse (%DefaultSmartParse%), MenuQuickSmartParse
     Menu, RadAssistMenu, Add
 
     Menu, RadAssistMenu, Add, Ellipsoid Volume (GUI), MenuEllipsoidVolume
@@ -133,6 +135,25 @@ MenuSmartFleischner:
         return
     }
     ParseAndInsertFleischner(g_SelectedText)
+return
+
+MenuQuickSmartParse:
+    if (g_SelectedText = "") {
+        MsgBox, 48, No Selection, Please select text to parse.
+        return
+    }
+    if (DefaultSmartParse = "Volume")
+        ParseAndInsertVolume(g_SelectedText)
+    else if (DefaultSmartParse = "RVLV")
+        ParseAndInsertRVLV(g_SelectedText)
+    else if (DefaultSmartParse = "NASCET")
+        ParseAndInsertNASCET(g_SelectedText)
+    else if (DefaultSmartParse = "Adrenal")
+        ParseAndInsertAdrenalWashout(g_SelectedText)
+    else if (DefaultSmartParse = "Fleischner")
+        ParseAndInsertFleischner(g_SelectedText)
+    else
+        ParseAndInsertVolume(g_SelectedText)
 return
 
 MenuInsertHeader:
@@ -1351,7 +1372,7 @@ return
 ; Settings GUI
 ; =========================================
 ShowSettings() {
-    global IncludeDatamining, ShowCitations, DataminingPhrase
+    global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
 
     CoordMode, Mouse, Screen
     MouseGetPos, mouseX, mouseY
@@ -1361,15 +1382,30 @@ ShowSettings() {
     dmChecked := IncludeDatamining ? "Checked" : ""
     citChecked := ShowCitations ? "Checked" : ""
 
+    ; Determine which item to select in dropdown
+    smartParseOptions := "Volume|RVLV|NASCET|Adrenal|Fleischner"
+    if (DefaultSmartParse = "RVLV")
+        smartParseOptions := "Volume|RVLV||NASCET|Adrenal|Fleischner"
+    else if (DefaultSmartParse = "NASCET")
+        smartParseOptions := "Volume|RVLV|NASCET||Adrenal|Fleischner"
+    else if (DefaultSmartParse = "Adrenal")
+        smartParseOptions := "Volume|RVLV|NASCET|Adrenal||Fleischner"
+    else if (DefaultSmartParse = "Fleischner")
+        smartParseOptions := "Volume|RVLV|NASCET|Adrenal|Fleischner||"
+    else
+        smartParseOptions := "Volume||RVLV|NASCET|Adrenal|Fleischner"
+
     Gui, SettingsGui:New, +AlwaysOnTop
     Gui, SettingsGui:Add, Text, x10 y10 w250, RadAssist Settings
-    Gui, SettingsGui:Add, Checkbox, x10 y40 w250 vSetDatamine %dmChecked%, Include datamining phrase by default
-    Gui, SettingsGui:Add, Checkbox, x10 y65 w250 vSetCitations %citChecked%, Show citations in output
-    Gui, SettingsGui:Add, Text, x10 y95, Datamining phrase:
-    Gui, SettingsGui:Add, Edit, x10 y115 w200 vSetDMPhrase, %DataminingPhrase%
-    Gui, SettingsGui:Add, Button, x10 y150 w80 gSaveSettings, Save
-    Gui, SettingsGui:Add, Button, x100 y150 w80 gSettingsGuiClose, Cancel
-    Gui, SettingsGui:Show, x%xPos% y%yPos% w230 h190, Settings
+    Gui, SettingsGui:Add, Text, x10 y40, Default Quick Parse:
+    Gui, SettingsGui:Add, DropDownList, x130 y37 w100 vSetDefaultParse, %smartParseOptions%
+    Gui, SettingsGui:Add, Checkbox, x10 y70 w250 vSetDatamine %dmChecked%, Include datamining phrase by default
+    Gui, SettingsGui:Add, Checkbox, x10 y95 w250 vSetCitations %citChecked%, Show citations in output
+    Gui, SettingsGui:Add, Text, x10 y125, Datamining phrase:
+    Gui, SettingsGui:Add, Edit, x10 y145 w200 vSetDMPhrase, %DataminingPhrase%
+    Gui, SettingsGui:Add, Button, x10 y185 w80 gSaveSettings, Save
+    Gui, SettingsGui:Add, Button, x100 y185 w80 gSettingsGuiClose, Cancel
+    Gui, SettingsGui:Show, x%xPos% y%yPos% w250 h225, Settings
     return
 }
 
@@ -1379,16 +1415,18 @@ return
 
 SaveSettings:
     Gui, SettingsGui:Submit, NoHide
-    global IncludeDatamining, ShowCitations, DataminingPhrase
+    global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
 
     IncludeDatamining := SetDatamine
     ShowCitations := SetCitations
     DataminingPhrase := SetDMPhrase
+    DefaultSmartParse := SetDefaultParse
 
     ; Save to INI file
     IniWrite, %IncludeDatamining%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, IncludeDatamining
     IniWrite, %ShowCitations%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, ShowCitations
     IniWrite, %DataminingPhrase%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, DataminingPhrase
+    IniWrite, %DefaultSmartParse%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, DefaultSmartParse
 
     Gui, SettingsGui:Destroy
     ToolTip, Settings saved!
@@ -1438,13 +1476,14 @@ return
 ; Load Preferences on Startup
 ; =========================================
 LoadPreferences() {
-    global IncludeDatamining, ShowCitations, DataminingPhrase
+    global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
 
     prefsFile := A_ScriptDir . "\RadAssist_preferences.ini"
     if (FileExist(prefsFile)) {
         IniRead, IncludeDatamining, %prefsFile%, Settings, IncludeDatamining, 1
         IniRead, ShowCitations, %prefsFile%, Settings, ShowCitations, 1
         IniRead, DataminingPhrase, %prefsFile%, Settings, DataminingPhrase, SSM lung nodule
+        IniRead, DefaultSmartParse, %prefsFile%, Settings, DefaultSmartParse, Volume
 
         IncludeDatamining := (IncludeDatamining = "1")
         ShowCitations := (ShowCitations = "1")
