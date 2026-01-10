@@ -1,9 +1,11 @@
 ; ==========================================
 ; RadAssist - Radiology Assistant Tool
-; Version: 2.0
+; Version: 2.1
 ; Description: Lean radiology workflow tool with calculators
 ;              Triggered by Shift+Right-click in PowerScribe/Notepad
-;              Now with intelligent text parsing for inline calculations
+;              Smart text parsing with confirmation dialogs
+; ARCHITECTURE: Context-filtered parsing with confidence scoring
+; WHY: v2.0 was fragile - picked up image numbers, no confirmation
 ; ==========================================
 
 #NoEnv
@@ -19,6 +21,10 @@ global DataminingPhrase := "SSM lung nodule"
 global IncludeDatamining := true
 global ShowCitations := true
 global DefaultSmartParse := "Volume"  ; Options: Volume, RVLV, NASCET, Adrenal, Fleischner
+global SmartParseConfirmation := true  ; Always show confirmation dialog before insert
+global SmartParseFallbackToGUI := true ; Fall back to GUI when parsing confidence is low
+global g_ConfirmAction := ""  ; Used by confirmation dialog
+global g_ParsedResultText := ""  ; Stores parsed result for insertion
 
 ; -----------------------------------------
 ; Global Hotkey: Ctrl+Shift+H - Sectra History Copy
@@ -720,6 +726,142 @@ GetFleischnerRecommendation(size, type, number, risk) {
 }
 
 ; =========================================
+; PRE-FILLED GUI FUNCTIONS
+; WHY: Allow user to edit parsed values in GUI when confidence is low
+; =========================================
+
+ShowEllipsoidVolumeGuiPrefilled(d1, d2, d3) {
+    ; Position near mouse
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+
+    ; Pre-fill values (convert to string)
+    dim1 := Round(d1, 2)
+    dim2 := Round(d2, 2)
+    dim3 := Round(d3, 2)
+
+    Gui, EllipsoidGui:New, +AlwaysOnTop
+    Gui, EllipsoidGui:Add, Text, x10 y10 w280, Ellipsoid Volume Calculator (Pre-filled)
+    Gui, EllipsoidGui:Add, Text, x10 y35, AP (L):
+    Gui, EllipsoidGui:Add, Edit, x80 y32 w50 vEllipDim1, %dim1%
+    Gui, EllipsoidGui:Add, Text, x135 y35, x   T (W):
+    Gui, EllipsoidGui:Add, Edit, x185 y32 w50 vEllipDim2, %dim2%
+    Gui, EllipsoidGui:Add, Text, x10 y60, CC (H):
+    Gui, EllipsoidGui:Add, Edit, x80 y57 w50 vEllipDim3, %dim3%
+    Gui, EllipsoidGui:Add, Text, x135 y60, Units:
+    Gui, EllipsoidGui:Add, DropDownList, x185 y57 w50 vEllipUnits Choose2, mm|cm
+    Gui, EllipsoidGui:Add, Button, x10 y95 w100 gCalcEllipsoid, Calculate
+    Gui, EllipsoidGui:Add, Button, x120 y95 w80 gEllipsoidGuiClose, Cancel
+    Gui, EllipsoidGui:Show, x%xPos% y%yPos% w250 h135, Ellipsoid Volume
+    return
+}
+
+ShowRVLVGuiPrefilled(rv, lv) {
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+
+    rvVal := Round(rv, 1)
+    lvVal := Round(lv, 1)
+
+    Gui, RVLVGui:New, +AlwaysOnTop
+    Gui, RVLVGui:Add, Text, x10 y10 w280, RV/LV Ratio Calculator (Pre-filled)
+    Gui, RVLVGui:Add, Text, x10 y40, RV diameter (mm):
+    Gui, RVLVGui:Add, Edit, x130 y37 w60 vRVDiam, %rvVal%
+    Gui, RVLVGui:Add, Text, x10 y70, LV diameter (mm):
+    Gui, RVLVGui:Add, Edit, x130 y67 w60 vLVDiam, %lvVal%
+    Gui, RVLVGui:Add, Button, x10 y105 w90 gCalcRVLV, Calculate
+    Gui, RVLVGui:Add, Button, x110 y105 w80 gRVLVGuiClose, Cancel
+    Gui, RVLVGui:Show, x%xPos% y%yPos% w220 h145, RV/LV Ratio
+    return
+}
+
+ShowNASCETGuiPrefilled(distal, stenosis) {
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+
+    distalVal := Round(distal, 1)
+    stenosisVal := Round(stenosis, 1)
+
+    Gui, NASCETGui:New, +AlwaysOnTop
+    Gui, NASCETGui:Add, Text, x10 y10 w280, NASCET Calculator (Pre-filled)
+    Gui, NASCETGui:Add, Text, x10 y40, Distal ICA diameter (mm):
+    Gui, NASCETGui:Add, Edit, x160 y37 w60 vNASCETDistal, %distalVal%
+    Gui, NASCETGui:Add, Text, x10 y70, Stenosis diameter (mm):
+    Gui, NASCETGui:Add, Edit, x160 y67 w60 vNASCETStenosis, %stenosisVal%
+    Gui, NASCETGui:Add, Button, x10 y105 w90 gCalcNASCETGui, Calculate
+    Gui, NASCETGui:Add, Button, x110 y105 w80 gNASCETGuiClose, Cancel
+    Gui, NASCETGui:Show, x%xPos% y%yPos% w240 h145, NASCET Calculator
+    return
+}
+
+ShowAdrenalWashoutGuiPrefilled(pre, post, delayed) {
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+
+    preVal := (pre != "") ? Round(pre, 0) : ""
+    postVal := Round(post, 0)
+    delayedVal := Round(delayed, 0)
+
+    Gui, AdrenalGui:New, +AlwaysOnTop
+    Gui, AdrenalGui:Add, Text, x10 y10 w280, Adrenal Washout Calculator (Pre-filled)
+    Gui, AdrenalGui:Add, Text, x10 y40, Pre-contrast (HU):
+    Gui, AdrenalGui:Add, Edit, x140 y37 w70 vAdrenalPre, %preVal%
+    Gui, AdrenalGui:Add, Text, x10 y70, Post-contrast (HU):
+    Gui, AdrenalGui:Add, Edit, x140 y67 w70 vAdrenalPost, %postVal%
+    Gui, AdrenalGui:Add, Text, x10 y100, Delayed (15 min) (HU):
+    Gui, AdrenalGui:Add, Edit, x140 y97 w70 vAdrenalDelayed, %delayedVal%
+    Gui, AdrenalGui:Add, Button, x10 y135 w90 gCalcAdrenal, Calculate
+    Gui, AdrenalGui:Add, Button, x110 y135 w80 gAdrenalGuiClose, Cancel
+    Gui, AdrenalGui:Show, x%xPos% y%yPos% w230 h175, Adrenal Washout
+    return
+}
+
+ShowFleischnerGuiPrefilled(size, nodeType, number) {
+    global IncludeDatamining
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+
+    sizeVal := Round(size, 0)
+
+    ; Determine dropdown selection for type
+    typeSelect := 1
+    if (InStr(nodeType, "Part") || InStr(nodeType, "part"))
+        typeSelect := 2
+    else if (InStr(nodeType, "Ground") || InStr(nodeType, "glass") || InStr(nodeType, "GGN"))
+        typeSelect := 3
+
+    ; Determine dropdown selection for number
+    numberSelect := (number = "Multiple") ? 2 : 1
+
+    Gui, FleischnerGui:New, +AlwaysOnTop
+    Gui, FleischnerGui:Add, Text, x10 y10 w300, Fleischner 2017 (Pre-filled)
+    Gui, FleischnerGui:Add, Text, x10 y40, Nodule size (mm):
+    Gui, FleischnerGui:Add, Edit, x130 y37 w60 vFleischSize, %sizeVal%
+    Gui, FleischnerGui:Add, Text, x10 y70, Nodule type:
+    Gui, FleischnerGui:Add, DropDownList, x130 y67 w120 vFleischType Choose%typeSelect%, Solid|Part-solid|Ground glass
+    Gui, FleischnerGui:Add, Text, x10 y100, Number:
+    Gui, FleischnerGui:Add, DropDownList, x130 y97 w120 vFleischNumber Choose%numberSelect%, Single|Multiple
+    Gui, FleischnerGui:Add, Text, x10 y130, Risk:
+    Gui, FleischnerGui:Add, DropDownList, x130 y127 w120 vFleischRisk Choose1, Low risk|High risk
+    dmChecked := IncludeDatamining ? "Checked" : ""
+    Gui, FleischnerGui:Add, Checkbox, x10 y160 w250 vFleischDatamine %dmChecked%, Include datamining phrase
+    Gui, FleischnerGui:Add, Button, x10 y190 w100 gCalcFleischner, Get Recommendation
+    Gui, FleischnerGui:Add, Button, x120 y190 w80 gFleischnerGuiClose, Cancel
+    Gui, FleischnerGui:Show, x%xPos% y%yPos% w280 h230, Fleischner 2017
+    return
+}
+
+; =========================================
 ; SMART PARSE FUNCTIONS
 ; WHY: Parse dictated text and insert calculations inline without GUI re-entry.
 ; ARCHITECTURE: Text parsing with regex, calculation, and clipboard-based insertion.
@@ -751,112 +893,283 @@ InsertAfterSelection(textToInsert) {
 }
 
 ; -----------------------------------------
+; Utility: Filter out non-measurement numbers
+; WHY: Prevents picking up image numbers (23/75), slice numbers, etc.
+; TRADEOFF: May occasionally filter legitimate measurements, but safety > convenience
+; -----------------------------------------
+FilterNonMeasurements(input) {
+    filtered := input
+
+    ; Remove image/slice references: (image 23/75), (I23), slice 45, series 3
+    filtered := RegExReplace(filtered, "i)\(\s*(?:image|img|i|slice|ser|seq)\s*\d+\s*/\s*\d+\s*\)", "")
+    filtered := RegExReplace(filtered, "i)(?:image|img|slice|series|seq|level)\s*[:=#]?\s*\d+(?:\s*/\s*\d+)?", "")
+
+    ; Remove window/level settings: W:400 L:40, WW/WL
+    filtered := RegExReplace(filtered, "i)[WL]\s*[:=]?\s*-?\d+", "")
+    filtered := RegExReplace(filtered, "i)(?:WW|WL)\s*[:=]?\s*-?\d+", "")
+
+    ; Remove dates: 1/15/2024, 2024-01-15
+    filtered := RegExReplace(filtered, "\d{1,2}/\d{1,2}/\d{2,4}", "")
+    filtered := RegExReplace(filtered, "\d{4}-\d{1,2}-\d{1,2}", "")
+
+    ; Remove page numbers: page 3 of 10, 3/10
+    filtered := RegExReplace(filtered, "i)page\s*\d+\s*(?:of|/)\s*\d+", "")
+
+    ; Remove accession/MRN patterns: ACC# 123456, MRN: 123456
+    filtered := RegExReplace(filtered, "i)(?:ACC|MRN|ID)\s*#?\s*:?\s*\d+", "")
+
+    return filtered
+}
+
+; -----------------------------------------
+; Utility: Show confirmation dialog before inserting parsed result
+; WHY: User verification prevents wrong insertions
+; RETURNS: "insert", "edit", or "cancel"
+; -----------------------------------------
+ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
+    global SmartParseFallbackToGUI, g_ConfirmAction, g_ParsedResultText
+
+    ; Store result for later insertion
+    g_ParsedResultText := calculatedResult
+
+    ; Build display text
+    displayText := "Parsed " . parseType . ":`n`n"
+    for key, val in parsedValues {
+        displayText .= key . ": " . val . "`n"
+    }
+    displayText .= "`nResult: " . calculatedResult
+
+    ; Add confidence indicator
+    if (confidence < 50) {
+        displayText .= "`n`n[!] LOW CONFIDENCE - Values may be incorrect"
+    } else if (confidence < 80) {
+        displayText .= "`n`n[~] Medium confidence"
+    } else {
+        displayText .= "`n`n[OK] High confidence"
+    }
+
+    ; Build GUI
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    xPos := mouseX + 10
+    yPos := mouseY + 10
+
+    ; Destroy any existing confirm GUI
+    Gui, ConfirmGui:Destroy
+
+    Gui, ConfirmGui:New, +AlwaysOnTop
+    Gui, ConfirmGui:Add, Text, x10 y10 w350 +0x1, Smart Parse Confirmation
+    Gui, ConfirmGui:Add, Edit, x10 y35 w350 h130 ReadOnly, %displayText%
+
+    ; Different buttons based on confidence
+    if (confidence < 50 && SmartParseFallbackToGUI) {
+        ; Low confidence: default to Cancel, offer GUI edit
+        Gui, ConfirmGui:Add, Button, x10 y175 w100 gConfirmInsert, Insert Anyway
+        Gui, ConfirmGui:Add, Button, x120 y175 w110 gConfirmEdit Default, Edit in GUI
+        Gui, ConfirmGui:Add, Button, x240 y175 w100 gConfirmCancel, Cancel
+    } else {
+        ; High/medium confidence: default to Insert
+        Gui, ConfirmGui:Add, Button, x10 y175 w100 gConfirmInsert Default, Insert
+        Gui, ConfirmGui:Add, Button, x120 y175 w110 gConfirmEdit, Edit in GUI
+        Gui, ConfirmGui:Add, Button, x240 y175 w100 gConfirmCancel, Cancel
+    }
+
+    Gui, ConfirmGui:Show, x%xPos% y%yPos% w380 h215, Confirm Parse
+
+    ; Reset and wait for user action
+    g_ConfirmAction := ""
+    while (g_ConfirmAction = "") {
+        Sleep, 50
+    }
+
+    return g_ConfirmAction
+}
+
+ConfirmInsert:
+    global g_ConfirmAction
+    g_ConfirmAction := "insert"
+    Gui, ConfirmGui:Destroy
+return
+
+ConfirmEdit:
+    global g_ConfirmAction
+    g_ConfirmAction := "edit"
+    Gui, ConfirmGui:Destroy
+return
+
+ConfirmCancel:
+    global g_ConfirmAction
+    g_ConfirmAction := "cancel"
+    Gui, ConfirmGui:Destroy
+return
+
+ConfirmGuiClose:
+    global g_ConfirmAction
+    g_ConfirmAction := "cancel"
+    Gui, ConfirmGui:Destroy
+return
+
+ConfirmGuiEscape:
+    global g_ConfirmAction
+    g_ConfirmAction := "cancel"
+    Gui, ConfirmGui:Destroy
+return
+
+; -----------------------------------------
 ; SMART VOLUME PARSER
 ; WHY: Parse "Prostate measures 8.0 x 6.0 x 9.0 cm" and insert volume with organ-specific interpretation.
-; TRADEOFF: Complex regex for flexibility vs potential false positives.
+; ARCHITECTURE: Strict patterns with confidence scoring, confirmation dialog, GUI fallback.
 ; -----------------------------------------
 ParseAndInsertVolume(input) {
-    ; Clean input
+    ; Step 1: Clean input and filter non-measurements
     input := RegExReplace(input, "`r?\n", " ")
+    filtered := FilterNonMeasurements(input)
 
-    ; Pattern: Detect organ keyword and dimensions
-    ; Matches: "Prostate measures 8.0 x 6.0 x 9.0 cm" or just "8.0 x 6.0 x 9.0 cm"
-    organPattern := "i)(prostate|abscess|lesion|cyst|mass|nodule|collection|hematoma|liver|spleen|kidney|bladder|uterus|ovary|thyroid|adrenal)?"
-    dimPattern := "(\d+(?:\.\d+)?)\s*[x×,]\s*(\d+(?:\.\d+)?)\s*[x×,]\s*(\d+(?:\.\d+)?)\s*(cm|mm)?"
+    ; Step 2: Try patterns from strictest to loosest
+    confidence := 0
+    organ := ""
+    d1 := 0
+    d2 := 0
+    d3 := 0
+    units := "cm"
 
-    fullPattern := organPattern . ".*?" . dimPattern
+    ; Pattern A (HIGH confidence 95): Organ + "measures" keyword + dimensions + units
+    ; Example: "Prostate measures 8.0 x 6.0 x 9.0 cm"
+    strictPattern := "i)(prostate|abscess|lesion|cyst|mass|nodule|collection|hematoma|liver|spleen|kidney|bladder|uterus|ovary|thyroid|adrenal)\s+(?:measures?|measuring|sized?|is)\s+(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(cm|mm)"
 
-    if (!RegExMatch(input, fullPattern, m)) {
-        ; Try simpler pattern: just dimensions
-        if (!RegExMatch(input, dimPattern, m)) {
-            MsgBox, 48, Parse Error, Could not parse dimensions from text.`n`nExpected format: "8.0 x 6.0 x 9.0 cm" or "Prostate measures 8.0 x 6.0 x 9.0 cm"
-            return
-        }
-        organ := ""
-        d1 := m1
-        d2 := m2
-        d3 := m3
-        units := m4
-    } else {
+    if (RegExMatch(filtered, strictPattern, m)) {
         organ := m1
         d1 := m2
         d2 := m3
         d3 := m4
         units := m5
+        confidence := 95
+    }
+    ; Pattern B (MEDIUM confidence 70): "measures" keyword + dimensions + units (no organ)
+    else if (RegExMatch(filtered, "i)(?:measures?|measuring)\s+(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(cm|mm)", m)) {
+        d1 := m1
+        d2 := m2
+        d3 := m3
+        units := m4
+        confidence := 70
+    }
+    ; Pattern C (MEDIUM confidence 60): dimensions + units (no keyword)
+    else if (RegExMatch(filtered, "(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(cm|mm)", m)) {
+        d1 := m1
+        d2 := m2
+        d3 := m3
+        units := m4
+        confidence := 60
+    }
+    ; Pattern D (LOW confidence 35): just three numbers with x separator (no units)
+    else if (RegExMatch(filtered, "(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)", m)) {
+        d1 := m1
+        d2 := m2
+        d3 := m3
+        confidence := 35
+    }
+    else {
+        ; No match found
+        MsgBox, 48, Parse Error, Could not find dimensions in text.`n`nExpected: "measures 8.0 x 6.0 x 9.0 cm"`n`nTip: Include units (cm or mm) for better detection.
+        return
     }
 
-    ; Convert to numbers
+    ; Step 3: Convert to numbers and handle units
     d1 := d1 + 0
     d2 := d2 + 0
     d3 := d3 + 0
 
-    ; Default to cm if no unit specified, handle mm conversion
-    if (units = "" || units = "cm") {
-        ; Already in cm or assume cm
-    } else if (units = "mm") {
+    if (units = "mm") {
         d1 := d1 / 10
         d2 := d2 / 10
         d3 := d3 / 10
     }
 
-    ; Calculate ellipsoid volume: (π/6) × L × W × H
+    ; Step 4: Sanity check - dimensions should be plausible (<50cm)
+    if (d1 > 50 || d2 > 50 || d3 > 50) {
+        confidence := confidence - 30
+    }
+
+    ; Step 5: Calculate ellipsoid volume: (π/6) × L × W × H
     volume := 0.5236 * d1 * d2 * d3
     volumeRounded := Round(volume, 1)
 
-    ; Build result string
-    result := " This corresponds to a volume of " . volumeRounded . " cc (mL)"
+    ; Step 6: Build result string
+    resultText := " This corresponds to a volume of " . volumeRounded . " cc (mL)"
 
-    ; Add organ-specific interpretation if prostate detected
-    if (organ != "" && (organ = "prostate" || organ = "Prostate")) {
+    ; Add organ-specific interpretation for prostate
+    organLower := ""
+    if (organ != "") {
+        StringLower, organLower, organ
+    }
+    if (organLower = "prostate") {
         if (volume < 30) {
-            result .= ", within normal limits."
+            resultText .= ", within normal limits."
         } else if (volume < 50) {
-            result .= ", compatible with an enlarged prostate."
+            resultText .= ", compatible with an enlarged prostate."
         } else if (volume < 70) {
-            result .= ", compatible with a moderately enlarged prostate."
+            resultText .= ", compatible with a moderately enlarged prostate."
         } else {
-            result .= ", compatible with a massively enlarged prostate."
+            resultText .= ", compatible with a massively enlarged prostate."
         }
-    } else if (organ != "") {
-        ; Generic organ volume
-        result .= "."
     } else {
-        result .= "."
+        resultText .= "."
     }
 
-    ; Insert after selection
-    InsertAfterSelection(result)
+    ; Step 7: Show confirmation dialog
+    parsedValues := {}
+    parsedValues["Organ"] := organ != "" ? organ : "Not detected"
+    parsedValues["Dim 1"] := Round(d1, 2) . " cm"
+    parsedValues["Dim 2"] := Round(d2, 2) . " cm"
+    parsedValues["Dim 3"] := Round(d3, 2) . " cm"
+
+    action := ShowParseConfirmation("Volume", parsedValues, resultText, confidence)
+
+    if (action = "insert") {
+        InsertAfterSelection(resultText)
+    } else if (action = "edit") {
+        ; Open GUI with pre-filled values (in cm)
+        ShowEllipsoidVolumeGuiPrefilled(d1, d2, d3)
+    }
+    ; else cancelled - do nothing
 }
 
 ; -----------------------------------------
 ; SMART RV/LV RATIO PARSER
 ; WHY: Parse "RV 42mm / LV 35mm" and insert ratio with PE risk interpretation.
+; ARCHITECTURE: Requires explicit RV/LV keywords - no fallback to bare numbers (too risky).
 ; -----------------------------------------
 ParseAndInsertRVLV(input) {
     global ShowCitations
     input := RegExReplace(input, "`r?\n", " ")
+    filtered := FilterNonMeasurements(input)
 
     rv := 0
     lv := 0
+    confidence := 0
 
-    ; Pattern 1: "RV/LV ratio = X / Y" or "RV/LV = X/Y"
-    if (RegExMatch(input, "i)RV\s*[/:]?\s*LV\s*(?:ratio)?\s*[=:]\s*(\d+(?:\.\d+)?)\s*(?:cm|mm)?\s*/\s*(\d+(?:\.\d+)?)\s*(?:cm|mm)?", m)) {
+    ; Pattern A (HIGH confidence 90): "RV X mm ... LV Y mm" or "RV: Xmm, LV: Ymm"
+    ; Example: "RV 42mm / LV 35mm", "RV: 42, LV: 35"
+    if (RegExMatch(filtered, "i)RV\s*(?:diameter|diam)?[:\s=]*(\d+(?:\.\d+)?)\s*(?:mm|cm)?.*?LV\s*(?:diameter|diam)?[:\s=]*(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m)) {
         rv := m1 + 0
         lv := m2 + 0
+        confidence := 90
     }
-    ; Pattern 2: "RV X mm ... LV Y mm" or "RV: Xmm, LV: Ymm"
-    else if (RegExMatch(input, "i)RV\s*(?:diameter|diam)?[:\s]*(\d+(?:\.\d+)?)\s*(?:mm|cm)?.*?LV\s*(?:diameter|diam)?[:\s]*(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m)) {
+    ; Pattern B (HIGH confidence 85): "RV/LV ratio = X / Y"
+    else if (RegExMatch(filtered, "i)RV\s*/\s*LV\s*(?:ratio)?\s*[=:]\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", m)) {
         rv := m1 + 0
         lv := m2 + 0
+        confidence := 85
     }
-    ; Pattern 3: Just two numbers separated by / or comma (assume RV first, LV second)
-    else if (RegExMatch(input, "(\d+(?:\.\d+)?)\s*(?:cm|mm)?\s*[/,]\s*(\d+(?:\.\d+)?)\s*(?:cm|mm)?", m)) {
-        rv := m1 + 0
-        lv := m2 + 0
-    }
+    ; NO FALLBACK TO JUST TWO NUMBERS - too risky (could be image numbers, dates, etc.)
     else {
-        MsgBox, 48, Parse Error, Could not parse RV/LV measurements.`n`nExpected formats:`n- "RV 42mm / LV 35mm"`n- "RV/LV = 42/35"`n- "RV: 42, LV: 35"
+        MsgBox, 48, Parse Error, Could not find RV/LV measurements.`n`nExpected formats:`n- "RV 42mm / LV 35mm"`n- "RV: 42, LV: 35"`n`nMust include "RV" and "LV" keywords.
         return
+    }
+
+    ; Validate range (typical RV/LV are 20-60mm)
+    if (rv < 10 || rv > 100 || lv < 10 || lv > 100) {
+        confidence := confidence - 30
     }
 
     if (lv <= 0) {
@@ -868,64 +1181,86 @@ ParseAndInsertRVLV(input) {
     ratio := rv / lv
     ratio := Round(ratio, 2)
 
-    ; Build result
-    result := "`nRV/LV Ratio: " . ratio . " (RV " . rv . "mm / LV " . lv . "mm). "
+    ; Build result - inline sentence format for continued dictation
+    resultText := " RV/LV ratio: " . ratio . " (RV " . Round(rv, 1) . "mm / LV " . Round(lv, 1) . "mm), "
 
-    ; Interpretation
     if (ratio >= 1.0) {
-        result .= "Interpretation: Significant right heart strain, suggestive of severe PE."
+        resultText .= "significant right heart strain, suggestive of severe PE."
     } else if (ratio >= 0.9) {
-        result .= "Interpretation: Suggestive of right heart strain (ratio 0.9-0.99)."
+        resultText .= "suggestive of right heart strain."
     } else {
-        result .= "Interpretation: Normal RV/LV ratio, low risk for RV dysfunction."
+        resultText .= "within normal limits."
     }
+    ; Note: Citations removed per user preference - inline sentence format
 
-    if (ShowCitations)
-        result .= " [Ref: Meinel et al. Radiology 2015;275:583-591]"
+    ; Show confirmation dialog
+    parsedValues := {}
+    parsedValues["RV"] := rv . " mm"
+    parsedValues["LV"] := lv . " mm"
+    parsedValues["Ratio"] := ratio
 
-    InsertAfterSelection(result)
+    action := ShowParseConfirmation("RV/LV Ratio", parsedValues, resultText, confidence)
+
+    if (action = "insert") {
+        InsertAfterSelection(resultText)
+    } else if (action = "edit") {
+        ShowRVLVGuiPrefilled(rv, lv)
+    }
 }
 
 ; -----------------------------------------
 ; SMART NASCET PARSER
 ; WHY: Parse stenosis measurements and insert NASCET percentage inline.
+; ARCHITECTURE: Requires "distal" or "stenosis" keywords - no bare number fallback.
 ; -----------------------------------------
 ParseAndInsertNASCET(input) {
     global ShowCitations
     input := RegExReplace(input, "`r?\n", " ")
+    filtered := FilterNonMeasurements(input)
 
     distal := 0
     stenosis := 0
+    confidence := 0
 
-    ; Pattern 1: "distal X mm ... stenosis Y mm"
-    if (RegExMatch(input, "i)distal.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)", m)) {
+    ; Pattern A (HIGH confidence 90): "distal X mm ... stenosis Y mm"
+    if (RegExMatch(filtered, "i)distal\s*(?:ICA|internal\s*carotid)?.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m)) {
         distal := m1 + 0
         stenosis := m2 + 0
+        confidence := 90
     }
-    ; Pattern 2: "stenosis X mm ... distal Y mm"
-    else if (RegExMatch(input, "i)stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?distal.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)", m)) {
-        distal := m2 + 0
+    ; Pattern B (HIGH confidence 85): "stenosis X mm ... distal Y mm" (reverse order)
+    else if (RegExMatch(filtered, "i)stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?distal\s*(?:ICA)?.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m)) {
         stenosis := m1 + 0
+        distal := m2 + 0
+        confidence := 85
     }
-    ; Pattern 3: Just two numbers - larger is distal
-    else {
-        numbers := []
-        pos := 1
-        while (pos := RegExMatch(input, "(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m, pos)) {
-            numbers.Push(m1 + 0)
-            pos += StrLen(m)
-        }
-        if (numbers.Length() >= 2) {
-            distal := Max(numbers*)
-            stenosis := Min(numbers*)
+    ; Pattern C (MEDIUM confidence 65): ICA/carotid + narrowing context
+    else if (RegExMatch(filtered, "i)(?:ICA|carotid).*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?(?:narrow|residual).*?(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m)) {
+        d1 := m1 + 0
+        d2 := m2 + 0
+        ; Larger is distal, smaller is stenosis
+        if (d1 > d2) {
+            distal := d1
+            stenosis := d2
         } else {
-            MsgBox, 48, Parse Error, Could not parse stenosis measurements.`n`nExpected formats:`n- "distal 5.2mm, stenosis 2.1mm"`n- "5.2 / 2.1 mm"
-            return
+            distal := d2
+            stenosis := d1
         }
+        confidence := 65
+    }
+    ; NO FALLBACK TO JUST TWO NUMBERS - too risky
+    else {
+        MsgBox, 48, Parse Error, Could not find stenosis measurements.`n`nExpected formats:`n- "distal 5.2mm, stenosis 2.1mm"`n- "distal ICA 5.2mm, stenosis 2.1mm"`n`nMust include "distal" or "stenosis" keywords.
+        return
     }
 
+    ; Validate
     if (distal <= 0) {
         MsgBox, 48, Error, Distal ICA diameter must be greater than 0.
+        return
+    }
+    if (stenosis >= distal) {
+        MsgBox, 48, Error, Stenosis diameter must be less than distal diameter.
         return
     }
 
@@ -933,71 +1268,84 @@ ParseAndInsertNASCET(input) {
     nascetVal := ((distal - stenosis) / distal) * 100
     nascetVal := Round(nascetVal, 1)
 
-    ; Build result
-    result := "`nNASCET: " . nascetVal . "% stenosis (distal " . distal . "mm, stenosis " . stenosis . "mm). "
-
-    ; Interpretation
-    if (nascetVal < 50) {
-        result .= "Mild stenosis (<50%)."
-    } else if (nascetVal < 70) {
-        result .= "Moderate stenosis (50-69%), consider intervention in symptomatic patients."
-    } else {
-        result .= "Severe stenosis (≥70%), strong indication for CEA/CAS."
+    ; Validate plausible stenosis (0-99%)
+    if (nascetVal < 0 || nascetVal > 99) {
+        confidence := confidence - 30
     }
 
-    if (ShowCitations)
-        result .= " [NASCET: N Engl J Med 1991;325:445-53]"
+    ; Build result - inline sentence format for continued dictation
+    ; Round values to 1 decimal place
+    distalRound := Round(distal, 1)
+    stenosisRound := Round(stenosis, 1)
 
-    InsertAfterSelection(result)
+    resultText := " NASCET: " . nascetVal . "% stenosis (distal " . distalRound . "mm, stenosis " . stenosisRound . "mm), "
+
+    if (nascetVal < 50) {
+        resultText .= "mild stenosis."
+    } else if (nascetVal < 70) {
+        resultText .= "moderate stenosis, consider intervention if symptomatic."
+    } else {
+        resultText .= "severe stenosis, strong indication for CEA/CAS."
+    }
+    ; Note: Citations removed per user preference - inline sentence format
+
+    ; Show confirmation dialog
+    parsedValues := {}
+    parsedValues["Distal ICA"] := distal . " mm"
+    parsedValues["Stenosis"] := stenosis . " mm"
+    parsedValues["NASCET"] := nascetVal . "%"
+
+    action := ShowParseConfirmation("NASCET Stenosis", parsedValues, resultText, confidence)
+
+    if (action = "insert") {
+        InsertAfterSelection(resultText)
+    } else if (action = "edit") {
+        ShowNASCETGuiPrefilled(distal, stenosis)
+    }
 }
 
 ; -----------------------------------------
 ; SMART ADRENAL WASHOUT PARSER
 ; WHY: Parse HU values and insert washout percentages inline.
-; NOTE: Removed timing from output per user request.
+; ARCHITECTURE: Requires "HU" labels - no bare number fallback.
 ; -----------------------------------------
 ParseAndInsertAdrenalWashout(input) {
     global ShowCitations
     input := RegExReplace(input, "`r?\n", " ")
+    filtered := FilterNonMeasurements(input)
 
     pre := ""
     post := ""
     delayed := ""
+    confidence := 0
 
-    ; Pattern 1: Full pattern with pre, post, delayed
-    fullPattern := "i)(?:pre-?contrast|unenhanced|baseline|native|non-?con)[:\s]*(-?\d+)\s*(?:HU)?.*?(?:post-?contrast|enhanced|arterial|portal)[:\s]*(-?\d+)\s*(?:HU)?.*?(?:delayed|15\s*min|late)[:\s]*(-?\d+)\s*(?:HU)?"
+    ; Pattern A (HIGH confidence 95): Full pattern with phase labels + HU
+    ; Example: "pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU"
+    fullPattern := "i)(?:pre-?contrast|unenhanced|baseline|native|non-?con)[:\s]*(-?\d+)\s*HU.*?(?:post-?contrast|enhanced|arterial|portal)[:\s]*(-?\d+)\s*HU.*?(?:delayed|15\s*min|late)[:\s]*(-?\d+)\s*HU"
 
-    if (RegExMatch(input, fullPattern, m)) {
+    if (RegExMatch(filtered, fullPattern, m)) {
         pre := m1 + 0
         post := m2 + 0
         delayed := m3 + 0
+        confidence := 95
     }
-    ; Pattern 2: Just post and delayed (for relative washout only)
+    ; Pattern B (MEDIUM confidence 70): Post + delayed with labels
+    else if (RegExMatch(filtered, "i)(?:post-?contrast|enhanced)[:\s]*(-?\d+)\s*HU.*?(?:delayed|15\s*min)[:\s]*(-?\d+)\s*HU", m)) {
+        post := m1 + 0
+        delayed := m2 + 0
+        confidence := 70
+    }
+    ; Pattern C (MEDIUM confidence 55): Three HU values in sequence
+    else if (RegExMatch(filtered, "(-?\d+)\s*HU.*?(-?\d+)\s*HU.*?(-?\d+)\s*HU", m)) {
+        pre := m1 + 0
+        post := m2 + 0
+        delayed := m3 + 0
+        confidence := 55
+    }
+    ; NO raw number fallback - requires HU labels for safety
     else {
-        fallbackPattern := "i)(?:post-?contrast|enhanced|arterial|portal)[:\s]*(-?\d+)\s*(?:HU)?.*?(?:delayed|15\s*min|late)[:\s]*(-?\d+)\s*(?:HU)?"
-        if (RegExMatch(input, fallbackPattern, m)) {
-            post := m1 + 0
-            delayed := m2 + 0
-        } else {
-            ; Try to find any three numbers
-            numbers := []
-            pos := 1
-            while (pos := RegExMatch(input, "(-?\d+)\s*(?:HU)?", m, pos)) {
-                numbers.Push(m1 + 0)
-                pos += StrLen(m)
-            }
-            if (numbers.Length() >= 3) {
-                pre := numbers[1]
-                post := numbers[2]
-                delayed := numbers[3]
-            } else if (numbers.Length() >= 2) {
-                post := numbers[1]
-                delayed := numbers[2]
-            } else {
-                MsgBox, 48, Parse Error, Could not parse HU values.`n`nExpected formats:`n- "pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU"`n- "10, 80, 40 HU"
-                return
-            }
-        }
+        MsgBox, 48, Parse Error, Could not find HU values.`n`nExpected formats:`n- "pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU"`n- "10 HU, 80 HU, 40 HU"`n`nMust include "HU" labels.
+        return
     }
 
     if (post = "" || delayed = "") {
@@ -1005,20 +1353,30 @@ ParseAndInsertAdrenalWashout(input) {
         return
     }
 
-    ; Build result
-    result := "`nAdrenal washout analysis: "
+    ; Validate HU ranges (typically -20 to 200)
+    post := post + 0
+    delayed := delayed + 0
+    if (pre != "")
+        pre := pre + 0
+
+    if (post < -50 || post > 300 || delayed < -50 || delayed > 300) {
+        confidence := confidence - 25
+    }
+
+    ; Build result - inline sentence format for continued dictation
+    resultText := " Adrenal washout: "
 
     ; Calculate absolute washout if pre is available
     if (pre != "" && post != pre) {
         absWashout := ((post - delayed) / (post - pre)) * 100
         absWashout := Round(absWashout, 1)
 
-        result .= "Absolute washout: " . absWashout . "%"
+        resultText .= "absolute " . absWashout . "%"
         if (absWashout >= 60)
-            result .= " (≥60%: likely adenoma)"
+            resultText .= " (likely adenoma)"
         else
-            result .= " (<60%: indeterminate)"
-        result .= ". "
+            resultText .= " (indeterminate)"
+        resultText .= ", "
     }
 
     ; Calculate relative washout
@@ -1026,51 +1384,62 @@ ParseAndInsertAdrenalWashout(input) {
         relWashout := ((post - delayed) / post) * 100
         relWashout := Round(relWashout, 1)
 
-        result .= "Relative washout: " . relWashout . "%"
+        resultText .= "relative " . relWashout . "%"
         if (relWashout >= 40)
-            result .= " (≥40%: likely adenoma)"
+            resultText .= " (likely adenoma)"
         else
-            result .= " (<40%: indeterminate)"
-        result .= ". "
+            resultText .= " (indeterminate)"
+        resultText .= "."
     }
 
     ; Pre-contrast assessment
     if (pre != "" && pre <= 10) {
-        result .= "Pre-contrast " . pre . " HU (≤10 HU: lipid-rich adenoma)."
+        resultText .= " Pre-contrast " . pre . " HU suggests lipid-rich adenoma."
     }
+    ; Note: Citations removed per user preference - inline sentence format
 
-    if (ShowCitations)
-        result .= " [Ref: Mayo-Smith WW et al. Radiology 2017]"
+    ; Show confirmation dialog
+    parsedValues := {}
+    parsedValues["Pre-contrast"] := (pre != "") ? pre . " HU" : "N/A"
+    parsedValues["Post-contrast"] := post . " HU"
+    parsedValues["Delayed"] := delayed . " HU"
 
-    InsertAfterSelection(result)
+    action := ShowParseConfirmation("Adrenal Washout", parsedValues, resultText, confidence)
+
+    if (action = "insert") {
+        InsertAfterSelection(resultText)
+    } else if (action = "edit") {
+        ShowAdrenalWashoutGuiPrefilled(pre, post, delayed)
+    }
 }
 
 ; -----------------------------------------
 ; SMART FLEISCHNER NODULE PARSER
 ; WHY: Parse findings text for nodules and generate Fleischner 2017 recommendations.
-; ARCHITECTURE: Multi-pattern regex to find all nodule mentions, classify, and apply algorithm.
+; ARCHITECTURE: Multi-pattern regex, requires "nodule" keyword, confirmation before insert.
 ; -----------------------------------------
 ParseAndInsertFleischner(input) {
     global ShowCitations, DataminingPhrase, IncludeDatamining
     input := RegExReplace(input, "`r?\n", " ")
+    filtered := FilterNonMeasurements(input)
 
     ; Arrays to store found nodules
     solidNodules := []
     subsolidNodules := []
     partsolidNodules := []
+    confidence := 0
 
-    ; Pattern 1: Size before type - "8 mm solid nodule"
+    ; Pattern 1 (HIGH confidence): Size + type + "nodule" keyword
+    ; Example: "8 mm solid nodule"
     pattern1 := "i)(\d+(?:\.\d+)?)\s*(mm|cm)\s*(solid|part-?solid|ground[- ]?glass|subsolid|GGN|GGO|SSN)?\s*(?:nodule|opacity|lesion|nodular)"
 
-    ; Pattern 2: Type before size - "solid nodule measuring 8 mm"
+    ; Pattern 2 (HIGH confidence): Type + "nodule" + size
+    ; Example: "solid nodule measuring 8 mm"
     pattern2 := "i)(solid|part-?solid|ground[- ]?glass|subsolid|GGN|GGO|SSN)\s*(?:nodule|opacity|lesion|nodular).*?(\d+(?:\.\d+)?)\s*(mm|cm)"
-
-    ; Pattern 3: Generic "X mm nodule" (assume solid if not specified)
-    pattern3 := "i)(\d+(?:\.\d+)?)\s*(mm|cm)\s*(?:pulmonary\s+)?(?:nodule|opacity)"
 
     ; Search with Pattern 1
     pos := 1
-    while (pos := RegExMatch(input, pattern1, m, pos)) {
+    while (pos := RegExMatch(filtered, pattern1, m, pos)) {
         size := m1 + 0
         units := m2
         nodeType := m3
@@ -1079,13 +1448,16 @@ ParseAndInsertFleischner(input) {
         if (units = "cm")
             size := size * 10
 
-        ; Classify nodule type
-        if (nodeType = "" || nodeType = "solid" || nodeType = "Solid") {
-            solidNodules.Push(size)
-        } else if (InStr(nodeType, "part") || InStr(nodeType, "Part")) {
-            partsolidNodules.Push(size)
-        } else {
-            subsolidNodules.Push(size)
+        ; Only accept plausible nodule sizes (1-50mm)
+        if (size >= 1 && size <= 50) {
+            ; Classify nodule type
+            if (nodeType = "" || (InStr(nodeType, "solid") && !InStr(nodeType, "part") && !InStr(nodeType, "sub"))) {
+                solidNodules.Push(size)
+            } else if (InStr(nodeType, "part")) {
+                partsolidNodules.Push(size)
+            } else {
+                subsolidNodules.Push(size)
+            }
         }
 
         pos += StrLen(m)
@@ -1093,7 +1465,7 @@ ParseAndInsertFleischner(input) {
 
     ; Search with Pattern 2
     pos := 1
-    while (pos := RegExMatch(input, pattern2, m, pos)) {
+    while (pos := RegExMatch(filtered, pattern2, m, pos)) {
         nodeType := m1
         size := m2 + 0
         units := m3
@@ -1101,29 +1473,38 @@ ParseAndInsertFleischner(input) {
         if (units = "cm")
             size := size * 10
 
-        if (InStr(nodeType, "solid") && !InStr(nodeType, "part") && !InStr(nodeType, "sub")) {
-            solidNodules.Push(size)
-        } else if (InStr(nodeType, "part")) {
-            partsolidNodules.Push(size)
-        } else {
-            subsolidNodules.Push(size)
+        ; Only accept plausible sizes
+        if (size >= 1 && size <= 50) {
+            if (InStr(nodeType, "solid") && !InStr(nodeType, "part") && !InStr(nodeType, "sub")) {
+                solidNodules.Push(size)
+            } else if (InStr(nodeType, "part")) {
+                partsolidNodules.Push(size)
+            } else {
+                subsolidNodules.Push(size)
+            }
         }
 
         pos += StrLen(m)
     }
 
     ; Check for "sub 6 mm nodules" or "punctate nodules" (multiple small)
-    if (InStr(input, "sub 6") || InStr(input, "sub-6") || InStr(input, "punctate") || InStr(input, "scattered") || InStr(input, "multiple")) {
-        ; Mark as having multiple small nodules
+    if (InStr(filtered, "sub 6") || InStr(filtered, "sub-6") || InStr(filtered, "punctate")) {
         if (solidNodules.Length() = 0)
-            solidNodules.Push(5)  ; Placeholder for <6mm
+            solidNodules.Push(5)
     }
 
     ; If no nodules found, show error
     if (solidNodules.Length() = 0 && subsolidNodules.Length() = 0 && partsolidNodules.Length() = 0) {
-        MsgBox, 48, Parse Error, Could not find nodule descriptions in text.`n`nExpected patterns:`n- "8 mm solid nodule"`n- "ground glass nodule measuring 6 mm"`n- "6 mm subsolid nodule"
+        MsgBox, 48, Parse Error, Could not find nodule descriptions in text.`n`nExpected patterns:`n- "8 mm solid nodule"`n- "ground glass nodule measuring 6 mm"`n`nMust include "nodule" keyword with size.
         return
     }
+
+    ; Calculate confidence based on what was found
+    totalNodules := solidNodules.Length() + subsolidNodules.Length() + partsolidNodules.Length()
+    if (totalNodules > 0)
+        confidence := 85
+    if (totalNodules > 3)
+        confidence := 75  ; Many nodules = more risk of misparse
 
     ; Find largest nodules in each category
     maxSolid := 0
@@ -1144,66 +1525,90 @@ ParseAndInsertFleischner(input) {
     }
 
     ; Determine if multiple nodules
-    totalNodules := solidNodules.Length() + subsolidNodules.Length() + partsolidNodules.Length()
     isMultiple := (totalNodules > 1) ? true : false
 
-    ; Build recommendation block
-    result := "`n`n___________________________________________________________`n"
-    result .= "Incidental Lung Nodule Discussion:`n"
-    result .= "2017 ACR Fleischner Society expert consensus recommendations on incidental pulmonary nodules.`n"
-    result .= "Target Demographic: 35+ years without known cancer or immunosuppressive disorder.`n`n"
+    ; Build summary for confirmation
+    summaryText := ""
+    if (maxSolid > 0)
+        summaryText .= "Solid: " . maxSolid . "mm"
+    if (maxSubsolid > 0)
+        summaryText .= (summaryText != "" ? ", " : "") . "GGN: " . maxSubsolid . "mm"
+    if (maxPartsolid > 0)
+        summaryText .= (summaryText != "" ? ", " : "") . "Part-solid: " . maxPartsolid . "mm"
+    summaryText .= " (" . (isMultiple ? "Multiple" : "Single") . ")"
+
+    ; Build full recommendation block
+    resultText := "`n`n___________________________________________________________`n"
+    resultText .= "Incidental Lung Nodule Discussion:`n"
+    resultText .= "2017 ACR Fleischner Society expert consensus recommendations on incidental pulmonary nodules.`n"
+    resultText .= "Target Demographic: 35+ years without known cancer or immunosuppressive disorder.`n`n"
 
     ; List detected nodules
-    result .= "Detected nodules:`n"
+    resultText .= "Detected nodules:`n"
     noduleNum := 1
 
     if (maxSolid > 0) {
-        result .= noduleNum . ". " . maxSolid . " mm solid nodule"
+        resultText .= noduleNum . ". " . maxSolid . " mm solid nodule"
         if (solidNodules.Length() > 1)
-            result .= " (largest of " . solidNodules.Length() . ")"
-        result .= "`n"
+            resultText .= " (largest of " . solidNodules.Length() . ")"
+        resultText .= "`n"
         noduleNum++
     }
     if (maxSubsolid > 0) {
-        result .= noduleNum . ". " . maxSubsolid . " mm ground glass/subsolid nodule"
+        resultText .= noduleNum . ". " . maxSubsolid . " mm ground glass/subsolid nodule"
         if (subsolidNodules.Length() > 1)
-            result .= " (largest of " . subsolidNodules.Length() . ")"
-        result .= "`n"
+            resultText .= " (largest of " . subsolidNodules.Length() . ")"
+        resultText .= "`n"
         noduleNum++
     }
     if (maxPartsolid > 0) {
-        result .= noduleNum . ". " . maxPartsolid . " mm part-solid nodule"
+        resultText .= noduleNum . ". " . maxPartsolid . " mm part-solid nodule"
         if (partsolidNodules.Length() > 1)
-            result .= " (largest of " . partsolidNodules.Length() . ")"
-        result .= "`n"
+            resultText .= " (largest of " . partsolidNodules.Length() . ")"
+        resultText .= "`n"
         noduleNum++
     }
 
-    result .= "`n"
+    resultText .= "`n"
 
     ; Generate recommendations for LOW RISK
-    result .= "LOW RISK recommendation:`n"
-    result .= GenerateFleischnerRec(maxSolid, maxSubsolid, maxPartsolid, isMultiple, "Low risk")
-    result .= "`n`n"
+    resultText .= "LOW RISK recommendation:`n"
+    resultText .= GenerateFleischnerRec(maxSolid, maxSubsolid, maxPartsolid, isMultiple, "Low risk")
+    resultText .= "`n`n"
 
     ; Generate recommendations for HIGH RISK
-    result .= "HIGH RISK recommendation:`n"
-    result .= GenerateFleischnerRec(maxSolid, maxSubsolid, maxPartsolid, isMultiple, "High risk")
+    resultText .= "HIGH RISK recommendation:`n"
+    resultText .= GenerateFleischnerRec(maxSolid, maxSubsolid, maxPartsolid, isMultiple, "High risk")
 
     ; Add datamining phrase
     if (IncludeDatamining) {
-        result .= "`n`nData Mining: " . DataminingPhrase . " . ACR and AMA MIPS #364"
+        resultText .= "`n`nData Mining: " . DataminingPhrase . " . ACR and AMA MIPS #364"
     }
 
     ; Add additional info
-    result .= "`n`nNote: The need for followup depends on clinical discussion of patient's comorbid conditions, demographics, and willingness to undergo followup imaging and potential intervention."
+    resultText .= "`n`nNote: The need for followup depends on clinical discussion of patient's comorbid conditions, demographics, and willingness to undergo followup imaging and potential intervention."
 
     if (ShowCitations)
-        result .= "`nRef: MacMahon H et al. Radiology 2017;284:228-243"
+        resultText .= "`nRef: MacMahon H et al. Radiology 2017;284:228-243"
 
-    result .= "`n___________________________________________________________"
+    resultText .= "`n___________________________________________________________"
 
-    InsertAfterSelection(result)
+    ; Show confirmation dialog
+    parsedValues := {}
+    parsedValues["Nodules found"] := summaryText
+    parsedValues["Total count"] := totalNodules
+
+    action := ShowParseConfirmation("Fleischner Nodules", parsedValues, "Full recommendation block will be inserted", confidence)
+
+    if (action = "insert") {
+        InsertAfterSelection(resultText)
+    } else if (action = "edit") {
+        ; Open Fleischner GUI with largest nodule pre-filled
+        dominantSize := maxSolid > maxSubsolid ? maxSolid : maxSubsolid
+        dominantSize := dominantSize > maxPartsolid ? dominantSize : maxPartsolid
+        dominantType := maxSolid >= dominantSize ? "Solid" : (maxSubsolid >= dominantSize ? "Ground glass" : "Part-solid")
+        ShowFleischnerGuiPrefilled(dominantSize, dominantType, isMultiple ? "Multiple" : "Single")
+    }
 }
 
 ; -----------------------------------------
@@ -1373,6 +1778,7 @@ return
 ; =========================================
 ShowSettings() {
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
+    global SmartParseConfirmation, SmartParseFallbackToGUI
 
     CoordMode, Mouse, Screen
     MouseGetPos, mouseX, mouseY
@@ -1381,6 +1787,8 @@ ShowSettings() {
 
     dmChecked := IncludeDatamining ? "Checked" : ""
     citChecked := ShowCitations ? "Checked" : ""
+    confirmChecked := SmartParseConfirmation ? "Checked" : ""
+    fallbackChecked := SmartParseFallbackToGUI ? "Checked" : ""
 
     ; Determine which item to select in dropdown
     smartParseOptions := "Volume|RVLV|NASCET|Adrenal|Fleischner"
@@ -1396,16 +1804,20 @@ ShowSettings() {
         smartParseOptions := "Volume||RVLV|NASCET|Adrenal|Fleischner"
 
     Gui, SettingsGui:New, +AlwaysOnTop
-    Gui, SettingsGui:Add, Text, x10 y10 w250, RadAssist Settings
+    Gui, SettingsGui:Add, Text, x10 y10 w280, RadAssist v2.1 Settings
     Gui, SettingsGui:Add, Text, x10 y40, Default Quick Parse:
-    Gui, SettingsGui:Add, DropDownList, x130 y37 w100 vSetDefaultParse, %smartParseOptions%
-    Gui, SettingsGui:Add, Checkbox, x10 y70 w250 vSetDatamine %dmChecked%, Include datamining phrase by default
-    Gui, SettingsGui:Add, Checkbox, x10 y95 w250 vSetCitations %citChecked%, Show citations in output
-    Gui, SettingsGui:Add, Text, x10 y125, Datamining phrase:
-    Gui, SettingsGui:Add, Edit, x10 y145 w200 vSetDMPhrase, %DataminingPhrase%
-    Gui, SettingsGui:Add, Button, x10 y185 w80 gSaveSettings, Save
-    Gui, SettingsGui:Add, Button, x100 y185 w80 gSettingsGuiClose, Cancel
-    Gui, SettingsGui:Show, x%xPos% y%yPos% w250 h225, Settings
+    Gui, SettingsGui:Add, DropDownList, x130 y37 w120 vSetDefaultParse, %smartParseOptions%
+    Gui, SettingsGui:Add, GroupBox, x10 y65 w270 h80, Smart Parse Options
+    Gui, SettingsGui:Add, Checkbox, x20 y85 w250 vSetConfirmation %confirmChecked%, Show confirmation dialog before insert
+    Gui, SettingsGui:Add, Checkbox, x20 y110 w250 vSetFallbackGUI %fallbackChecked%, Fall back to GUI when confidence low
+    Gui, SettingsGui:Add, GroupBox, x10 y150 w270 h105, Output Options
+    Gui, SettingsGui:Add, Checkbox, x20 y170 w250 vSetDatamine %dmChecked%, Include datamining phrase by default
+    Gui, SettingsGui:Add, Checkbox, x20 y195 w250 vSetCitations %citChecked%, Show citations in output
+    Gui, SettingsGui:Add, Text, x20 y220, Datamining phrase:
+    Gui, SettingsGui:Add, Edit, x110 y217 w160 vSetDMPhrase, %DataminingPhrase%
+    Gui, SettingsGui:Add, Button, x70 y265 w80 gSaveSettings, Save
+    Gui, SettingsGui:Add, Button, x160 y265 w80 gSettingsGuiClose, Cancel
+    Gui, SettingsGui:Show, x%xPos% y%yPos% w295 h305, Settings
     return
 }
 
@@ -1416,17 +1828,22 @@ return
 SaveSettings:
     Gui, SettingsGui:Submit, NoHide
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
+    global SmartParseConfirmation, SmartParseFallbackToGUI
 
     IncludeDatamining := SetDatamine
     ShowCitations := SetCitations
     DataminingPhrase := SetDMPhrase
     DefaultSmartParse := SetDefaultParse
+    SmartParseConfirmation := SetConfirmation
+    SmartParseFallbackToGUI := SetFallbackGUI
 
     ; Save to INI file
     IniWrite, %IncludeDatamining%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, IncludeDatamining
     IniWrite, %ShowCitations%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, ShowCitations
     IniWrite, %DataminingPhrase%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, DataminingPhrase
     IniWrite, %DefaultSmartParse%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, DefaultSmartParse
+    IniWrite, %SmartParseConfirmation%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, SmartParseConfirmation
+    IniWrite, %SmartParseFallbackToGUI%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, SmartParseFallbackToGUI
 
     Gui, SettingsGui:Destroy
     ToolTip, Settings saved!
@@ -1477,6 +1894,7 @@ return
 ; =========================================
 LoadPreferences() {
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
+    global SmartParseConfirmation, SmartParseFallbackToGUI
 
     prefsFile := A_ScriptDir . "\RadAssist_preferences.ini"
     if (FileExist(prefsFile)) {
@@ -1484,9 +1902,13 @@ LoadPreferences() {
         IniRead, ShowCitations, %prefsFile%, Settings, ShowCitations, 1
         IniRead, DataminingPhrase, %prefsFile%, Settings, DataminingPhrase, SSM lung nodule
         IniRead, DefaultSmartParse, %prefsFile%, Settings, DefaultSmartParse, Volume
+        IniRead, SmartParseConfirmation, %prefsFile%, Settings, SmartParseConfirmation, 1
+        IniRead, SmartParseFallbackToGUI, %prefsFile%, Settings, SmartParseFallbackToGUI, 1
 
         IncludeDatamining := (IncludeDatamining = "1")
         ShowCitations := (ShowCitations = "1")
+        SmartParseConfirmation := (SmartParseConfirmation = "1")
+        SmartParseFallbackToGUI := (SmartParseFallbackToGUI = "1")
     }
 }
 LoadPreferences()
@@ -1494,9 +1916,9 @@ LoadPreferences()
 ; =========================================
 ; Tray Menu
 ; =========================================
-Menu, Tray, Tip, RadAssist v2.0 - Smart Radiology Tools
+Menu, Tray, Tip, RadAssist v2.1 - Smart Radiology Tools
 Menu, Tray, NoStandard
-Menu, Tray, Add, RadAssist v2.0, TrayAbout
+Menu, Tray, Add, RadAssist v2.1, TrayAbout
 Menu, Tray, Add
 Menu, Tray, Add, Settings, MenuSettings
 Menu, Tray, Add, Reload, TrayReload
@@ -1504,7 +1926,7 @@ Menu, Tray, Add, Exit, TrayExit
 return
 
 TrayAbout:
-    MsgBox, 64, RadAssist, RadAssist v2.0`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nSmart Parse Features (NEW):`n- Smart Volume: Parse dimensions with organ detection`n- Smart RV/LV: Parse ratio with PE interpretation`n- Smart NASCET: Parse stenosis measurements`n- Smart Adrenal: Parse HU washout values`n- Parse Nodules: Fleischner 2017 from findings text`n`nGUI Calculators:`n- Ellipsoid Volume`n- Adrenal Washout`n- NASCET Stenosis`n- RV/LV Ratio`n- Fleischner 2017`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)
+    MsgBox, 64, RadAssist, RadAssist v2.1`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nSmart Parse v2.1 Features:`n- Context-aware parsing (filters image/slice numbers)`n- Confirmation dialog before insertion`n- Confidence scoring with GUI fallback`n- Inline sentence output for dictation flow`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk interpretation`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nGUI Calculators:`n- Ellipsoid Volume`n- Adrenal Washout`n- NASCET Stenosis`n- RV/LV Ratio`n- Fleischner 2017`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)
 return
 
 TrayReload:
