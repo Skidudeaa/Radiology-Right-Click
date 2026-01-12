@@ -50,6 +50,20 @@ global g_ConfirmAction := ""  ; Used by confirmation dialog
 global g_ParsedResultText := ""  ; Stores parsed result for insertion
 
 ; -----------------------------------------
+; Tool Visibility Preferences
+; WHY: Allow users to show/hide tools they don't use
+; NOTE: These are saved to INI and loaded on startup
+; -----------------------------------------
+global ShowVolumeTools := true
+global ShowRVLVTools := true
+global ShowNASCETTools := true
+global ShowAdrenalTools := true
+global ShowFleischnerTools := true
+global ShowStenosisTools := true
+global ShowICHTools := true
+global ShowDateCalculator := true
+
+; -----------------------------------------
 ; Exit Cleanup Handler
 ; WHY: Clear clipboard on exit to prevent PHI exposure
 ; -----------------------------------------
@@ -112,33 +126,91 @@ return
     Clipboard := ClipSaved
 
     ; Build and show menu
+    ; WHY: Conditionally build menu based on tool visibility preferences
+    ; ARCHITECTURE: Menu items only added if corresponding Show*Tools is true
     Menu, RadAssistMenu, Add
     Menu, RadAssistMenu, DeleteAll
 
     ; Smart Parse submenu (text parsing with inline insertion)
     Menu, SmartParseMenu, Add
     Menu, SmartParseMenu, DeleteAll
-    Menu, SmartParseMenu, Add, Smart Volume (parse dimensions), MenuSmartVolume
-    Menu, SmartParseMenu, Add, Smart RV/LV (parse ratio), MenuSmartRVLV
-    Menu, SmartParseMenu, Add, Smart NASCET (parse stenosis), MenuSmartNASCET
-    Menu, SmartParseMenu, Add, Smart Adrenal (parse HU values), MenuSmartAdrenal
-    Menu, SmartParseMenu, Add
-    Menu, SmartParseMenu, Add, Parse Nodules (Fleischner), MenuSmartFleischner
+    smartParseHasItems := false
+    if (ShowVolumeTools) {
+        Menu, SmartParseMenu, Add, Smart Volume (parse dimensions), MenuSmartVolume
+        smartParseHasItems := true
+    }
+    if (ShowRVLVTools) {
+        Menu, SmartParseMenu, Add, Smart RV/LV (parse ratio), MenuSmartRVLV
+        smartParseHasItems := true
+    }
+    if (ShowNASCETTools) {
+        Menu, SmartParseMenu, Add, Smart NASCET (parse stenosis), MenuSmartNASCET
+        smartParseHasItems := true
+    }
+    if (ShowAdrenalTools) {
+        Menu, SmartParseMenu, Add, Smart Adrenal (parse HU values), MenuSmartAdrenal
+        smartParseHasItems := true
+    }
+    if (ShowFleischnerTools) {
+        if (smartParseHasItems)
+            Menu, SmartParseMenu, Add
+        Menu, SmartParseMenu, Add, Parse Nodules (Fleischner), MenuSmartFleischner
+        smartParseHasItems := true
+    }
 
-    Menu, RadAssistMenu, Add, Smart Parse, :SmartParseMenu
-    Menu, RadAssistMenu, Add, Quick Parse (%DefaultSmartParse%), MenuQuickSmartParse
-    Menu, RadAssistMenu, Add
+    if (smartParseHasItems) {
+        Menu, RadAssistMenu, Add, Smart Parse, :SmartParseMenu
+        Menu, RadAssistMenu, Add, Quick Parse (%DefaultSmartParse%), MenuQuickSmartParse
+        Menu, RadAssistMenu, Add
+    }
 
-    Menu, RadAssistMenu, Add, Ellipsoid Volume (GUI), MenuEllipsoidVolume
-    Menu, RadAssistMenu, Add, Adrenal Washout (GUI), MenuAdrenalWashout
-    Menu, RadAssistMenu, Add
-    Menu, RadAssistMenu, Add, NASCET (Carotid), MenuNASCET
-    Menu, RadAssistMenu, Add, Vessel Stenosis (General), MenuStenosis
-    Menu, RadAssistMenu, Add, RV/LV Ratio (GUI), MenuRVLV
-    Menu, RadAssistMenu, Add
-    Menu, RadAssistMenu, Add, Fleischner 2017 (GUI), MenuFleischner
-    Menu, RadAssistMenu, Add
-    Menu, RadAssistMenu, Add, Insert Report Header, MenuInsertHeader
+    ; GUI calculators - conditionally add based on visibility
+    guiHasItems := false
+    if (ShowVolumeTools) {
+        Menu, RadAssistMenu, Add, Ellipsoid Volume (GUI), MenuEllipsoidVolume
+        guiHasItems := true
+    }
+    if (ShowAdrenalTools) {
+        Menu, RadAssistMenu, Add, Adrenal Washout (GUI), MenuAdrenalWashout
+        guiHasItems := true
+    }
+    if (guiHasItems)
+        Menu, RadAssistMenu, Add
+
+    stenosisHasItems := false
+    if (ShowNASCETTools) {
+        Menu, RadAssistMenu, Add, NASCET (Carotid), MenuNASCET
+        stenosisHasItems := true
+    }
+    if (ShowStenosisTools) {
+        Menu, RadAssistMenu, Add, Vessel Stenosis (General), MenuStenosis
+        stenosisHasItems := true
+    }
+    if (ShowRVLVTools) {
+        Menu, RadAssistMenu, Add, RV/LV Ratio (GUI), MenuRVLV
+        stenosisHasItems := true
+    }
+    if (stenosisHasItems)
+        Menu, RadAssistMenu, Add
+
+    if (ShowFleischnerTools) {
+        Menu, RadAssistMenu, Add, Fleischner 2017 (GUI), MenuFleischner
+        Menu, RadAssistMenu, Add
+    }
+
+    ; New calculators section
+    newCalcHasItems := false
+    if (ShowICHTools) {
+        Menu, RadAssistMenu, Add, ICH Volume (ABC/2), MenuICHVolume
+        newCalcHasItems := true
+    }
+    if (ShowDateCalculator) {
+        Menu, RadAssistMenu, Add, Follow-up Date Calculator, MenuDateCalc
+        newCalcHasItems := true
+    }
+    if (newCalcHasItems)
+        Menu, RadAssistMenu, Add
+
     Menu, RadAssistMenu, Add, Copy Sectra History (Ctrl+Shift+H), MenuSectraHistory
     Menu, RadAssistMenu, Add
     Menu, RadAssistMenu, Add, Settings, MenuSettings
@@ -219,10 +291,6 @@ MenuQuickSmartParse:
         ParseAndInsertVolume(g_SelectedText)
 return
 
-MenuInsertHeader:
-    InsertReportHeader()
-return
-
 ; GUI-based handlers
 MenuEllipsoidVolume:
     ShowEllipsoidVolumeGui()
@@ -254,6 +322,22 @@ return
 
 MenuFleischner:
     ShowFleischnerGui()
+return
+
+MenuICHVolume:
+    if (g_SelectedText != "") {
+        ParseAndInsertICH(g_SelectedText)
+    } else {
+        ShowICHVolumeGui()
+    }
+return
+
+MenuDateCalc:
+    if (g_SelectedText != "") {
+        ParseAndInsertDate(g_SelectedText)
+    } else {
+        ShowDateCalculatorGui()
+    }
 return
 
 MenuSectraHistory:
@@ -317,16 +401,13 @@ CalcEllipsoid:
 
     ; Ellipsoid volume formula: (4/3) * pi * (a/2) * (b/2) * (c/2) = 0.5236 * a * b * c
     volume := 0.5236 * d1 * d2 * d3
+    volumeRound := Round(volume, 1)
 
-    result := "Ellipsoid Volume Calculation:`n"
-    result .= "Dimensions: " . EllipDim1 . " x " . EllipDim2 . " x " . EllipDim3 . " " . EllipUnits . "`n"
-    result .= "Volume: " . Round(volume, 2) . " mL (cc)`n"
-
-    ; Also show in mm³ if input was cm
-    if (EllipUnits = "cm") {
-        volumeMm3 := volume * 1000
-        result .= "Volume: " . Round(volumeMm3, 0) . " mm³"
-    }
+    ; WHY: Sentence style for inline insertion - matches smart parser output
+    ; ARCHITECTURE: Leading space for dictation continuity
+    ; Format dimensions in display units
+    dimStr := EllipDim1 . " x " . EllipDim2 . " x " . EllipDim3 . " " . EllipUnits
+    result := " This corresponds to a volume of " . volumeRound . " cc (" . dimStr . ")."
 
     Gui, EllipsoidGui:Destroy
     ShowResult(result)
@@ -371,42 +452,40 @@ CalcAdrenal:
     post := AdrenalPost + 0
     delayed := AdrenalDelayed + 0
 
-    result := "Adrenal Washout Calculation:`n"
-    result .= "Pre-contrast: " . pre . " HU`n"
-    result .= "Post-contrast: " . post . " HU`n"
-    result .= "Delayed (15 min): " . delayed . " HU`n`n"
+    ; WHY: Sentence style for inline insertion - matches smart parser output
+    ; ARCHITECTURE: Leading space for dictation continuity
+    result := " Adrenal washout: "
 
     ; Absolute washout (requires pre-contrast)
     if (post != pre) {
         absWashout := ((post - delayed) / (post - pre)) * 100
         absWashout := Round(absWashout, 1)
-        result .= "Absolute Washout: " . absWashout . "%`n"
+        result .= "absolute " . absWashout . "%"
         if (absWashout >= 60)
-            result .= "  -> >=60%: Likely adenoma`n"
+            result .= " (likely adenoma)"
         else
-            result .= "  -> <60%: Indeterminate/suspicious`n"
+            result .= " (indeterminate)"
+        result .= ", "
     }
 
     ; Relative washout (no pre-contrast needed)
     if (post != 0) {
         relWashout := ((post - delayed) / post) * 100
         relWashout := Round(relWashout, 1)
-        result .= "`nRelative Washout: " . relWashout . "%`n"
+        result .= "relative " . relWashout . "%"
         if (relWashout >= 40)
-            result .= "  -> >=40%: Likely adenoma`n"
+            result .= " (likely adenoma)"
         else
-            result .= "  -> <40%: Indeterminate/suspicious`n"
+            result .= " (indeterminate)"
+        result .= "."
     }
 
-    ; Pre-contrast density assessment
-    result .= "`nPre-contrast Assessment:`n"
+    ; Pre-contrast assessment as additional sentence
     if (pre <= 10)
-        result .= "  -> <=10 HU: Lipid-rich adenoma (no washout needed)`n"
-    else
-        result .= "  -> >10 HU: Lipid-poor, washout analysis required`n"
+        result .= " Pre-contrast " . pre . " HU suggests lipid-rich adenoma."
 
     if (ShowCitations)
-        result .= "`nRef: Mayo-Smith WW et al. Radiology 2017"
+        result .= " (Mayo-Smith et al. Radiology 2017)"
 
     Gui, AdrenalGui:Destroy
     ShowResult(result)
@@ -453,24 +532,22 @@ CalculateNASCETResult(distal, stenosis) {
     nascetVal := ((distal - stenosis) / distal) * 100
     nascetVal := Round(nascetVal, 1)
 
-    result := "NASCET Calculation:`n"
-    result .= "Distal ICA: " . distal . " mm`n"
-    result .= "Stenosis: " . stenosis . " mm`n"
-    result .= "NASCET: " . nascetVal . "%`n`n"
+    ; WHY: Sentence style for inline insertion - matches smart parser output
+    ; ARCHITECTURE: Leading space for dictation continuity
+    distalRound := Round(distal, 1)
+    stenosisRound := Round(stenosis, 1)
 
-    if (nascetVal < 50) {
-        result .= "Interpretation: Mild stenosis (<50%)`n"
-        result .= "- Medical management typically recommended."
-    } else if (nascetVal < 70) {
-        result .= "Interpretation: Moderate stenosis (50-69%)`n"
-        result .= "- Consider intervention in symptomatic patients."
-    } else {
-        result .= "Interpretation: Severe stenosis (>=70%)`n"
-        result .= "- Strong indication for CEA/CAS in symptomatic patients."
-    }
+    result := " NASCET: " . nascetVal . "% stenosis (distal " . distalRound . "mm, stenosis " . stenosisRound . "mm), "
+
+    if (nascetVal < 50)
+        result .= "mild stenosis."
+    else if (nascetVal < 70)
+        result .= "moderate stenosis, consider intervention if symptomatic."
+    else
+        result .= "severe stenosis, strong indication for CEA/CAS."
 
     if (ShowCitations)
-        result .= "`n`nCitation: NASCET (N Engl J Med 1991;325:445-53)"
+        result .= " (NASCET, NEJM 1991)"
 
     return result
 }
@@ -581,20 +658,21 @@ CalcStenosis:
 
     vesselName := StenosisVessel != "" ? StenosisVessel : "Vessel"
 
-    result := "Stenosis Calculation:`n"
-    result .= vesselName . "`n"
-    result .= "Normal diameter: " . normal . " mm`n"
-    result .= "Stenosis diameter: " . stenosis . " mm`n"
-    result .= "Stenosis: " . stenosisPercent . "%`n`n"
+    ; WHY: Sentence style for inline insertion - leading space for dictation continuity
+    ; ARCHITECTURE: Matches NASCET parser output format for consistency
+    normalRound := Round(normal, 1)
+    stenosisRound := Round(stenosis, 1)
 
-    ; Same severity cutoffs as NASCET
-    if (stenosisPercent < 50) {
-        result .= "Interpretation: Mild stenosis (<50%)"
-    } else if (stenosisPercent < 70) {
-        result .= "Interpretation: Moderate stenosis (50-69%)"
-    } else {
-        result .= "Interpretation: Severe stenosis (>=70%)"
-    }
+    ; Build severity interpretation
+    if (stenosisPercent < 50)
+        severity := "mild stenosis"
+    else if (stenosisPercent < 70)
+        severity := "moderate stenosis"
+    else
+        severity := "severe stenosis"
+
+    ; Sentence format: " Stenosis: X% (normal Ymm, stenosis Zmm), severity."
+    result := " " . vesselName . " stenosis: " . stenosisPercent . "% (normal " . normalRound . "mm, stenosis " . stenosisRound . "mm), " . severity . "."
 
     Gui, StenosisGui:Destroy
     ShowResult(result)
@@ -644,27 +722,24 @@ CalcRVLV:
     ratio := rv / lv
     ratio := Round(ratio, 2)
 
-    result := "RV/LV Ratio Calculation:`n"
-    result .= "RV diameter: " . rv . " mm`n"
-    result .= "LV diameter: " . lv . " mm`n"
-    result .= "RV/LV Ratio: " . ratio . "`n`n"
+    ; WHY: Sentence style for inline insertion - matches smart parser output
+    ; ARCHITECTURE: Leading space for dictation continuity
+    rvRound := Round(rv, 1)
+    lvRound := Round(lv, 1)
 
-    if (ratio >= 1.0) {
-        result .= "Interpretation: Significant right heart strain`n"
-        result .= "- Suggestive of severe PE or chronic pulmonary hypertension`n"
-        result .= "- Consider ICU admission and advanced therapies"
-    } else if (ratio >= 0.9) {
-        result .= "Interpretation: Suggestive of right heart strain`n"
-        result .= "- Ratio 0.9-0.99 associated with increased adverse events in acute PE`n"
-        result .= "- Close monitoring recommended"
-    } else {
-        result .= "Interpretation: Normal`n"
-        result .= "- RV size normal relative to LV`n"
-        result .= "- Low risk for RV dysfunction in setting of PE"
-    }
+    ; Build interpretation
+    if (ratio >= 1.0)
+        interpretation := "significant right heart strain"
+    else if (ratio >= 0.9)
+        interpretation := "suggestive of right heart strain"
+    else
+        interpretation := "within normal limits"
+
+    ; Sentence format: " RV/LV ratio: X (RV Ymm, LV Zmm), interpretation."
+    result := " RV/LV ratio: " . ratio . " (RV " . rvRound . "mm, LV " . lvRound . "mm), " . interpretation . "."
 
     if (ShowCitations)
-        result .= "`n`nRef: Meinel et al. Radiology 2015;275:583-591"
+        result .= " (Meinel et al. Radiology 2015)"
 
     Gui, RVLVGui:Destroy
     ShowResult(result)
@@ -993,8 +1068,19 @@ InsertAtImpression(textToInsert) {
     Send, {Right}
     Sleep, 30
 
-    ; Check if IMPRESSION: exists in document
-    if (!InStr(docText, "IMPRESSION")) {
+    ; WHY: Match variations of IMPRESSION header used in different templates
+    ; TRADEOFF: Multiple checks vs comprehensive coverage
+    searchTerm := ""
+    if (InStr(docText, "CLINICAL IMPRESSION:"))
+        searchTerm := "CLINICAL IMPRESSION:"
+    else if (InStr(docText, "IMPRESSIONS:"))
+        searchTerm := "IMPRESSIONS:"
+    else if (InStr(docText, "IMPRESSION:"))
+        searchTerm := "IMPRESSION:"
+    else if (InStr(docText, "IMPRESSION"))
+        searchTerm := "IMPRESSION"  ; Match without colon as fallback
+
+    if (searchTerm = "") {
         ; IMPRESSION not found - fall back to insert after selection
         Clipboard := ClipSaved  ; Restore clipboard first
         InsertAfterSelection(textToInsert)
@@ -1005,32 +1091,32 @@ InsertAtImpression(textToInsert) {
 
     ; Go to start of document
     Send, ^{Home}
-    Sleep, 30
+    Sleep, 50
 
     ; Open Find dialog (Ctrl+F)
     Send, ^f
-    Sleep, 300  ; WHY: Increased delay - PowerScribe Find dialog can be slow
+    Sleep, 500  ; WHY: PowerScribe Find dialog can be very slow to open
 
     ; Clear any previous search and type new search text
     ; NOTE: ^a here targets the Find dialog's text field, not the document
     Send, ^a
-    Sleep, 30
-    Send, {Raw}IMPRESSION:
-    Sleep, 150
+    Sleep, 50
+    Send, {Raw}%searchTerm%
+    Sleep, 200
 
     ; Press Enter to find (or F3/Find Next depending on app)
     Send, {Enter}
-    Sleep, 100
+    Sleep, 150
 
     ; Close Find dialog (Escape) - press twice to ensure closed
     Send, {Escape}
-    Sleep, 50
+    Sleep, 100
     Send, {Escape}
-    Sleep, 50
+    Sleep, 100
 
     ; Go to end of line where IMPRESSION: was found
     Send, {End}
-    Sleep, 30
+    Sleep, 50
 
     ; Add blank line (Enter twice for spacing)
     Send, {Enter}{Enter}
@@ -1391,6 +1477,12 @@ ParseAndInsertRVLV(input) {
     ; Examples: "On axial images, RV 42mm, LV 35mm", "4-chamber view: RV 42 LV 35"
     patternG := "i)(?:axial|4[- ]?chamber|four[- ]?chamber).{0,30}" . rvKeywords . ".{0,15}(\d+(?:\.\d+)?)\s*(mm|cm)?.{0,30}" . lvKeywords . ".{0,15}(\d+(?:\.\d+)?)\s*(mm|cm)?"
 
+    ; === PATTERN H: PACS table format (rvval/lvval) ===
+    ; Examples: "rvval 5.0 lvval 3.6", "RVVAL 4.2 LVVAL 3.8"
+    ; WHY: Some PACS systems output measurements in this abbreviated format
+    ; NOTE: Values assumed to be in cm if no units specified (typical for cardiac CT)
+    patternH := "i)rvval\s*(\d+(?:\.\d+)?)\s*(mm|cm)?\s*lvval\s*(\d+(?:\.\d+)?)\s*(mm|cm)?"
+
     ; Helper to normalize units
     NormalizeUnits(units) {
         if (units = "" || units = "mm" || units = "millimeter" || units = "millimeters")
@@ -1446,9 +1538,17 @@ ParseAndInsertRVLV(input) {
         lvUnits := NormalizeUnits(m4)
         confidence := 75
     }
+    else if (RegExMatch(filtered, patternH, m)) {
+        ; PACS "rvval/lvval" format - default to cm if no units (typical cardiac CT)
+        rv := m1 + 0
+        rvUnits := (m2 != "") ? NormalizeUnits(m2) : "cm"
+        lv := m3 + 0
+        lvUnits := (m4 != "") ? NormalizeUnits(m4) : "cm"
+        confidence := 80
+    }
     ; No pattern matched
     else {
-        MsgBox, 48, Parse Error, Could not find RV/LV measurements.`n`nExpected formats:`n- "RV 42mm / LV 35mm"`n- "RV: 42, LV: 35"`n- "Right ventricle 4.2 cm"`n- "RV measures 42mm and LV measures 35mm"`n`nMust include RV/LV keywords.
+        MsgBox, 48, Parse Error, Could not find RV/LV measurements.`n`nExpected formats:`n- "RV 42mm / LV 35mm"`n- "RV: 42, LV: 35"`n- "Right ventricle 4.2 cm"`n- "rvval 5.0 lvval 3.6"`n`nMust include RV/LV keywords.
         return
     }
 
@@ -1482,23 +1582,19 @@ ParseAndInsertRVLV(input) {
         interpretation := "Within normal limits."
     }
 
-    ; Build result based on output format setting
+    ; WHY: Both formats now use sentence style for consistency
+    ; ARCHITECTURE: Leading space for dictation continuity
+    ; TRADEOFF: Macro uses cm (PowerScribe), Inline uses mm (brevity)
     resultText := ""
+    StringLower, interpretLower, interpretation
     if (RVLVOutputFormat = "Macro") {
-        ; Macro format for PowerScribe "Macro right heart" - convert mm to cm
+        ; Macro format: sentence style with cm units for PowerScribe compatibility
         rv_cm := Round(rv / 10, 1)
         lv_cm := Round(lv / 10, 1)
-        resultText := "`n`nEVALUATION FOR RIGHT HEART STRAIN:`n"
-        resultText .= "Standard axial measurements demonstrate:`n"
-        resultText .= "Right Ventricle: " . rv_cm . " cm`n"
-        resultText .= "Left Ventricle: " . lv_cm . " cm`n"
-        resultText .= "RV/LV Ratio: " . ratio . "`n"
-        resultText .= "Impression: " . interpretation
+        resultText := " RV/LV ratio: " . ratio . " (RV " . rv_cm . "cm, LV " . lv_cm . "cm), " . interpretLower
     } else {
-        ; Inline format for continued dictation (original behavior)
-        resultText := " RV/LV ratio: " . ratio . " (RV " . Round(rv, 1) . "mm / LV " . Round(lv, 1) . "mm), "
-        StringLower, interpretLower, interpretation
-        resultText .= interpretLower
+        ; Inline format: brief sentence with mm units
+        resultText := " RV/LV ratio: " . ratio . " (RV " . Round(rv, 1) . "mm, LV " . Round(lv, 1) . "mm), " . interpretLower
     }
 
     ; Show confirmation dialog
@@ -1528,39 +1624,60 @@ ParseAndInsertNASCET(input) {
 
     distal := 0
     stenosis := 0
+    distalUnits := "mm"
+    stenosisUnits := "mm"
     confidence := 0
 
     ; Pattern A (HIGH confidence 90): "distal X mm ... stenosis Y mm"
-    if (RegExMatch(filtered, "i)distal\s*(?:ICA|internal\s*carotid)?.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m)) {
+    ; WHY: Captures units to handle mixed cm/mm measurements
+    if (RegExMatch(filtered, "i)distal\s*(?:ICA|internal\s*carotid)?.*?(\d+(?:\.\d+)?)\s*(mm|cm)?.*?stenosis.*?(\d+(?:\.\d+)?)\s*(mm|cm)?", m)) {
         distal := m1 + 0
-        stenosis := m2 + 0
+        distalUnits := (m2 != "") ? m2 : "mm"
+        stenosis := m3 + 0
+        stenosisUnits := (m4 != "") ? m4 : "mm"
         confidence := 90
     }
     ; Pattern B (HIGH confidence 85): "stenosis X mm ... distal Y mm" (reverse order)
-    else if (RegExMatch(filtered, "i)stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?distal\s*(?:ICA)?.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m)) {
+    else if (RegExMatch(filtered, "i)stenosis.*?(\d+(?:\.\d+)?)\s*(mm|cm)?.*?distal\s*(?:ICA)?.*?(\d+(?:\.\d+)?)\s*(mm|cm)?", m)) {
         stenosis := m1 + 0
-        distal := m2 + 0
+        stenosisUnits := (m2 != "") ? m2 : "mm"
+        distal := m3 + 0
+        distalUnits := (m4 != "") ? m4 : "mm"
         confidence := 85
     }
     ; Pattern C (MEDIUM confidence 65): ICA/carotid + narrowing context
-    else if (RegExMatch(filtered, "i)(?:ICA|carotid).*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?(?:narrow|residual).*?(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m)) {
+    else if (RegExMatch(filtered, "i)(?:ICA|carotid).*?(\d+(?:\.\d+)?)\s*(mm|cm)?.*?(?:narrow|residual).*?(\d+(?:\.\d+)?)\s*(mm|cm)?", m)) {
         d1 := m1 + 0
-        d2 := m2 + 0
+        d1Units := (m2 != "") ? m2 : "mm"
+        d2 := m3 + 0
+        d2Units := (m4 != "") ? m4 : "mm"
+        ; Convert to mm before comparison
+        d1_mm := (d1Units = "cm") ? d1 * 10 : d1
+        d2_mm := (d2Units = "cm") ? d2 * 10 : d2
         ; Larger is distal, smaller is stenosis
-        if (d1 > d2) {
-            distal := d1
-            stenosis := d2
+        if (d1_mm > d2_mm) {
+            distal := d1_mm
+            stenosis := d2_mm
         } else {
-            distal := d2
-            stenosis := d1
+            distal := d2_mm
+            stenosis := d1_mm
         }
+        ; Already converted to mm
+        distalUnits := "mm"
+        stenosisUnits := "mm"
         confidence := 65
     }
     ; NO FALLBACK TO JUST TWO NUMBERS - too risky
     else {
-        MsgBox, 48, Parse Error, Could not find stenosis measurements.`n`nExpected formats:`n- "distal 5.2mm, stenosis 2.1mm"`n- "distal ICA 5.2mm, stenosis 2.1mm"`n`nMust include "distal" or "stenosis" keywords.
+        MsgBox, 48, Parse Error, Could not find stenosis measurements.`n`nExpected formats:`n- "distal 5.2mm, stenosis 2.1mm"`n- "distal ICA 0.5cm, stenosis 3mm"`n`nMust include "distal" or "stenosis" keywords.
         return
     }
+
+    ; Convert cm to mm for consistent calculation
+    if (distalUnits = "cm")
+        distal := distal * 10
+    if (stenosisUnits = "cm")
+        stenosis := stenosis * 10
 
     ; Validate
     if (distal <= 0) {
@@ -1568,7 +1685,7 @@ ParseAndInsertNASCET(input) {
         return
     }
     if (stenosis >= distal) {
-        MsgBox, 48, Error, Stenosis diameter must be less than distal diameter.
+        MsgBox, 48, Error, Stenosis diameter must be less than distal diameter.`n`nDistal: %distal% mm`nStenosis: %stenosis% mm
         return
     }
 
@@ -2124,30 +2241,349 @@ GenerateFleischnerRec(maxSolid, maxSubsolid, maxPartsolid, isMultiple, risk) {
     return result
 }
 
+; =========================================
+; CALCULATOR 7: ICH Volume (ABC/2)
+; WHY: Calculate intracerebral hemorrhage volume using ABC/2 method
+; ARCHITECTURE: Smart parse + GUI fallback pattern
+; =========================================
+
 ; -----------------------------------------
-; REPORT HEADER TEMPLATE
-; WHY: Insert standardized report header with placeholder for Sectra paste.
+; ICH Smart Parser
 ; -----------------------------------------
-InsertReportHeader() {
-    header := "PROCEDURE:  `n"
-    header .= "COMPARISON: No relevant available comparison.`n"
-    header .= "CLINICAL INFORMATION (none relevant/not provided if blank):`n"
-    header .= "Indication:    `n"
-    header .= "Additional History:    `n`n"
+ParseAndInsertICH(input) {
+    input := RegExReplace(input, "`r?\n", " ")
 
-    ; Save clipboard and paste header
-    ClipSaved := ClipboardAll
-    Clipboard := header
-    ClipWait, 0.5
+    a := 0
+    b := 0
+    c := 0
+    units := "cm"
+    confidence := 0
 
-    Send, ^v
-    Sleep, 100
+    ; Pattern A (HIGH confidence 90): "X x Y x Z cm" or "X x Y x Z mm"
+    ; Example: "hemorrhage measuring 5.0 x 4.0 x 3.5 cm"
+    if (RegExMatch(input, "i)(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(cm|mm)?", m)) {
+        a := m1 + 0
+        b := m2 + 0
+        c := m3 + 0
+        units := (m4 != "") ? m4 : "cm"
+        confidence := 90
+    }
+    ; Pattern B (MEDIUM confidence 75): Labeled dimensions
+    ; Example: "A 5.0, B 4.0, C 3.5" or "length 5, width 4, height 3"
+    else if (RegExMatch(input, "i)(?:A|length|L)\s*[:\s=]?\s*(\d+(?:\.\d+)?)\s*(cm|mm)?.*?(?:B|width|W)\s*[:\s=]?\s*(\d+(?:\.\d+)?)\s*(cm|mm)?.*?(?:C|height|H|depth|D)\s*[:\s=]?\s*(\d+(?:\.\d+)?)\s*(cm|mm)?", m)) {
+        a := m1 + 0
+        units := (m2 != "") ? m2 : "cm"
+        b := m3 + 0
+        c := m5 + 0
+        confidence := 75
+    }
+    ; Pattern C (LOW confidence 50): Three numbers in sequence
+    else {
+        numbers := []
+        pos := 1
+        while (pos := RegExMatch(input, "(\d+(?:\.\d+)?)\s*(cm|mm)?", m, pos)) {
+            numbers.Push({val: m1 + 0, unit: m2})
+            pos += StrLen(m)
+        }
+        if (numbers.Length() >= 3) {
+            a := numbers[1].val
+            b := numbers[2].val
+            c := numbers[3].val
+            units := (numbers[1].unit != "") ? numbers[1].unit : "cm"
+            confidence := 50
+        }
+    }
 
-    Clipboard := ClipSaved
+    if (a = 0 || b = 0 || c = 0) {
+        MsgBox, 48, Parse Error, Could not find hemorrhage dimensions.`n`nExpected formats:`n- "5.0 x 4.0 x 3.5 cm"`n- "hemorrhage measuring X x Y x Z"
+        return
+    }
 
-    ToolTip, Header inserted!
-    SetTimer, RemoveToolTip, -1500
+    ; Convert mm to cm for volume calculation
+    if (units = "mm") {
+        a := a / 10
+        b := b / 10
+        c := c / 10
+    }
+
+    ; ABC/2 formula
+    volume := (a * b * c) / 2
+    volume := Round(volume, 1)
+
+    ; Build result text - sentence style with leading space
+    resultText := " ICH volume approximately " . volume . " cc (ABC/2: " . Round(a, 1) . " x " . Round(b, 1) . " x " . Round(c, 1) . " cm)."
+
+    ; Show confirmation dialog
+    parsedValues := {}
+    parsedValues["A"] := Round(a, 1) . " cm"
+    parsedValues["B"] := Round(b, 1) . " cm"
+    parsedValues["C"] := Round(c, 1) . " cm"
+    parsedValues["Volume"] := volume . " cc"
+
+    action := ShowParseConfirmation("ICH Volume (ABC/2)", parsedValues, resultText, confidence)
+
+    if (action = "insert") {
+        InsertAfterSelection(resultText)
+    } else if (action = "edit") {
+        ShowICHVolumeGuiPrefilled(a, b, c)
+    }
 }
+
+; -----------------------------------------
+; ICH Volume GUI
+; -----------------------------------------
+ShowICHVolumeGui() {
+    GetGuiPosition(xPos, yPos)
+
+    Gui, ICHGui:New, +AlwaysOnTop
+    Gui, ICHGui:Add, Text, x10 y10 w280, ICH Volume Calculator (ABC/2)
+    Gui, ICHGui:Add, Text, x10 y40, A (longest axis, cm):
+    Gui, ICHGui:Add, Edit, x140 y37 w60 vICHDimA
+    Gui, ICHGui:Add, Text, x10 y70, B (perpendicular, cm):
+    Gui, ICHGui:Add, Edit, x140 y67 w60 vICHDimB
+    Gui, ICHGui:Add, Text, x10 y100, C (# of slices x thickness, cm):
+    Gui, ICHGui:Add, Edit, x200 y97 w60 vICHDimC
+    Gui, ICHGui:Add, Button, x30 y135 w80 gCalcICH, Calculate
+    Gui, ICHGui:Add, Button, x130 y135 w80 gICHGuiClose, Cancel
+    Gui, ICHGui:Show, x%xPos% y%yPos% w280 h175, ICH Volume (ABC/2)
+    return
+}
+
+ShowICHVolumeGuiPrefilled(a, b, c) {
+    GetGuiPosition(xPos, yPos)
+
+    aVal := Round(a, 1)
+    bVal := Round(b, 1)
+    cVal := Round(c, 1)
+
+    Gui, ICHGui:New, +AlwaysOnTop
+    Gui, ICHGui:Add, Text, x10 y10 w280, ICH Volume Calculator (Pre-filled)
+    Gui, ICHGui:Add, Text, x10 y40, A (longest axis, cm):
+    Gui, ICHGui:Add, Edit, x140 y37 w60 vICHDimA, %aVal%
+    Gui, ICHGui:Add, Text, x10 y70, B (perpendicular, cm):
+    Gui, ICHGui:Add, Edit, x140 y67 w60 vICHDimB, %bVal%
+    Gui, ICHGui:Add, Text, x10 y100, C (# of slices x thickness, cm):
+    Gui, ICHGui:Add, Edit, x200 y97 w60 vICHDimC, %cVal%
+    Gui, ICHGui:Add, Button, x30 y135 w80 gCalcICH, Calculate
+    Gui, ICHGui:Add, Button, x130 y135 w80 gICHGuiClose, Cancel
+    Gui, ICHGui:Show, x%xPos% y%yPos% w280 h175, ICH Volume (ABC/2)
+    return
+}
+
+ICHGuiClose:
+    Gui, ICHGui:Destroy
+return
+
+CalcICH:
+    Gui, ICHGui:Submit, NoHide
+
+    if (ICHDimA = "" || ICHDimB = "" || ICHDimC = "") {
+        MsgBox, 16, Error, Please enter all three dimensions.
+        return
+    }
+
+    a := ICHDimA + 0
+    b := ICHDimB + 0
+    c := ICHDimC + 0
+
+    if (a <= 0 || b <= 0 || c <= 0) {
+        MsgBox, 16, Error, All dimensions must be greater than 0.
+        return
+    }
+
+    ; ABC/2 formula
+    volume := (a * b * c) / 2
+    volume := Round(volume, 1)
+
+    ; Sentence style output
+    result := " ICH volume approximately " . volume . " cc (ABC/2: " . Round(a, 1) . " x " . Round(b, 1) . " x " . Round(c, 1) . " cm)."
+
+    Gui, ICHGui:Destroy
+    ShowResult(result)
+return
+
+; =========================================
+; CALCULATOR 8: Follow-up Date Calculator
+; WHY: Calculate follow-up dates from interval specifications
+; ARCHITECTURE: Smart parse + GUI fallback pattern
+; =========================================
+
+; -----------------------------------------
+; Date Smart Parser
+; -----------------------------------------
+ParseAndInsertDate(input) {
+    input := RegExReplace(input, "`r?\n", " ")
+
+    interval := 0
+    intervalUnit := ""
+    confidence := 0
+
+    ; Pattern A (HIGH confidence 95): "X months", "X weeks", "X days", "X year(s)"
+    if (RegExMatch(input, "i)(\d+)\s*(month|months|mo|m)\b", m)) {
+        interval := m1 + 0
+        intervalUnit := "months"
+        confidence := 95
+    } else if (RegExMatch(input, "i)(\d+)\s*(week|weeks|wk|w)\b", m)) {
+        interval := m1 + 0
+        intervalUnit := "weeks"
+        confidence := 95
+    } else if (RegExMatch(input, "i)(\d+)\s*(day|days|d)\b", m)) {
+        interval := m1 + 0
+        intervalUnit := "days"
+        confidence := 95
+    } else if (RegExMatch(input, "i)(\d+)\s*(year|years|yr|y)\b", m)) {
+        interval := m1 + 0
+        intervalUnit := "years"
+        confidence := 95
+    }
+    ; Pattern B (MEDIUM confidence 80): Abbreviated format "3m", "6w", "45d", "1y"
+    else if (RegExMatch(input, "i)\b(\d+)(m|mo)\b", m)) {
+        interval := m1 + 0
+        intervalUnit := "months"
+        confidence := 80
+    } else if (RegExMatch(input, "i)\b(\d+)(w|wk)\b", m)) {
+        interval := m1 + 0
+        intervalUnit := "weeks"
+        confidence := 80
+    } else if (RegExMatch(input, "i)\b(\d+)(d)\b", m)) {
+        interval := m1 + 0
+        intervalUnit := "days"
+        confidence := 80
+    } else if (RegExMatch(input, "i)\b(\d+)(y|yr)\b", m)) {
+        interval := m1 + 0
+        intervalUnit := "years"
+        confidence := 80
+    }
+
+    if (interval = 0 || intervalUnit = "") {
+        MsgBox, 48, Parse Error, Could not find follow-up interval.`n`nExpected formats:`n- "3 months", "6 weeks", "1 year"`n- "3m", "6w", "45d", "1y"
+        return
+    }
+
+    ; Calculate future date
+    futureDate := CalculateFutureDate(interval, intervalUnit)
+
+    ; Build result text - sentence style with leading space
+    resultText := " Recommend follow-up in " . interval . " " . intervalUnit . " (approximately " . futureDate . ")."
+
+    ; Show confirmation dialog
+    parsedValues := {}
+    parsedValues["Interval"] := interval . " " . intervalUnit
+    parsedValues["Date"] := futureDate
+
+    action := ShowParseConfirmation("Follow-up Date", parsedValues, resultText, confidence)
+
+    if (action = "insert") {
+        InsertAfterSelection(resultText)
+    } else if (action = "edit") {
+        ShowDateCalculatorGuiPrefilled(interval, intervalUnit)
+    }
+}
+
+; -----------------------------------------
+; Calculate Future Date
+; -----------------------------------------
+CalculateFutureDate(interval, unit) {
+    ; Get current date
+    FormatTime, today, , yyyyMMdd
+    today := today + 0
+
+    ; Calculate days to add
+    daysToAdd := 0
+    if (unit = "days")
+        daysToAdd := interval
+    else if (unit = "weeks")
+        daysToAdd := interval * 7
+    else if (unit = "months")
+        daysToAdd := interval * 30  ; Approximate
+    else if (unit = "years")
+        daysToAdd := interval * 365  ; Approximate
+
+    ; Add days to current date
+    futureDate := today
+    futureDate += daysToAdd, days
+
+    ; Format the result date
+    FormatTime, futureFormatted, %futureDate%, MMMM d, yyyy
+    return futureFormatted
+}
+
+; -----------------------------------------
+; Date Calculator GUI
+; -----------------------------------------
+ShowDateCalculatorGui() {
+    GetGuiPosition(xPos, yPos)
+
+    Gui, DateGui:New, +AlwaysOnTop
+    Gui, DateGui:Add, Text, x10 y10 w250, Follow-up Date Calculator
+    Gui, DateGui:Add, Text, x10 y45, Interval:
+    Gui, DateGui:Add, Edit, x80 y42 w50 vDateInterval, 3
+    Gui, DateGui:Add, DropDownList, x140 y42 w100 vDateUnit Choose1, Months|Weeks|Days|Years
+    Gui, DateGui:Add, Button, x30 y85 w80 gCalcDate, Calculate
+    Gui, DateGui:Add, Button, x130 y85 w80 gDateGuiClose, Cancel
+    Gui, DateGui:Show, x%xPos% y%yPos% w260 h125, Follow-up Date
+    return
+}
+
+ShowDateCalculatorGuiPrefilled(interval, unit) {
+    GetGuiPosition(xPos, yPos)
+
+    ; Determine dropdown selection
+    unitSelect := 1
+    if (unit = "weeks")
+        unitSelect := 2
+    else if (unit = "days")
+        unitSelect := 3
+    else if (unit = "years")
+        unitSelect := 4
+
+    Gui, DateGui:New, +AlwaysOnTop
+    Gui, DateGui:Add, Text, x10 y10 w250, Follow-up Date Calculator (Pre-filled)
+    Gui, DateGui:Add, Text, x10 y45, Interval:
+    Gui, DateGui:Add, Edit, x80 y42 w50 vDateInterval, %interval%
+    Gui, DateGui:Add, DropDownList, x140 y42 w100 vDateUnit Choose%unitSelect%, Months|Weeks|Days|Years
+    Gui, DateGui:Add, Button, x30 y85 w80 gCalcDate, Calculate
+    Gui, DateGui:Add, Button, x130 y85 w80 gDateGuiClose, Cancel
+    Gui, DateGui:Show, x%xPos% y%yPos% w260 h125, Follow-up Date
+    return
+}
+
+DateGuiClose:
+    Gui, DateGui:Destroy
+return
+
+CalcDate:
+    Gui, DateGui:Submit, NoHide
+
+    if (DateInterval = "") {
+        MsgBox, 16, Error, Please enter an interval.
+        return
+    }
+
+    interval := DateInterval + 0
+    if (interval <= 0) {
+        MsgBox, 16, Error, Interval must be greater than 0.
+        return
+    }
+
+    ; Normalize unit name
+    unit := "months"
+    if (DateUnit = "Weeks")
+        unit := "weeks"
+    else if (DateUnit = "Days")
+        unit := "days"
+    else if (DateUnit = "Years")
+        unit := "years"
+
+    ; Calculate future date
+    futureDate := CalculateFutureDate(interval, unit)
+
+    ; Sentence style output
+    result := " Recommend follow-up in " . interval . " " . unit . " (approximately " . futureDate . ")."
+
+    Gui, DateGui:Destroy
+    ShowResult(result)
+return
 
 ; =========================================
 ; TOOL 6: Sectra History Copy
@@ -2226,6 +2662,9 @@ ShowSettings() {
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
     global SmartParseConfirmation, SmartParseFallbackToGUI
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
+    global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
+    global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
+    global ShowICHTools, ShowDateCalculator
 
     CoordMode, Mouse, Screen
     MouseGetPos, mouseX, mouseY
@@ -2237,6 +2676,16 @@ ShowSettings() {
     confirmChecked := SmartParseConfirmation ? "Checked" : ""
     fallbackChecked := SmartParseFallbackToGUI ? "Checked" : ""
     fleischnerImprChecked := FleischnerInsertAfterImpression ? "Checked" : ""
+
+    ; Tool visibility checkboxes
+    volChecked := ShowVolumeTools ? "Checked" : ""
+    rvlvChecked := ShowRVLVTools ? "Checked" : ""
+    nascetChecked := ShowNASCETTools ? "Checked" : ""
+    adrenalChecked := ShowAdrenalTools ? "Checked" : ""
+    fleischnerChecked := ShowFleischnerTools ? "Checked" : ""
+    stenosisChecked := ShowStenosisTools ? "Checked" : ""
+    ichChecked := ShowICHTools ? "Checked" : ""
+    dateChecked := ShowDateCalculator ? "Checked" : ""
 
     ; Determine which item to select in dropdown
     smartParseOptions := "Volume|RVLV|NASCET|Adrenal|Fleischner"
@@ -2258,27 +2707,42 @@ ShowSettings() {
     rvlvOptions := (RVLVOutputFormat = "Inline") ? "Macro|Inline||" : "Macro||Inline"
 
     Gui, SettingsGui:New, +AlwaysOnTop
-    Gui, SettingsGui:Add, Text, x10 y10 w280, RadAssist v2.2 Settings
+    Gui, SettingsGui:Add, Text, x10 y10 w280, RadAssist v2.3 Settings
     Gui, SettingsGui:Add, Text, x10 y40, Default Quick Parse:
     Gui, SettingsGui:Add, DropDownList, x130 y37 w120 vSetDefaultParse, %smartParseOptions%
-    Gui, SettingsGui:Add, GroupBox, x10 y65 w270 h105, Smart Parse Options
-    Gui, SettingsGui:Add, Checkbox, x20 y85 w250 vSetConfirmation %confirmChecked%, Show confirmation dialog before insert
-    Gui, SettingsGui:Add, Checkbox, x20 y110 w250 vSetFallbackGUI %fallbackChecked%, Fall back to GUI when confidence low
-    Gui, SettingsGui:Add, Text, x20 y138, Default units (no units in text):
-    Gui, SettingsGui:Add, DropDownList, x190 y135 w70 vSetDefaultUnit, %unitOptions%
-    Gui, SettingsGui:Add, GroupBox, x10 y175 w270 h80, RV/LV & Fleischner Output
-    Gui, SettingsGui:Add, Text, x20 y195, RV/LV format:
-    Gui, SettingsGui:Add, DropDownList, x100 y192 w80 vSetRVLVFormat, %rvlvOptions%
-    Gui, SettingsGui:Add, Text, x185 y195 w90, (Macro = cm)
-    Gui, SettingsGui:Add, Checkbox, x20 y220 w250 vSetFleischnerImpression %fleischnerImprChecked%, Insert Fleischner after IMPRESSION:
-    Gui, SettingsGui:Add, GroupBox, x10 y260 w270 h105, Output Options
-    Gui, SettingsGui:Add, Checkbox, x20 y280 w250 vSetDatamine %dmChecked%, Include datamining phrase by default
-    Gui, SettingsGui:Add, Checkbox, x20 y305 w250 vSetCitations %citChecked%, Show citations in output
-    Gui, SettingsGui:Add, Text, x20 y330, Datamining phrase:
-    Gui, SettingsGui:Add, Edit, x110 y327 w160 vSetDMPhrase, %DataminingPhrase%
-    Gui, SettingsGui:Add, Button, x70 y375 w80 gSaveSettings, Save
-    Gui, SettingsGui:Add, Button, x160 y375 w80 gSettingsGuiClose, Cancel
-    Gui, SettingsGui:Show, x%xPos% y%yPos% w295 h415, Settings
+
+    ; Tool Visibility section (flat checkbox list per user preference)
+    Gui, SettingsGui:Add, GroupBox, x10 y65 w270 h125, Tool Visibility (uncheck to hide)
+    Gui, SettingsGui:Add, Checkbox, x20 y85 w120 vSetShowVolume %volChecked%, Volume
+    Gui, SettingsGui:Add, Checkbox, x150 y85 w120 vSetShowRVLV %rvlvChecked%, RV/LV Ratio
+    Gui, SettingsGui:Add, Checkbox, x20 y108 w120 vSetShowNASCET %nascetChecked%, NASCET
+    Gui, SettingsGui:Add, Checkbox, x150 y108 w120 vSetShowAdrenal %adrenalChecked%, Adrenal
+    Gui, SettingsGui:Add, Checkbox, x20 y131 w120 vSetShowFleischner %fleischnerChecked%, Fleischner
+    Gui, SettingsGui:Add, Checkbox, x150 y131 w120 vSetShowStenosis %stenosisChecked%, Stenosis
+    Gui, SettingsGui:Add, Checkbox, x20 y154 w120 vSetShowICH %ichChecked%, ICH Volume
+    Gui, SettingsGui:Add, Checkbox, x150 y154 w120 vSetShowDate %dateChecked%, Date Calculator
+
+    Gui, SettingsGui:Add, GroupBox, x10 y195 w270 h105, Smart Parse Options
+    Gui, SettingsGui:Add, Checkbox, x20 y215 w250 vSetConfirmation %confirmChecked%, Show confirmation dialog before insert
+    Gui, SettingsGui:Add, Checkbox, x20 y240 w250 vSetFallbackGUI %fallbackChecked%, Fall back to GUI when confidence low
+    Gui, SettingsGui:Add, Text, x20 y268, Default units (no units in text):
+    Gui, SettingsGui:Add, DropDownList, x190 y265 w70 vSetDefaultUnit, %unitOptions%
+
+    Gui, SettingsGui:Add, GroupBox, x10 y305 w270 h80, RV/LV & Fleischner Output
+    Gui, SettingsGui:Add, Text, x20 y325, RV/LV format:
+    Gui, SettingsGui:Add, DropDownList, x100 y322 w80 vSetRVLVFormat, %rvlvOptions%
+    Gui, SettingsGui:Add, Text, x185 y325 w90, (Macro = cm)
+    Gui, SettingsGui:Add, Checkbox, x20 y350 w250 vSetFleischnerImpression %fleischnerImprChecked%, Insert Fleischner after IMPRESSION:
+
+    Gui, SettingsGui:Add, GroupBox, x10 y390 w270 h105, Output Options
+    Gui, SettingsGui:Add, Checkbox, x20 y410 w250 vSetDatamine %dmChecked%, Include datamining phrase by default
+    Gui, SettingsGui:Add, Checkbox, x20 y435 w250 vSetCitations %citChecked%, Show citations in output
+    Gui, SettingsGui:Add, Text, x20 y460, Datamining phrase:
+    Gui, SettingsGui:Add, Edit, x110 y457 w160 vSetDMPhrase, %DataminingPhrase%
+
+    Gui, SettingsGui:Add, Button, x70 y505 w80 gSaveSettings, Save
+    Gui, SettingsGui:Add, Button, x160 y505 w80 gSettingsGuiClose, Cancel
+    Gui, SettingsGui:Show, x%xPos% y%yPos% w295 h545, Settings
     return
 }
 
@@ -2290,6 +2754,9 @@ SaveSettings:
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
     global SmartParseConfirmation, SmartParseFallbackToGUI
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
+    global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
+    global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
+    global ShowICHTools, ShowDateCalculator
     global PreferencesPath
 
     Gui, SettingsGui:Submit
@@ -2305,6 +2772,16 @@ SaveSettings:
     DefaultMeasurementUnit := SetDefaultUnit
     RVLVOutputFormat := SetRVLVFormat
 
+    ; Tool visibility settings
+    ShowVolumeTools := SetShowVolume
+    ShowRVLVTools := SetShowRVLV
+    ShowNASCETTools := SetShowNASCET
+    ShowAdrenalTools := SetShowAdrenal
+    ShowFleischnerTools := SetShowFleischner
+    ShowStenosisTools := SetShowStenosis
+    ShowICHTools := SetShowICH
+    ShowDateCalculator := SetShowDate
+
     ; Batch all writes together (reduces file operations)
     writeSuccess := true
     writeSuccess := writeSuccess && IniWriteWithRetry("IncludeDatamining", IncludeDatamining)
@@ -2316,6 +2793,16 @@ SaveSettings:
     writeSuccess := writeSuccess && IniWriteWithRetry("DefaultMeasurementUnit", DefaultMeasurementUnit)
     writeSuccess := writeSuccess && IniWriteWithRetry("RVLVOutputFormat", RVLVOutputFormat)
     writeSuccess := writeSuccess && IniWriteWithRetry("FleischnerInsertAfterImpression", FleischnerInsertAfterImpression)
+
+    ; Tool visibility preferences
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowVolumeTools", ShowVolumeTools)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowRVLVTools", ShowRVLVTools)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowNASCETTools", ShowNASCETTools)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowAdrenalTools", ShowAdrenalTools)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowFleischnerTools", ShowFleischnerTools)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowStenosisTools", ShowStenosisTools)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowICHTools", ShowICHTools)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowDateCalculator", ShowDateCalculator)
 
     if (!writeSuccess)
         MsgBox, 48, Warning, Some settings may not have saved. Check file permissions or OneDrive sync status.
@@ -2377,6 +2864,10 @@ return
 InsertResult:
     Gui, ResultGui:Destroy
     Sleep, 100
+    ; WHY: Deselect any selected text first to prevent replacing it
+    ; NOTE: Right arrow moves cursor to end of selection without deleting
+    Send, {Right}
+    Sleep, 50
     Send, ^v
 return
 
@@ -2419,6 +2910,9 @@ LoadPreferences() {
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
     global SmartParseConfirmation, SmartParseFallbackToGUI
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
+    global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
+    global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
+    global ShowICHTools, ShowDateCalculator
     global PreferencesPath
 
     ; Use PreferencesPath set by InitPreferencesPath() for OneDrive compatibility
@@ -2433,11 +2927,31 @@ LoadPreferences() {
         IniRead, RVLVOutputFormat, %PreferencesPath%, Settings, RVLVOutputFormat, Macro
         IniRead, FleischnerInsertAfterImpression, %PreferencesPath%, Settings, FleischnerInsertAfterImpression, 1
 
+        ; Tool visibility preferences (default to true/1)
+        IniRead, ShowVolumeTools, %PreferencesPath%, Settings, ShowVolumeTools, 1
+        IniRead, ShowRVLVTools, %PreferencesPath%, Settings, ShowRVLVTools, 1
+        IniRead, ShowNASCETTools, %PreferencesPath%, Settings, ShowNASCETTools, 1
+        IniRead, ShowAdrenalTools, %PreferencesPath%, Settings, ShowAdrenalTools, 1
+        IniRead, ShowFleischnerTools, %PreferencesPath%, Settings, ShowFleischnerTools, 1
+        IniRead, ShowStenosisTools, %PreferencesPath%, Settings, ShowStenosisTools, 1
+        IniRead, ShowICHTools, %PreferencesPath%, Settings, ShowICHTools, 1
+        IniRead, ShowDateCalculator, %PreferencesPath%, Settings, ShowDateCalculator, 1
+
         IncludeDatamining := (IncludeDatamining = "1")
         ShowCitations := (ShowCitations = "1")
         SmartParseConfirmation := (SmartParseConfirmation = "1")
         SmartParseFallbackToGUI := (SmartParseFallbackToGUI = "1")
         FleischnerInsertAfterImpression := (FleischnerInsertAfterImpression = "1")
+
+        ; Convert visibility settings to boolean
+        ShowVolumeTools := (ShowVolumeTools = "1")
+        ShowRVLVTools := (ShowRVLVTools = "1")
+        ShowNASCETTools := (ShowNASCETTools = "1")
+        ShowAdrenalTools := (ShowAdrenalTools = "1")
+        ShowFleischnerTools := (ShowFleischnerTools = "1")
+        ShowStenosisTools := (ShowStenosisTools = "1")
+        ShowICHTools := (ShowICHTools = "1")
+        ShowDateCalculator := (ShowDateCalculator = "1")
     }
 
     ; Validate loaded preferences
@@ -2458,9 +2972,9 @@ LoadPreferences()
 ; =========================================
 ; Tray Menu
 ; =========================================
-Menu, Tray, Tip, RadAssist v2.2 - Smart Radiology Tools
+Menu, Tray, Tip, RadAssist v2.4 - Smart Radiology Tools
 Menu, Tray, NoStandard
-Menu, Tray, Add, RadAssist v2.2, TrayAbout
+Menu, Tray, Add, RadAssist v2.4, TrayAbout
 Menu, Tray, Add
 Menu, Tray, Add, Settings, MenuSettings
 Menu, Tray, Add, Reload, TrayReload
@@ -2468,7 +2982,7 @@ Menu, Tray, Add, Exit, TrayExit
 return
 
 TrayAbout:
-    MsgBox, 64, RadAssist, RadAssist v2.2`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (`)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk (Macro or Inline format)`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)
+    MsgBox, 64, RadAssist, RadAssist v2.4`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (`)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk (Macro or Inline format)`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)
 return
 
 TrayReload:
