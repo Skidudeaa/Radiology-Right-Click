@@ -100,11 +100,13 @@ return
     }
 
     ; Store any selected text
+    ; WHY: Extended timeout (0.5s → 1s) for slower applications like PowerScribe
+    ; TRADEOFF: Slightly slower menu appearance vs better reliability
     global g_SelectedText := ""
     ClipSaved := ClipboardAll
     Clipboard := ""
     Send, ^c
-    ClipWait, 0.3
+    ClipWait, 1  ; Increased from 0.3 for reliability
     if (!ErrorLevel)
         g_SelectedText := Clipboard
     Clipboard := ClipSaved
@@ -984,49 +986,55 @@ InsertAtImpression(textToInsert) {
     docText := Clipboard
     Clipboard := ""  ; Clear clipboard immediately to minimize PHI exposure
 
+    ; CRITICAL: Deselect document text before any further operations
+    ; WHY: Prevents accidental replacement if Find dialog is slow to open
+    Send, {Escape}
+    Sleep, 30
+    Send, {Right}
+    Sleep, 30
+
     ; Check if IMPRESSION: exists in document
     if (!InStr(docText, "IMPRESSION")) {
         ; IMPRESSION not found - fall back to insert after selection
         Clipboard := ClipSaved  ; Restore clipboard first
-        Send, {Right}  ; Deselect and move cursor
-        Sleep, 20
         InsertAfterSelection(textToInsert)
         ToolTip, IMPRESSION: not found - inserted at cursor
         SetTimer, RemoveToolTip, -2000
         return
     }
 
-    ; Deselect and go to start
+    ; Go to start of document
     Send, ^{Home}
-    Sleep, 20
+    Sleep, 30
 
     ; Open Find dialog (Ctrl+F)
     Send, ^f
-    Sleep, 100
+    Sleep, 300  ; WHY: Increased delay - PowerScribe Find dialog can be slow
 
     ; Clear any previous search and type new search text
+    ; NOTE: ^a here targets the Find dialog's text field, not the document
     Send, ^a
-    Sleep, 20
-    Send, IMPRESSION:
-    Sleep, 100
+    Sleep, 30
+    Send, {Raw}IMPRESSION:
+    Sleep, 150
 
     ; Press Enter to find (or F3/Find Next depending on app)
     Send, {Enter}
-    Sleep, 50
+    Sleep, 100
 
     ; Close Find dialog (Escape) - press twice to ensure closed
     Send, {Escape}
-    Sleep, 20
+    Sleep, 50
     Send, {Escape}
-    Sleep, 20
+    Sleep, 50
 
-    ; Go to end of line
+    ; Go to end of line where IMPRESSION: was found
     Send, {End}
-    Sleep, 20
+    Sleep, 30
 
     ; Add blank line (Enter twice for spacing)
     Send, {Enter}{Enter}
-    Sleep, 20
+    Sleep, 30
 
     ; Set clipboard to text and paste
     Clipboard := textToInsert
@@ -1039,6 +1047,33 @@ InsertAtImpression(textToInsert) {
 
     ToolTip, Inserted after IMPRESSION:
     SetTimer, RemoveToolTip, -1500
+}
+
+; -----------------------------------------
+; Utility: Deduplicate array of sizes (removes duplicates within 1mm tolerance)
+; WHY: Multiple patterns may match same nodule, avoid double-counting
+; -----------------------------------------
+DeduplicateSizes(arr) {
+    if (arr.Length() <= 1)
+        return arr
+
+    result := []
+    for i, size in arr {
+        isDuplicate := false
+        for j, existing in result {
+            ; Consider sizes within 1mm as duplicates
+            if (Abs(size - existing) <= 1) {
+                isDuplicate := true
+                ; Keep the larger one
+                if (size > existing)
+                    result[j] := size
+                break
+            }
+        }
+        if (!isDuplicate)
+            result.Push(size)
+    }
+    return result
 }
 
 ; -----------------------------------------
@@ -1295,8 +1330,8 @@ ParseAndInsertVolume(input) {
 
 ; -----------------------------------------
 ; SMART RV/LV RATIO PARSER
-; WHY: Parse "RV 42mm / LV 35mm" and insert ratio with PE risk interpretation.
-; ARCHITECTURE: Requires explicit RV/LV keywords - no fallback to bare numbers (too risky).
+; WHY: Parse RV/LV measurements and insert ratio with PE risk interpretation.
+; ARCHITECTURE: Robust multi-pattern matching for various radiology formats.
 ; TRADEOFF: Macro format uses cm for PowerScribe compatibility; Inline uses mm.
 ; -----------------------------------------
 ParseAndInsertRVLV(input) {
@@ -1306,26 +1341,122 @@ ParseAndInsertRVLV(input) {
 
     rv := 0
     lv := 0
+    rvUnits := "mm"
+    lvUnits := "mm"
     confidence := 0
 
-    ; Pattern A (HIGH confidence 90): "RV X mm ... LV Y mm" or "RV: Xmm, LV: Ymm"
-    ; Example: "RV 42mm / LV 35mm", "RV: 42, LV: 35"
-    if (RegExMatch(filtered, "i)RV\s*(?:diameter|diam)?[:\s=]*(\d+(?:\.\d+)?)\s*(?:mm|cm)?.*?LV\s*(?:diameter|diam)?[:\s=]*(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m)) {
+    ; === COMPREHENSIVE RV KEYWORDS ===
+    ; Covers: RV, R.V., Right ventricle, Right ventricular, Rt ventricle, Rt. ventricle
+    ; Also: "right ventricular diameter", "RV short axis", etc.
+    rvKeywords := "(?:RV|R\.V\.|Right\s*(?:ventricle|ventricular|heart)|Rt\.?\s*(?:ventricle|ventricular))"
+
+    ; === COMPREHENSIVE LV KEYWORDS ===
+    lvKeywords := "(?:LV|L\.V\.|Left\s*(?:ventricle|ventricular|heart)|Lt\.?\s*(?:ventricle|ventricular))"
+
+    ; === MEASUREMENT QUALIFIERS ===
+    ; Things that might appear between keyword and number
+    measureQualifiers := "(?:diameter|diam\.?|short[- ]?axis|transverse|dimension|width|size|measurement)?"
+    verbQualifiers := "(?:is|are|was|measures?|measuring|=|:)?"
+
+    ; === SIZE PATTERN ===
+    ; Handles: "42", "42mm", "42 mm", "4.2cm", "4.2 cm", ".9 cm" (missing leading zero)
+    sizeWithUnits := "(\d*\.?\d+)\s*(mm|cm|millimeters?|centimeters?)?"
+
+    ; === PATTERN A: RV ... LV (most common) ===
+    ; Examples: "RV 42mm / LV 35mm", "RV: 42, LV: 35", "Right ventricle 4.2 cm, Left ventricle 3.5 cm"
+    ; "RV diameter: 42 mm LV diameter: 35 mm", "RV = 42mm; LV = 35mm"
+    ; "The RV measures 42mm and the LV measures 35mm"
+    patternA := "i)" . rvKeywords . "\s*" . measureQualifiers . "\s*" . verbQualifiers . "\s*" . sizeWithUnits . ".*?" . lvKeywords . "\s*" . measureQualifiers . "\s*" . verbQualifiers . "\s*" . sizeWithUnits
+
+    ; === PATTERN B: LV ... RV (reversed order) ===
+    patternB := "i)" . lvKeywords . "\s*" . measureQualifiers . "\s*" . verbQualifiers . "\s*" . sizeWithUnits . ".*?" . rvKeywords . "\s*" . measureQualifiers . "\s*" . verbQualifiers . "\s*" . sizeWithUnits
+
+    ; === PATTERN C: Ratio format ===
+    ; Examples: "RV/LV ratio = 42/35", "RV:LV = 42:35", "RV to LV ratio 1.2"
+    patternC := "i)(?:RV|Right)\s*[/:]?\s*(?:to\s*)?(?:LV|Left)\s*(?:ratio|diameter)?[:\s=]*(\d+(?:\.\d+)?)\s*[/:]\s*(\d+(?:\.\d+)?)"
+
+    ; === PATTERN D: Table/structured format ===
+    ; Examples: "RV    42 mm" followed by "LV    35 mm" (spaces/tabs between)
+    patternD := "i)" . rvKeywords . "\s+(\d+(?:\.\d+)?)\s*(mm|cm)?\s+.*?" . lvKeywords . "\s+(\d+(?:\.\d+)?)\s*(mm|cm)?"
+
+    ; === PATTERN E: Sentence with "and" ===
+    ; Examples: "RV is 42mm and LV is 35mm", "right ventricle 42 and left ventricle 35"
+    patternE := "i)" . rvKeywords . ".{0,20}(\d+(?:\.\d+)?)\s*(mm|cm)?\s*(?:and|,|;)\s*" . lvKeywords . ".{0,20}(\d+(?:\.\d+)?)\s*(mm|cm)?"
+
+    ; === PATTERN F: Dilated/enlarged RV with measurement ===
+    ; Examples: "dilated RV measuring 42mm", "enlarged right ventricle 4.2 cm"
+    patternF := "i)(?:dilated|enlarged|prominent)\s+" . rvKeywords . ".{0,20}(\d+(?:\.\d+)?)\s*(mm|cm)?.*?" . lvKeywords . ".{0,30}(\d+(?:\.\d+)?)\s*(mm|cm)?"
+
+    ; === PATTERN G: Axial/4-chamber specific ===
+    ; Examples: "On axial images, RV 42mm, LV 35mm", "4-chamber view: RV 42 LV 35"
+    patternG := "i)(?:axial|4[- ]?chamber|four[- ]?chamber).{0,30}" . rvKeywords . ".{0,15}(\d+(?:\.\d+)?)\s*(mm|cm)?.{0,30}" . lvKeywords . ".{0,15}(\d+(?:\.\d+)?)\s*(mm|cm)?"
+
+    ; Helper to normalize units
+    NormalizeUnits(units) {
+        if (units = "" || units = "mm" || units = "millimeter" || units = "millimeters")
+            return "mm"
+        return "cm"
+    }
+
+    ; Try patterns in order of confidence
+    if (RegExMatch(filtered, patternA, m)) {
         rv := m1 + 0
-        lv := m2 + 0
+        rvUnits := NormalizeUnits(m2)
+        lv := m3 + 0
+        lvUnits := NormalizeUnits(m4)
         confidence := 90
     }
-    ; Pattern B (HIGH confidence 85): "RV/LV ratio = X / Y"
-    else if (RegExMatch(filtered, "i)RV\s*/\s*LV\s*(?:ratio)?\s*[=:]\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", m)) {
-        rv := m1 + 0
-        lv := m2 + 0
+    else if (RegExMatch(filtered, patternB, m)) {
+        lv := m1 + 0
+        lvUnits := NormalizeUnits(m2)
+        rv := m3 + 0
+        rvUnits := NormalizeUnits(m4)
         confidence := 85
     }
-    ; NO FALLBACK TO JUST TWO NUMBERS - too risky (could be image numbers, dates, etc.)
+    else if (RegExMatch(filtered, patternE, m)) {
+        rv := m1 + 0
+        rvUnits := NormalizeUnits(m2)
+        lv := m3 + 0
+        lvUnits := NormalizeUnits(m4)
+        confidence := 85
+    }
+    else if (RegExMatch(filtered, patternG, m)) {
+        rv := m1 + 0
+        rvUnits := NormalizeUnits(m2)
+        lv := m3 + 0
+        lvUnits := NormalizeUnits(m4)
+        confidence := 85
+    }
+    else if (RegExMatch(filtered, patternF, m)) {
+        rv := m1 + 0
+        rvUnits := NormalizeUnits(m2)
+        lv := m3 + 0
+        lvUnits := NormalizeUnits(m4)
+        confidence := 80
+    }
+    else if (RegExMatch(filtered, patternC, m)) {
+        rv := m1 + 0
+        lv := m2 + 0
+        confidence := 80
+    }
+    else if (RegExMatch(filtered, patternD, m)) {
+        rv := m1 + 0
+        rvUnits := NormalizeUnits(m2)
+        lv := m3 + 0
+        lvUnits := NormalizeUnits(m4)
+        confidence := 75
+    }
+    ; No pattern matched
     else {
-        MsgBox, 48, Parse Error, Could not find RV/LV measurements.`n`nExpected formats:`n- "RV 42mm / LV 35mm"`n- "RV: 42, LV: 35"`n`nMust include "RV" and "LV" keywords.
+        MsgBox, 48, Parse Error, Could not find RV/LV measurements.`n`nExpected formats:`n- "RV 42mm / LV 35mm"`n- "RV: 42, LV: 35"`n- "Right ventricle 4.2 cm"`n- "RV measures 42mm and LV measures 35mm"`n`nMust include RV/LV keywords.
         return
     }
+
+    ; Convert cm to mm if needed
+    if (rvUnits = "cm")
+        rv := rv * 10
+    if (lvUnits = "cm")
+        lv := lv * 10
 
     ; Validate range (typical RV/LV are 20-60mm)
     if (rv < 10 || rv > 100 || lv < 10 || lv > 100) {
@@ -1593,7 +1724,9 @@ ParseAndInsertAdrenalWashout(input) {
 ; -----------------------------------------
 ; SMART FLEISCHNER NODULE PARSER
 ; WHY: Parse findings text for nodules and generate Fleischner 2017 recommendations.
-; ARCHITECTURE: Multi-pattern regex, requires "nodule" keyword, confirmation before insert.
+; ARCHITECTURE: Robust multi-pattern regex for real-world radiology text variations.
+; TRADEOFF: More permissive matching may occasionally capture non-nodule measurements,
+;           but confirmation dialog prevents incorrect insertions.
 ; -----------------------------------------
 ParseAndInsertFleischner(input) {
     global ShowCitations, DataminingPhrase, IncludeDatamining, FleischnerInsertAfterImpression
@@ -1606,73 +1739,205 @@ ParseAndInsertFleischner(input) {
     partsolidNodules := []
     confidence := 0
 
-    ; Pattern 1 (HIGH confidence): Size + type + "nodule" keyword
-    ; Example: "8 mm solid nodule"
-    pattern1 := "i)(\d+(?:\.\d+)?)\s*(mm|cm)\s*(solid|part-?solid|ground[- ]?glass|subsolid|GGN|GGO|SSN)?\s*(?:nodule|opacity|lesion|nodular)"
+    ; === COMPREHENSIVE TYPE KEYWORDS ===
+    ; WHY: Covers all radiology terminology for nodule morphology
+    typePattern := "solid|semi[- ]?solid|part[- ]?solid|ground[- ]?glass|sub[- ]?solid|pure[- ]?GGN|GGN|GGO|GG|SSN|PSN"
+    typePattern .= "|calcified|partially calcified|non[- ]?calcified|spiculated|lobulated|irregular|smooth"
+    typePattern .= "|cavitary|cystic|necrotic|mixed|indeterminate|non[- ]?solid|hazy|ill[- ]?defined"
 
-    ; Pattern 2 (HIGH confidence): Type + "nodule" + size
-    ; Example: "solid nodule measuring 8 mm"
-    pattern2 := "i)(solid|part-?solid|ground[- ]?glass|subsolid|GGN|GGO|SSN)\s*(?:nodule|opacity|lesion|nodular).*?(\d+(?:\.\d+)?)\s*(mm|cm)"
+    ; === COMPREHENSIVE NODULE KEYWORDS ===
+    ; WHY: Matches all ways radiologists describe pulmonary nodules
+    nodulePattern := "nodule|nodules|nodular|micronodule|micronodules"
+    nodulePattern .= "|opacity|opacities|density|densities"
+    nodulePattern .= "|lesion|lesions|mass|masses"
+    nodulePattern .= "|focus|foci|finding|findings"
+    nodulePattern .= "|abnormality|abnormalities"
 
-    ; Search with Pattern 1
-    pos := 1
-    while (pos := RegExMatch(filtered, pattern1, m, pos)) {
-        size := m1 + 0
-        units := m2
-        nodeType := m3
+    ; === ENHANCED SIZE PATTERNS ===
+    ; Handles: "8mm", "8 mm", "8-mm", "0.8 cm", "~8mm", "approximately 8 mm"
+    ; Handles: "8 x 6 mm" (captures larger), "8 to 10 mm" (captures larger)
+    ; Handles: "up to 8 mm", "at least 6 mm", "measuring 8 mm", "measures 8mm"
+    sizePrefix := "(?:~|approximately |approx\.? |about |up to |at least |measuring |measures |sized? )?"
+    sizeNum := "(\d+(?:\.\d+)?)"
+    sizeRange := "(?:\s*(?:x|-|to)\s*(\d+(?:\.\d+)?))?"  ; Optional second dimension/range
+    sizeUnits := "\s*[- ]?(mm|cm|millimeter|centimeter)s?"
+    sizePattern := sizePrefix . sizeNum . sizeRange . sizeUnits
 
-        ; Convert to mm if cm
-        if (units = "cm")
+    ; === LOCATION KEYWORDS (to filter out non-pulmonary) ===
+    ; NOTE: We allow these but don't require them - helps with context
+    lungLocations := "lung|pulmonary|lobe|lobar|RUL|RML|RLL|LUL|LLL|lingula|apical|basilar|peripheral|central|subpleural|perifissural"
+
+    ; === PATTERN 1: Size near nodule keyword (within 40 chars) ===
+    ; Examples: "8 mm nodule", "8mm pulmonary nodule", "nodule measuring 8 mm"
+    pattern1 := "i)" . sizePattern . ".{0,40}(?:" . nodulePattern . ")"
+    pattern1b := "i)(?:" . nodulePattern . ").{0,40}" . sizePattern
+
+    ; === PATTERN 2: Type + size + nodule (flexible ordering) ===
+    ; Examples: "solid 8mm pulmonary nodule", "8 mm solid nodule", "groundglass nodule 7mm"
+    pattern2 := "i)(" . typePattern . ").{0,25}" . sizePattern . ".{0,40}(?:" . nodulePattern . ")"
+    pattern2b := "i)(" . typePattern . ").{0,15}(?:" . nodulePattern . ").{0,40}" . sizePattern
+    pattern2c := "i)" . sizePattern . ".{0,15}(" . typePattern . ").{0,25}(?:" . nodulePattern . ")"
+
+    ; === PATTERN 3: "largest" or "dominant" nodule ===
+    ; Examples: "largest measuring 8 mm", "dominant nodule is 12mm", "the largest is 8 mm"
+    pattern3 := "i)(?:largest|dominant|biggest|most prominent|primary).{0,30}" . sizePattern
+
+    ; === PATTERN 4: Sentence structure with "is/are" ===
+    ; Examples: "nodule is 8 mm", "nodules are up to 10 mm", "which is 8mm"
+    pattern4 := "i)(?:" . nodulePattern . ").{0,20}(?:is|are|was|measures?|measuring).{0,10}" . sizePattern
+
+    ; === PATTERN 5: Parenthetical measurements ===
+    ; Examples: "pulmonary nodule (8 mm)", "RUL nodule (0.8 cm)"
+    pattern5 := "i)(?:" . nodulePattern . ").{0,15}\(" . sizePattern . "\)"
+
+    ; Helper function to get larger of two values
+    GetLargerSize(size1, size2, units) {
+        if (units = "cm" || units = "centimeter" || units = "centimeters")
+            size1 := size1 * 10
+        if (size2 != "" && size2 > size1)
+            return size2
+        return size1
+    }
+
+    ; Helper function to classify nodule type
+    ClassifyAndStore(size, units, nodeType, ByRef solidArr, ByRef subsolidArr, ByRef partsolidArr) {
+        ; Convert to mm
+        if (units = "cm" || units = "centimeter" || units = "centimeters")
             size := size * 10
 
         ; Only accept plausible nodule sizes (1-50mm)
-        if (size >= 1 && size <= 50) {
-            ; Classify nodule type
-            if (nodeType = "" || (InStr(nodeType, "solid") && !InStr(nodeType, "part") && !InStr(nodeType, "sub"))) {
-                solidNodules.Push(size)
-            } else if (InStr(nodeType, "part")) {
-                partsolidNodules.Push(size)
-            } else {
-                subsolidNodules.Push(size)
-            }
-        }
+        if (size < 1 || size > 50)
+            return false
 
+        ; Classify based on type keywords (case insensitive)
+        StringLower, nodeTypeLower, nodeType
+        if (nodeType = "") {
+            ; No type specified - default to solid
+            solidArr.Push(size)
+        } else if (InStr(nodeTypeLower, "part") || InStr(nodeTypeLower, "semi") || nodeTypeLower = "psn") {
+            partsolidArr.Push(size)
+        } else if (InStr(nodeTypeLower, "ground") || InStr(nodeTypeLower, "gg") || InStr(nodeTypeLower, "subsolid")
+                || InStr(nodeTypeLower, "sub-solid") || InStr(nodeTypeLower, "non-solid") || InStr(nodeTypeLower, "nonsolid")
+                || InStr(nodeTypeLower, "hazy") || InStr(nodeTypeLower, "ill-defined") || nodeTypeLower = "ssn") {
+            subsolidArr.Push(size)
+        } else {
+            ; "solid", "calcified", "spiculated", etc. = solid
+            solidArr.Push(size)
+        }
+        return true
+    }
+
+    ; Search Pattern 1: Size then nodule
+    pos := 1
+    while (pos := RegExMatch(filtered, pattern1, m, pos)) {
+        size := m1 + 0
+        size2 := m2 != "" ? m2 + 0 : 0
+        units := m3
+        finalSize := (size2 > size) ? size2 : size
+        ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
         pos += StrLen(m)
     }
 
-    ; Search with Pattern 2
+    ; Search Pattern 1b: Nodule then size
+    pos := 1
+    while (pos := RegExMatch(filtered, pattern1b, m, pos)) {
+        size := m1 + 0
+        size2 := m2 != "" ? m2 + 0 : 0
+        units := m3
+        finalSize := (size2 > size) ? size2 : size
+        ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
+        pos += StrLen(m)
+    }
+
+    ; Search Pattern 2: Type + size + nodule
     pos := 1
     while (pos := RegExMatch(filtered, pattern2, m, pos)) {
         nodeType := m1
         size := m2 + 0
-        units := m3
-
-        if (units = "cm")
-            size := size * 10
-
-        ; Only accept plausible sizes
-        if (size >= 1 && size <= 50) {
-            if (InStr(nodeType, "solid") && !InStr(nodeType, "part") && !InStr(nodeType, "sub")) {
-                solidNodules.Push(size)
-            } else if (InStr(nodeType, "part")) {
-                partsolidNodules.Push(size)
-            } else {
-                subsolidNodules.Push(size)
-            }
-        }
-
+        size2 := m3 != "" ? m3 + 0 : 0
+        units := m4
+        finalSize := (size2 > size) ? size2 : size
+        ClassifyAndStore(finalSize, units, nodeType, solidNodules, subsolidNodules, partsolidNodules)
         pos += StrLen(m)
     }
 
-    ; Check for "sub 6 mm nodules" or "punctate nodules" (multiple small)
-    if (InStr(filtered, "sub 6") || InStr(filtered, "sub-6") || InStr(filtered, "punctate")) {
+    ; Search Pattern 2b: Type + nodule + size
+    pos := 1
+    while (pos := RegExMatch(filtered, pattern2b, m, pos)) {
+        nodeType := m1
+        size := m2 + 0
+        size2 := m3 != "" ? m3 + 0 : 0
+        units := m4
+        finalSize := (size2 > size) ? size2 : size
+        ClassifyAndStore(finalSize, units, nodeType, solidNodules, subsolidNodules, partsolidNodules)
+        pos += StrLen(m)
+    }
+
+    ; Search Pattern 2c: Size + type + nodule
+    pos := 1
+    while (pos := RegExMatch(filtered, pattern2c, m, pos)) {
+        size := m1 + 0
+        size2 := m2 != "" ? m2 + 0 : 0
+        units := m3
+        nodeType := m4
+        finalSize := (size2 > size) ? size2 : size
+        ClassifyAndStore(finalSize, units, nodeType, solidNodules, subsolidNodules, partsolidNodules)
+        pos += StrLen(m)
+    }
+
+    ; Search Pattern 3: "largest/dominant" nodule
+    pos := 1
+    while (pos := RegExMatch(filtered, pattern3, m, pos)) {
+        size := m1 + 0
+        size2 := m2 != "" ? m2 + 0 : 0
+        units := m3
+        finalSize := (size2 > size) ? size2 : size
+        ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
+        pos += StrLen(m)
+    }
+
+    ; Search Pattern 4: "nodule is/measures X mm"
+    pos := 1
+    while (pos := RegExMatch(filtered, pattern4, m, pos)) {
+        size := m1 + 0
+        size2 := m2 != "" ? m2 + 0 : 0
+        units := m3
+        finalSize := (size2 > size) ? size2 : size
+        ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
+        pos += StrLen(m)
+    }
+
+    ; Search Pattern 5: Parenthetical "nodule (8 mm)"
+    pos := 1
+    while (pos := RegExMatch(filtered, pattern5, m, pos)) {
+        size := m1 + 0
+        size2 := m2 != "" ? m2 + 0 : 0
+        units := m3
+        finalSize := (size2 > size) ? size2 : size
+        ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
+        pos += StrLen(m)
+    }
+
+    ; Check for "sub 6 mm nodules", "sub-6mm", "punctate nodules", "<6mm nodules", "scattered tiny nodules"
+    if (RegExMatch(filtered, "i)(sub[- ]?6|<\s*6|punctate|miliary|tiny|innumerable|scattered small|multiple small|few small).{0,25}(" . nodulePattern . ")")) {
         if (solidNodules.Length() = 0)
             solidNodules.Push(5)
     }
 
+    ; Also check for "nodules less than 6 mm" pattern
+    if (RegExMatch(filtered, "i)(" . nodulePattern . ").{0,20}(less than|smaller than|under|<)\s*6\s*(mm|cm)?")) {
+        if (solidNodules.Length() = 0)
+            solidNodules.Push(5)
+    }
+
+    ; Deduplicate arrays (same nodule might match multiple patterns)
+    solidNodules := DeduplicateSizes(solidNodules)
+    subsolidNodules := DeduplicateSizes(subsolidNodules)
+    partsolidNodules := DeduplicateSizes(partsolidNodules)
+
     ; If no nodules found, show error
     if (solidNodules.Length() = 0 && subsolidNodules.Length() = 0 && partsolidNodules.Length() = 0) {
-        MsgBox, 48, Parse Error, Could not find nodule descriptions in text.`n`nExpected patterns:`n- "8 mm solid nodule"`n- "ground glass nodule measuring 6 mm"`n`nMust include "nodule" keyword with size.
+        MsgBox, 48, Parse Error, Could not find nodule descriptions in text.`n`nExpected: Text containing "nodule" (or similar) with a size measurement.`n`nExamples:`n- "8 mm pulmonary nodule"`n- "solid nodule measuring 8 mm"`n- "groundglass opacity, 7mm"
         return
     }
 
