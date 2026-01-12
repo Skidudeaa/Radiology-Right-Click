@@ -28,6 +28,7 @@ global PreferencesPath := ""
 
 ; Initialize preferences path (function defined in Functions section below)
 ; Call after global declaration to set path based on write permissions
+; NOTE: Forward reference - function defined at end of file (AHK parses all functions first)
 InitPreferencesPath()
 
 ; -----------------------------------------
@@ -47,6 +48,17 @@ global UseASCIICharacters := true      ; Use ASCII <=/>= instead of Unicode
 global FleischnerInsertAfterImpression := true  ; Find IMPRESSION: and insert below
 global g_ConfirmAction := ""  ; Used by confirmation dialog
 global g_ParsedResultText := ""  ; Stores parsed result for insertion
+
+; -----------------------------------------
+; Exit Cleanup Handler
+; WHY: Clear clipboard on exit to prevent PHI exposure
+; -----------------------------------------
+OnExit("CleanupOnExit")
+
+CleanupOnExit() {
+    Clipboard := ""
+    return 0  ; Allow exit to proceed
+}
 
 ; -----------------------------------------
 ; Global Hotkey: Ctrl+Shift+H - Sectra History Copy
@@ -133,13 +145,22 @@ return
 return
 
 ; -----------------------------------------
+; Utility: Show no-selection error with context
+; -----------------------------------------
+ShowNoSelectionError(parseType) {
+    messages := {Volume: "dimensions", RVLV: "RV/LV measurements", NASCET: "stenosis values", Adrenal: "HU values", Fleischner: "nodule measurements"}
+    msg := messages[parseType] ? messages[parseType] : "text"
+    MsgBox, 48, No Selection, Please select text containing %msg% first.`n`nHighlight the relevant text and try again.
+}
+
+; -----------------------------------------
 ; Menu Handlers
 ; -----------------------------------------
 
 ; Smart Parse handlers (inline text parsing with insertion)
 MenuSmartVolume:
     if (g_SelectedText = "") {
-        MsgBox, 48, No Selection, Please select text containing dimensions (e.g., "Prostate measures 8.0 x 6.0 x 9.0 cm")
+        ShowNoSelectionError("Volume")
         return
     }
     ParseAndInsertVolume(g_SelectedText)
@@ -246,10 +267,7 @@ return
 ; =========================================
 ShowEllipsoidVolumeGui() {
     ; Position near mouse
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
-    xPos := mouseX + 10
-    yPos := mouseY + 10
+    GetGuiPosition(xPos, yPos)
 
     Gui, EllipsoidGui:New, +AlwaysOnTop
     Gui, EllipsoidGui:Add, Text, x10 y10 w280, Ellipsoid Volume Calculator
@@ -503,10 +521,12 @@ CalcNASCETGui:
     ShowResult(result)
 return
 
-; =========================================
-; CALCULATOR 3B: General Vessel Stenosis
-; (Same cutoffs as NASCET, for any vessel)
-; =========================================
+; -----------------------------------------
+; CALCULATOR 3b: General Stenosis Calculator
+; NOTE: 90% similar to NASCET calculator above. Consider merging
+; into single parameterized function: ShowStenosisGui(preset := "")
+; where preset="NASCET" adds ICA-specific labels.
+; -----------------------------------------
 ShowStenosisGui() {
     CoordMode, Mouse, Screen
     MouseGetPos, mouseX, mouseY
@@ -895,11 +915,36 @@ ShowFleischnerGuiPrefilled(size, nodeType, number) {
     return
 }
 
+; -----------------------------------------
+; Utility: Get mouse position for GUI placement
+; WHY: Reduces code duplication across 15+ GUI functions
+; -----------------------------------------
+GetGuiPosition(ByRef xPos, ByRef yPos, offset := 10) {
+    CoordMode, Mouse, Screen
+    MouseGetPos, mouseX, mouseY
+    xPos := mouseX + offset
+    yPos := mouseY + offset
+}
+
 ; =========================================
 ; SMART PARSE FUNCTIONS
 ; WHY: Parse dictated text and insert calculations inline without GUI re-entry.
 ; ARCHITECTURE: Text parsing with regex, calculation, and clipboard-based insertion.
 ; =========================================
+
+; -----------------------------------------
+; Utility: Paste text while preserving clipboard
+; WHY: Reduces duplication and ensures clipboard is always restored
+; TRADEOFF: Slight overhead for save/restore, but safer
+; -----------------------------------------
+PasteTextPreserveClipboard(text, waitMs := 100) {
+    ClipSaved := ClipboardAll
+    Clipboard := text
+    ClipWait, 0.5
+    Send, ^v
+    Sleep, %waitMs%
+    Clipboard := ClipSaved
+}
 
 ; -----------------------------------------
 ; Utility: Insert text after current selection
@@ -910,17 +955,8 @@ InsertAfterSelection(textToInsert) {
     Send, {Right}
     Sleep, 50
 
-    ; Save current clipboard
-    ClipSaved := ClipboardAll
-    Clipboard := textToInsert
-    ClipWait, 0.5
-
-    ; Paste the text
-    Send, ^v
-    Sleep, 100
-
-    ; Restore clipboard
-    Clipboard := ClipSaved
+    ; Use helper to paste text while preserving clipboard
+    PasteTextPreserveClipboard(textToInsert)
 
     ToolTip, Calculation inserted!
     SetTimer, RemoveToolTip, -1500
@@ -937,21 +973,23 @@ InsertAtImpression(textToInsert) {
     ; Save current clipboard and cursor position marker
     ClipSaved := ClipboardAll
 
-    ; First, try to find IMPRESSION: using clipboard search
-    ; Copy all document text to check if IMPRESSION: exists
+    ; Copy document to check for IMPRESSION: existence
+    ; NOTE: This briefly exposes full document on clipboard; cleared immediately after check
+    ; TRADEOFF: Faster than incremental search, clipboard cleared right after copy
     Clipboard := ""
     Send, ^a  ; Select all
-    Sleep, 50
+    Sleep, 20
     Send, ^c  ; Copy
     ClipWait, 0.5
     docText := Clipboard
+    Clipboard := ""  ; Clear clipboard immediately to minimize PHI exposure
 
     ; Check if IMPRESSION: exists in document
     if (!InStr(docText, "IMPRESSION")) {
         ; IMPRESSION not found - fall back to insert after selection
         Clipboard := ClipSaved  ; Restore clipboard first
         Send, {Right}  ; Deselect and move cursor
-        Sleep, 50
+        Sleep, 20
         InsertAfterSelection(textToInsert)
         ToolTip, IMPRESSION: not found - inserted at cursor
         SetTimer, RemoveToolTip, -2000
@@ -960,35 +998,35 @@ InsertAtImpression(textToInsert) {
 
     ; Deselect and go to start
     Send, ^{Home}
-    Sleep, 50
+    Sleep, 20
 
     ; Open Find dialog (Ctrl+F)
     Send, ^f
-    Sleep, 200
+    Sleep, 100
 
     ; Clear any previous search and type new search text
     Send, ^a
-    Sleep, 50
+    Sleep, 20
     Send, IMPRESSION:
     Sleep, 100
 
     ; Press Enter to find (or F3/Find Next depending on app)
     Send, {Enter}
-    Sleep, 150
+    Sleep, 50
 
     ; Close Find dialog (Escape) - press twice to ensure closed
     Send, {Escape}
-    Sleep, 50
+    Sleep, 20
     Send, {Escape}
-    Sleep, 100
+    Sleep, 20
 
     ; Go to end of line
     Send, {End}
-    Sleep, 50
+    Sleep, 20
 
     ; Add blank line (Enter twice for spacing)
     Send, {Enter}{Enter}
-    Sleep, 50
+    Sleep, 20
 
     ; Set clipboard to text and paste
     Clipboard := textToInsert
@@ -1086,12 +1124,11 @@ ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     }
 
     Gui, ConfirmGui:Show, x%xPos% y%yPos% w380 h215, Confirm Parse
+    WinGet, hWnd, ID, A
 
-    ; Reset and wait for user action
+    ; Reset and wait for user action (event-driven via WinWaitClose)
     g_ConfirmAction := ""
-    while (g_ConfirmAction = "") {
-        Sleep, 50
-    }
+    WinWaitClose, ahk_id %hWnd%
 
     return g_ConfirmAction
 }
@@ -1985,35 +2022,37 @@ SettingsGuiClose:
 return
 
 SaveSettings:
-    Gui, SettingsGui:Submit, NoHide
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
     global SmartParseConfirmation, SmartParseFallbackToGUI
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
+    global PreferencesPath
 
-    IncludeDatamining := SetDatamine
+    Gui, SettingsGui:Submit
+
+    ; Convert checkbox values
+    IncludeDatamining := SetDatamining
     ShowCitations := SetCitations
-    DataminingPhrase := SetDMPhrase
-    DefaultSmartParse := SetDefaultParse
-    SmartParseConfirmation := SetConfirmation
-    SmartParseFallbackToGUI := SetFallbackGUI
-    DefaultMeasurementUnit := SetDefaultUnit
-    RVLVOutputFormat := SetRVLVFormat
+    SmartParseConfirmation := SetSmartParseConfirm
+    SmartParseFallbackToGUI := SetFallbackToGUI
     FleischnerInsertAfterImpression := SetFleischnerImpression
 
-    ; Save to INI file (using PreferencesPath for OneDrive compatibility)
-    global PreferencesPath
-    IniWriteWithRetry("IncludeDatamining", IncludeDatamining)
-    IniWriteWithRetry("ShowCitations", ShowCitations)
-    IniWriteWithRetry("DataminingPhrase", DataminingPhrase)
-    IniWriteWithRetry("DefaultSmartParse", DefaultSmartParse)
-    IniWriteWithRetry("SmartParseConfirmation", SmartParseConfirmation)
-    IniWriteWithRetry("SmartParseFallbackToGUI", SmartParseFallbackToGUI)
-    IniWriteWithRetry("DefaultMeasurementUnit", DefaultMeasurementUnit)
-    IniWriteWithRetry("RVLVOutputFormat", RVLVOutputFormat)
-    IniWriteWithRetry("FleischnerInsertAfterImpression", FleischnerInsertAfterImpression)
+    ; Batch all writes together (reduces file operations)
+    writeSuccess := true
+    writeSuccess := writeSuccess && IniWriteWithRetry("IncludeDatamining", IncludeDatamining)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowCitations", ShowCitations)
+    writeSuccess := writeSuccess && IniWriteWithRetry("DataminingPhrase", DataminingPhrase)
+    writeSuccess := writeSuccess && IniWriteWithRetry("DefaultSmartParse", DefaultSmartParse)
+    writeSuccess := writeSuccess && IniWriteWithRetry("SmartParseConfirmation", SmartParseConfirmation)
+    writeSuccess := writeSuccess && IniWriteWithRetry("SmartParseFallbackToGUI", SmartParseFallbackToGUI)
+    writeSuccess := writeSuccess && IniWriteWithRetry("DefaultMeasurementUnit", DefaultMeasurementUnit)
+    writeSuccess := writeSuccess && IniWriteWithRetry("RVLVOutputFormat", RVLVOutputFormat)
+    writeSuccess := writeSuccess && IniWriteWithRetry("FleischnerInsertAfterImpression", FleischnerInsertAfterImpression)
+
+    if (!writeSuccess)
+        MsgBox, 48, Warning, Some settings may not have saved. Check file permissions or OneDrive sync status.
 
     Gui, SettingsGui:Destroy
-    ToolTip, Settings saved!
+    ToolTip, Settings saved
     SetTimer, RemoveToolTip, -1500
 return
 
@@ -2131,6 +2170,19 @@ LoadPreferences() {
         SmartParseFallbackToGUI := (SmartParseFallbackToGUI = "1")
         FleischnerInsertAfterImpression := (FleischnerInsertAfterImpression = "1")
     }
+
+    ; Validate loaded preferences
+    validParsers := "Volume,RVLV,NASCET,Adrenal,Fleischner"
+    if (!InStr(validParsers, DefaultSmartParse))
+        DefaultSmartParse := "Volume"
+
+    validUnits := "cm,mm"
+    if (!InStr(validUnits, DefaultMeasurementUnit))
+        DefaultMeasurementUnit := "cm"
+
+    validFormats := "Inline,Macro"
+    if (!InStr(validFormats, RVLVOutputFormat))
+        RVLVOutputFormat := "Macro"
 }
 LoadPreferences()
 
