@@ -1415,6 +1415,16 @@ ParseAndInsertVolume(input) {
 }
 
 ; -----------------------------------------
+; HELPER: Normalize measurement units
+; WHY: Standardize various unit formats to mm or cm
+; -----------------------------------------
+NormalizeUnits(units) {
+    if (units = "" || units = "mm" || units = "millimeter" || units = "millimeters")
+        return "mm"
+    return "cm"
+}
+
+; -----------------------------------------
 ; SMART RV/LV RATIO PARSER
 ; WHY: Parse RV/LV measurements and insert ratio with PE risk interpretation.
 ; ARCHITECTURE: Robust multi-pattern matching for various radiology formats.
@@ -1482,13 +1492,6 @@ ParseAndInsertRVLV(input) {
     ; WHY: Some PACS systems output measurements in this abbreviated format
     ; NOTE: Values assumed to be in cm if no units specified (typical for cardiac CT)
     patternH := "i)rvval\s*(\d+(?:\.\d+)?)\s*(mm|cm)?\s*lvval\s*(\d+(?:\.\d+)?)\s*(mm|cm)?"
-
-    ; Helper to normalize units
-    NormalizeUnits(units) {
-        if (units = "" || units = "mm" || units = "millimeter" || units = "millimeters")
-            return "mm"
-        return "cm"
-    }
 
     ; Try patterns in order of confidence
     if (RegExMatch(filtered, patternA, m)) {
