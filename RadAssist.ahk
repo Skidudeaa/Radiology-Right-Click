@@ -1,23 +1,21 @@
 ; ==========================================
 ; RadAssist - Radiology Assistant Tool
-; Version: 2.2
+; Version: 2.5 (AHK v2)
 ; Description: Lean radiology workflow tool with calculators
 ;              Triggered by Shift+Right-click in PowerScribe/Notepad
 ;              Smart text parsing with confirmation dialogs
 ; ARCHITECTURE: Context-filtered parsing with confidence scoring
-; WHY: v2.1 added smart parse; v2.2 adds OneDrive support, RV/LV macro format
-; CHANGES in v2.2:
-;   - Pause script with backtick key (`)
-;   - Fixed character encoding (<=/>= for ASCII compatibility)
-;   - cm default with auto-detection for measurements
-;   - RV/LV macro format for PowerScribe "Macro right heart"
-;   - Fleischner insert after IMPRESSION: field
-;   - OneDrive compatibility (fallback path, retry logic)
+; WHY: v2.5 converts to AHK v2 syntax for compatibility
+; CHANGES in v2.5:
+;   - Converted to AutoHotkey v2 syntax
+;   - GUI system rewritten to use v2 Gui class
+;   - Menu system converted to v2 Menu class
+;   - All commands converted to v2 function syntax
 ; ==========================================
 
-#NoEnv
-#SingleInstance, Force
-SetWorkingDir, %A_ScriptDir%
+#Requires AutoHotkey v2.0
+#SingleInstance Force
+SetWorkingDir(A_ScriptDir)
 
 ; -----------------------------------------
 ; OneDrive Compatibility - Determine preferences path
@@ -67,10 +65,10 @@ global ShowDateCalculator := true
 ; Exit Cleanup Handler
 ; WHY: Clear clipboard on exit to prevent PHI exposure
 ; -----------------------------------------
-OnExit("CleanupOnExit")
+OnExit(CleanupOnExit)
 
-CleanupOnExit() {
-    Clipboard := ""
+CleanupOnExit(ExitReason, ExitCode) {
+    A_Clipboard := ""
     return 0  ; Allow exit to proceed
 }
 
@@ -78,29 +76,33 @@ CleanupOnExit() {
 ; Global Hotkey: Ctrl+Shift+H - Sectra History Copy
 ; (Can be mapped to Contour ShuttlePRO button)
 ; -----------------------------------------
-^+h::
+^+h:: {
     CopySectraHistory()
-return
+}
 
 ; -----------------------------------------
 ; Global Hotkey: Backtick (`) - Pause/Resume Script
 ; WHY: Quick toggle without opening menu
 ; -----------------------------------------
-`::
-    Suspend, Toggle
+`:: {
+    Suspend(-1)
     if (A_IsSuspended)
-        TrayTip, RadAssist, Script PAUSED - Press ` to resume, 1
+        TrayTip("Script PAUSED - Press `` to resume", "RadAssist", 1)
     else
-        TrayTip, RadAssist, Script RESUMED, 1
-return
+        TrayTip("Script RESUMED", "RadAssist", 1)
+}
 
 ; -----------------------------------------
 ; Shift+Right-Click Menu Handler
 ; -----------------------------------------
-+RButton::
++RButton:: {
+    global g_SelectedText, TargetApps, ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
+    global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools, ShowICHTools
+    global ShowDateCalculator, DefaultSmartParse
+
     ; Check if we're in a target application
     inTargetApp := false
-    for index, app in TargetApps {
+    for app in TargetApps {
         if (WinActive(app)) {
             inTargetApp := true
             break
@@ -109,172 +111,175 @@ return
 
     if (!inTargetApp) {
         ; Not in target app - send normal shift+right-click
-        Send, +{RButton}
+        Send("+{RButton}")
         return
     }
 
     ; Store any selected text
     ; WHY: Extended timeout (0.5s → 1s) for slower applications like PowerScribe
     ; TRADEOFF: Slightly slower menu appearance vs better reliability
-    global g_SelectedText := ""
-    ClipSaved := ClipboardAll
-    Clipboard := ""
-    Send, ^c
-    ClipWait, 1  ; Increased from 0.3 for reliability
-    if (!ErrorLevel)
-        g_SelectedText := Clipboard
-    Clipboard := ClipSaved
+    g_SelectedText := ""
+    ClipSaved := ClipboardAll()
+    A_Clipboard := ""
+    Send("^c")
+    if ClipWait(1) {
+        g_SelectedText := A_Clipboard
+    }
+    A_Clipboard := ClipSaved
 
     ; Build and show menu
     ; WHY: Conditionally build menu based on tool visibility preferences
     ; ARCHITECTURE: Menu items only added if corresponding Show*Tools is true
-    Menu, RadAssistMenu, Add
-    Menu, RadAssistMenu, DeleteAll
+    RadAssistMenu := Menu()
+    SmartParseMenu := Menu()
 
-    ; Smart Parse submenu (text parsing with inline insertion)
-    Menu, SmartParseMenu, Add
-    Menu, SmartParseMenu, DeleteAll
     smartParseHasItems := false
     if (ShowVolumeTools) {
-        Menu, SmartParseMenu, Add, Smart Volume (parse dimensions), MenuSmartVolume
+        SmartParseMenu.Add("Smart Volume (parse dimensions)", MenuSmartVolume)
         smartParseHasItems := true
     }
     if (ShowRVLVTools) {
-        Menu, SmartParseMenu, Add, Smart RV/LV (parse ratio), MenuSmartRVLV
+        SmartParseMenu.Add("Smart RV/LV (parse ratio)", MenuSmartRVLV)
         smartParseHasItems := true
     }
     if (ShowNASCETTools) {
-        Menu, SmartParseMenu, Add, Smart NASCET (parse stenosis), MenuSmartNASCET
+        SmartParseMenu.Add("Smart NASCET (parse stenosis)", MenuSmartNASCET)
         smartParseHasItems := true
     }
     if (ShowAdrenalTools) {
-        Menu, SmartParseMenu, Add, Smart Adrenal (parse HU values), MenuSmartAdrenal
+        SmartParseMenu.Add("Smart Adrenal (parse HU values)", MenuSmartAdrenal)
         smartParseHasItems := true
     }
     if (ShowFleischnerTools) {
         if (smartParseHasItems)
-            Menu, SmartParseMenu, Add
-        Menu, SmartParseMenu, Add, Parse Nodules (Fleischner), MenuSmartFleischner
+            SmartParseMenu.Add()
+        SmartParseMenu.Add("Parse Nodules (Fleischner)", MenuSmartFleischner)
         smartParseHasItems := true
     }
 
     if (smartParseHasItems) {
-        Menu, RadAssistMenu, Add, Smart Parse, :SmartParseMenu
-        Menu, RadAssistMenu, Add, Quick Parse (%DefaultSmartParse%), MenuQuickSmartParse
-        Menu, RadAssistMenu, Add
+        RadAssistMenu.Add("Smart Parse", SmartParseMenu)
+        RadAssistMenu.Add("Quick Parse (" DefaultSmartParse ")", MenuQuickSmartParse)
+        RadAssistMenu.Add()
     }
 
     ; GUI calculators - conditionally add based on visibility
     guiHasItems := false
     if (ShowVolumeTools) {
-        Menu, RadAssistMenu, Add, Ellipsoid Volume (GUI), MenuEllipsoidVolume
+        RadAssistMenu.Add("Ellipsoid Volume (GUI)", MenuEllipsoidVolume)
         guiHasItems := true
     }
     if (ShowAdrenalTools) {
-        Menu, RadAssistMenu, Add, Adrenal Washout (GUI), MenuAdrenalWashout
+        RadAssistMenu.Add("Adrenal Washout (GUI)", MenuAdrenalWashout)
         guiHasItems := true
     }
     if (guiHasItems)
-        Menu, RadAssistMenu, Add
+        RadAssistMenu.Add()
 
     stenosisHasItems := false
     if (ShowNASCETTools) {
-        Menu, RadAssistMenu, Add, NASCET (Carotid), MenuNASCET
+        RadAssistMenu.Add("NASCET (Carotid)", MenuNASCET)
         stenosisHasItems := true
     }
     if (ShowStenosisTools) {
-        Menu, RadAssistMenu, Add, Vessel Stenosis (General), MenuStenosis
+        RadAssistMenu.Add("Vessel Stenosis (General)", MenuStenosis)
         stenosisHasItems := true
     }
     if (ShowRVLVTools) {
-        Menu, RadAssistMenu, Add, RV/LV Ratio (GUI), MenuRVLV
+        RadAssistMenu.Add("RV/LV Ratio (GUI)", MenuRVLV)
         stenosisHasItems := true
     }
     if (stenosisHasItems)
-        Menu, RadAssistMenu, Add
+        RadAssistMenu.Add()
 
     if (ShowFleischnerTools) {
-        Menu, RadAssistMenu, Add, Fleischner 2017 (GUI), MenuFleischner
-        Menu, RadAssistMenu, Add
+        RadAssistMenu.Add("Fleischner 2017 (GUI)", MenuFleischner)
+        RadAssistMenu.Add()
     }
 
     ; New calculators section
     newCalcHasItems := false
     if (ShowICHTools) {
-        Menu, RadAssistMenu, Add, ICH Volume (ABC/2), MenuICHVolume
+        RadAssistMenu.Add("ICH Volume (ABC/2)", MenuICHVolume)
         newCalcHasItems := true
     }
     if (ShowDateCalculator) {
-        Menu, RadAssistMenu, Add, Follow-up Date Calculator, MenuDateCalc
+        RadAssistMenu.Add("Follow-up Date Calculator", MenuDateCalc)
         newCalcHasItems := true
     }
     if (newCalcHasItems)
-        Menu, RadAssistMenu, Add
+        RadAssistMenu.Add()
 
-    Menu, RadAssistMenu, Add, Copy Sectra History (Ctrl+Shift+H), MenuSectraHistory
-    Menu, RadAssistMenu, Add
-    Menu, RadAssistMenu, Add, Settings, MenuSettings
+    RadAssistMenu.Add("Copy Sectra History (Ctrl+Shift+H)", MenuSectraHistory)
+    RadAssistMenu.Add()
+    RadAssistMenu.Add("Settings", MenuSettings)
 
-    Menu, RadAssistMenu, Show
-return
+    RadAssistMenu.Show()
+}
 
 ; -----------------------------------------
 ; Utility: Show no-selection error with context
 ; -----------------------------------------
 ShowNoSelectionError(parseType) {
-    messages := {Volume: "dimensions", RVLV: "RV/LV measurements", NASCET: "stenosis values", Adrenal: "HU values", Fleischner: "nodule measurements"}
-    msg := messages[parseType] ? messages[parseType] : "text"
-    MsgBox, 48, No Selection, Please select text containing %msg% first.`n`nHighlight the relevant text and try again.
+    messages := Map("Volume", "dimensions", "RVLV", "RV/LV measurements", "NASCET", "stenosis values", "Adrenal", "HU values", "Fleischner", "nodule measurements")
+    msg := messages.Has(parseType) ? messages[parseType] : "text"
+    MsgBox("Please select text containing " msg " first.`n`nHighlight the relevant text and try again.", "No Selection", 48)
 }
 
 ; -----------------------------------------
-; Menu Handlers
+; Menu Handlers (converted to functions for v2)
 ; -----------------------------------------
 
 ; Smart Parse handlers (inline text parsing with insertion)
-MenuSmartVolume:
+MenuSmartVolume(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
     if (g_SelectedText = "") {
         ShowNoSelectionError("Volume")
         return
     }
     ParseAndInsertVolume(g_SelectedText)
-return
+}
 
-MenuSmartRVLV:
+MenuSmartRVLV(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
     if (g_SelectedText = "") {
-        MsgBox, 48, No Selection, Please select text containing RV/LV measurements (e.g., "RV 42mm / LV 35mm")
+        MsgBox('Please select text containing RV/LV measurements (e.g., "RV 42mm / LV 35mm")', "No Selection", 48)
         return
     }
     ParseAndInsertRVLV(g_SelectedText)
-return
+}
 
-MenuSmartNASCET:
+MenuSmartNASCET(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
     if (g_SelectedText = "") {
-        MsgBox, 48, No Selection, Please select text containing stenosis measurements (e.g., "distal 5.2mm, stenosis 2.1mm")
+        MsgBox('Please select text containing stenosis measurements (e.g., "distal 5.2mm, stenosis 2.1mm")', "No Selection", 48)
         return
     }
     ParseAndInsertNASCET(g_SelectedText)
-return
+}
 
-MenuSmartAdrenal:
+MenuSmartAdrenal(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
     if (g_SelectedText = "") {
-        MsgBox, 48, No Selection, Please select text containing HU values (e.g., "pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU")
+        MsgBox('Please select text containing HU values (e.g., "pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU")', "No Selection", 48)
         return
     }
     ParseAndInsertAdrenalWashout(g_SelectedText)
-return
+}
 
-MenuSmartFleischner:
+MenuSmartFleischner(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
     if (g_SelectedText = "") {
-        MsgBox, 48, No Selection, Please select the findings section containing nodule descriptions.
+        MsgBox("Please select the findings section containing nodule descriptions.", "No Selection", 48)
         return
     }
     ParseAndInsertFleischner(g_SelectedText)
-return
+}
 
-MenuQuickSmartParse:
+MenuQuickSmartParse(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText, DefaultSmartParse
     if (g_SelectedText = "") {
-        MsgBox, 48, No Selection, Please select text to parse.
+        MsgBox("Please select text to parse.", "No Selection", 48)
         return
     }
     if (DefaultSmartParse = "Volume")
@@ -289,18 +294,19 @@ MenuQuickSmartParse:
         ParseAndInsertFleischner(g_SelectedText)
     else
         ParseAndInsertVolume(g_SelectedText)
-return
+}
 
 ; GUI-based handlers
-MenuEllipsoidVolume:
+MenuEllipsoidVolume(ItemName, ItemPos, MyMenu) {
     ShowEllipsoidVolumeGui()
-return
+}
 
-MenuAdrenalWashout:
+MenuAdrenalWashout(ItemName, ItemPos, MyMenu) {
     ShowAdrenalWashoutGui()
-return
+}
 
-MenuNASCET:
+MenuNASCET(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
     ; Try text parsing first, fall back to GUI
     if (g_SelectedText != "") {
         result := ParseNASCET(g_SelectedText)
@@ -310,90 +316,101 @@ MenuNASCET:
         }
     }
     ShowNASCETGui()
-return
+}
 
-MenuStenosis:
+MenuStenosis(ItemName, ItemPos, MyMenu) {
     ShowStenosisGui()
-return
+}
 
-MenuRVLV:
+MenuRVLV(ItemName, ItemPos, MyMenu) {
     ShowRVLVGui()
-return
+}
 
-MenuFleischner:
+MenuFleischner(ItemName, ItemPos, MyMenu) {
     ShowFleischnerGui()
-return
+}
 
-MenuICHVolume:
+MenuICHVolume(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
     if (g_SelectedText != "") {
         ParseAndInsertICH(g_SelectedText)
     } else {
         ShowICHVolumeGui()
     }
-return
+}
 
-MenuDateCalc:
+MenuDateCalc(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
     if (g_SelectedText != "") {
         ParseAndInsertDate(g_SelectedText)
     } else {
         ShowDateCalculatorGui()
     }
-return
+}
 
-MenuSectraHistory:
+MenuSectraHistory(ItemName, ItemPos, MyMenu) {
     CopySectraHistory()
-return
+}
 
-MenuSettings:
+MenuSettings(ItemName, ItemPos, MyMenu) {
     ShowSettings()
-return
+}
 
 ; =========================================
 ; CALCULATOR 1: Ellipsoid Volume
 ; =========================================
-ShowEllipsoidVolumeGui() {
-    ; Position near mouse
-    GetGuiPosition(xPos, yPos)
+; Global GUI object references for v2
+global EllipsoidGuiObj := ""
 
-    Gui, EllipsoidGui:New, +AlwaysOnTop
-    Gui, EllipsoidGui:Add, Text, x10 y10 w280, Ellipsoid Volume Calculator
-    Gui, EllipsoidGui:Add, Text, x10 y35, AP (L):
-    Gui, EllipsoidGui:Add, Edit, x80 y32 w50 vEllipDim1
-    Gui, EllipsoidGui:Add, Text, x135 y35, x   T (W):
-    Gui, EllipsoidGui:Add, Edit, x185 y32 w50 vEllipDim2
-    Gui, EllipsoidGui:Add, Text, x10 y60, CC (H):
-    Gui, EllipsoidGui:Add, Edit, x80 y57 w50 vEllipDim3
-    Gui, EllipsoidGui:Add, Text, x135 y60, Units:
-    Gui, EllipsoidGui:Add, DropDownList, x185 y57 w50 vEllipUnits Choose1, mm|cm
-    Gui, EllipsoidGui:Add, Button, x10 y95 w100 gCalcEllipsoid, Calculate
-    Gui, EllipsoidGui:Add, Button, x120 y95 w80 gEllipsoidGuiClose, Cancel
-    Gui, EllipsoidGui:Show, x%xPos% y%yPos% w250 h135, Ellipsoid Volume
-    return
+ShowEllipsoidVolumeGui() {
+    global EllipsoidGuiObj
+    ; Position near mouse
+    GetGuiPosition(&xPos, &yPos)
+
+    EllipsoidGuiObj := Gui("+AlwaysOnTop")
+    EllipsoidGuiObj.Title := "Ellipsoid Volume"
+    EllipsoidGuiObj.Add("Text", "x10 y10 w280", "Ellipsoid Volume Calculator")
+    EllipsoidGuiObj.Add("Text", "x10 y35", "AP (L):")
+    EllipsoidGuiObj.Add("Edit", "x80 y32 w50 vEllipDim1")
+    EllipsoidGuiObj.Add("Text", "x135 y35", "x   T (W):")
+    EllipsoidGuiObj.Add("Edit", "x185 y32 w50 vEllipDim2")
+    EllipsoidGuiObj.Add("Text", "x10 y60", "CC (H):")
+    EllipsoidGuiObj.Add("Edit", "x80 y57 w50 vEllipDim3")
+    EllipsoidGuiObj.Add("Text", "x135 y60", "Units:")
+    EllipsoidGuiObj.Add("DropDownList", "x185 y57 w50 vEllipUnits Choose1", ["mm", "cm"])
+    EllipsoidGuiObj.Add("Button", "x10 y95 w100", "Calculate").OnEvent("Click", CalcEllipsoid)
+    EllipsoidGuiObj.Add("Button", "x120 y95 w80", "Cancel").OnEvent("Click", EllipsoidGuiClose)
+    EllipsoidGuiObj.OnEvent("Close", EllipsoidGuiClose)
+    EllipsoidGuiObj.Show("x" xPos " y" yPos " w250 h135")
 }
 
-EllipsoidGuiClose:
-    Gui, EllipsoidGui:Destroy
-return
+EllipsoidGuiClose(*) {
+    global EllipsoidGuiObj
+    if (EllipsoidGuiObj)
+        EllipsoidGuiObj.Destroy()
+    EllipsoidGuiObj := ""
+}
 
-CalcEllipsoid:
-    Gui, EllipsoidGui:Submit, NoHide
+CalcEllipsoid(*) {
+    global EllipsoidGuiObj
+    saved := EllipsoidGuiObj.Submit(false)
 
-    if (EllipDim1 = "" || EllipDim2 = "" || EllipDim3 = "") {
-        MsgBox, 16, Error, Please enter all three dimensions.
+    if (saved.EllipDim1 = "" || saved.EllipDim2 = "" || saved.EllipDim3 = "") {
+        MsgBox("Please enter all three dimensions.", "Error", 16)
         return
     }
 
-    d1 := EllipDim1 + 0
-    d2 := EllipDim2 + 0
-    d3 := EllipDim3 + 0
+    d1 := saved.EllipDim1 + 0
+    d2 := saved.EllipDim2 + 0
+    d3 := saved.EllipDim3 + 0
 
     if (d1 <= 0 || d2 <= 0 || d3 <= 0) {
-        MsgBox, 16, Error, All dimensions must be greater than 0.
+        MsgBox("All dimensions must be greater than 0.", "Error", 16)
         return
     }
 
     ; Convert to cm if input is mm
-    if (EllipUnits = "mm") {
+    if (saved.EllipUnits = "mm") {
         d1 := d1 / 10
         d2 := d2 / 10
         d3 := d3 / 10
@@ -406,51 +423,60 @@ CalcEllipsoid:
     ; WHY: Sentence style for inline insertion - matches smart parser output
     ; ARCHITECTURE: Leading space for dictation continuity
     ; Format dimensions in display units
-    dimStr := EllipDim1 . " x " . EllipDim2 . " x " . EllipDim3 . " " . EllipUnits
-    result := " This corresponds to a volume of " . volumeRound . " cc (" . dimStr . ")."
+    dimStr := saved.EllipDim1 " x " saved.EllipDim2 " x " saved.EllipDim3 " " saved.EllipUnits
+    result := " This corresponds to a volume of " volumeRound " cc (" dimStr ")."
 
-    Gui, EllipsoidGui:Destroy
+    EllipsoidGuiObj.Destroy()
+    EllipsoidGuiObj := ""
     ShowResult(result)
-return
+}
 
 ; =========================================
 ; CALCULATOR 2: Adrenal Washout
 ; =========================================
+global AdrenalGuiObj := ""
+
 ShowAdrenalWashoutGui() {
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global AdrenalGuiObj
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
-    Gui, AdrenalGui:New, +AlwaysOnTop
-    Gui, AdrenalGui:Add, Text, x10 y10 w280, Adrenal Washout Calculator
-    Gui, AdrenalGui:Add, Text, x10 y40, Pre-contrast (HU):
-    Gui, AdrenalGui:Add, Edit, x140 y37 w70 vAdrenalPre
-    Gui, AdrenalGui:Add, Text, x10 y70, Post-contrast (HU):
-    Gui, AdrenalGui:Add, Edit, x140 y67 w70 vAdrenalPost
-    Gui, AdrenalGui:Add, Text, x10 y100, Delayed (15 min) (HU):
-    Gui, AdrenalGui:Add, Edit, x140 y97 w70 vAdrenalDelayed
-    Gui, AdrenalGui:Add, Button, x10 y135 w90 gCalcAdrenal, Calculate
-    Gui, AdrenalGui:Add, Button, x110 y135 w80 gAdrenalGuiClose, Cancel
-    Gui, AdrenalGui:Show, x%xPos% y%yPos% w230 h175, Adrenal Washout
-    return
+    AdrenalGuiObj := Gui("+AlwaysOnTop")
+    AdrenalGuiObj.Title := "Adrenal Washout"
+    AdrenalGuiObj.Add("Text", "x10 y10 w280", "Adrenal Washout Calculator")
+    AdrenalGuiObj.Add("Text", "x10 y40", "Pre-contrast (HU):")
+    AdrenalGuiObj.Add("Edit", "x140 y37 w70 vAdrenalPre")
+    AdrenalGuiObj.Add("Text", "x10 y70", "Post-contrast (HU):")
+    AdrenalGuiObj.Add("Edit", "x140 y67 w70 vAdrenalPost")
+    AdrenalGuiObj.Add("Text", "x10 y100", "Delayed (15 min) (HU):")
+    AdrenalGuiObj.Add("Edit", "x140 y97 w70 vAdrenalDelayed")
+    AdrenalGuiObj.Add("Button", "x10 y135 w90", "Calculate").OnEvent("Click", CalcAdrenal)
+    AdrenalGuiObj.Add("Button", "x110 y135 w80", "Cancel").OnEvent("Click", AdrenalGuiClose)
+    AdrenalGuiObj.OnEvent("Close", AdrenalGuiClose)
+    AdrenalGuiObj.Show("x" xPos " y" yPos " w230 h175")
 }
 
-AdrenalGuiClose:
-    Gui, AdrenalGui:Destroy
-return
+AdrenalGuiClose(*) {
+    global AdrenalGuiObj
+    if (AdrenalGuiObj)
+        AdrenalGuiObj.Destroy()
+    AdrenalGuiObj := ""
+}
 
-CalcAdrenal:
-    Gui, AdrenalGui:Submit, NoHide
+CalcAdrenal(*) {
+    global AdrenalGuiObj, ShowCitations
+    saved := AdrenalGuiObj.Submit(false)
 
-    if (AdrenalPre = "" || AdrenalPost = "" || AdrenalDelayed = "") {
-        MsgBox, 16, Error, Please enter all three HU values.
+    if (saved.AdrenalPre = "" || saved.AdrenalPost = "" || saved.AdrenalDelayed = "") {
+        MsgBox("Please enter all three HU values.", "Error", 16)
         return
     }
 
-    pre := AdrenalPre + 0
-    post := AdrenalPost + 0
-    delayed := AdrenalDelayed + 0
+    pre := saved.AdrenalPre + 0
+    post := saved.AdrenalPost + 0
+    delayed := saved.AdrenalDelayed + 0
 
     ; WHY: Sentence style for inline insertion - matches smart parser output
     ; ARCHITECTURE: Leading space for dictation continuity
@@ -460,7 +486,7 @@ CalcAdrenal:
     if (post != pre) {
         absWashout := ((post - delayed) / (post - pre)) * 100
         absWashout := Round(absWashout, 1)
-        result .= "absolute " . absWashout . "%"
+        result .= "absolute " absWashout "%"
         if (absWashout >= 60)
             result .= " (likely adenoma)"
         else
@@ -472,7 +498,7 @@ CalcAdrenal:
     if (post != 0) {
         relWashout := ((post - delayed) / post) * 100
         relWashout := Round(relWashout, 1)
-        result .= "relative " . relWashout . "%"
+        result .= "relative " relWashout "%"
         if (relWashout >= 40)
             result .= " (likely adenoma)"
         else
@@ -482,38 +508,41 @@ CalcAdrenal:
 
     ; Pre-contrast assessment as additional sentence
     if (pre <= 10)
-        result .= " Pre-contrast " . pre . " HU suggests lipid-rich adenoma."
+        result .= " Pre-contrast " pre " HU suggests lipid-rich adenoma."
 
     if (ShowCitations)
         result .= " (Mayo-Smith et al. Radiology 2017)"
 
-    Gui, AdrenalGui:Destroy
+    AdrenalGuiObj.Destroy()
+    AdrenalGuiObj := ""
     ShowResult(result)
-return
+}
 
 ; =========================================
 ; CALCULATOR 3: NASCET Stenosis
 ; =========================================
+global NASCETGuiObj := ""
+
 ParseNASCET(input) {
     ; Try to parse distal and stenosis from text
     input := RegExReplace(input, "`r?\n", " ")
 
     ; Pattern 1: "distal X mm ... stenosis Y mm"
-    if (RegExMatch(input, "i)distal.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)", m)) {
-        return CalculateNASCETResult(m1, m2)
+    if (RegExMatch(input, "i)distal.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)", &m)) {
+        return CalculateNASCETResult(m[1], m[2])
     }
     ; Pattern 2: "stenosis X mm ... distal Y mm"
-    if (RegExMatch(input, "i)stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?distal.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)", m)) {
-        return CalculateNASCETResult(m2, m1)
+    if (RegExMatch(input, "i)stenosis.*?(\d+(?:\.\d+)?)\s*(?:mm|cm).*?distal.*?(\d+(?:\.\d+)?)\s*(?:mm|cm)", &m)) {
+        return CalculateNASCETResult(m[2], m[1])
     }
     ; Pattern 3: Just two numbers - assume larger is distal
     numbers := []
     pos := 1
-    while (pos := RegExMatch(input, "(\d+(?:\.\d+)?)\s*(?:mm|cm)?", m, pos)) {
-        numbers.Push(m1 + 0)
-        pos += StrLen(m)
+    while (pos := RegExMatch(input, "(\d+(?:\.\d+)?)\s*(?:mm|cm)?", &m, pos)) {
+        numbers.Push(m[1] + 0)
+        pos += StrLen(m[0])
     }
-    if (numbers.Length() >= 2) {
+    if (numbers.Length >= 2) {
         distal := Max(numbers*)
         stenosis := Min(numbers*)
         return CalculateNASCETResult(distal, stenosis)
@@ -537,7 +566,7 @@ CalculateNASCETResult(distal, stenosis) {
     distalRound := Round(distal, 1)
     stenosisRound := Round(stenosis, 1)
 
-    result := " NASCET: " . nascetVal . "% stenosis (distal " . distalRound . "mm, stenosis " . stenosisRound . "mm), "
+    result := " NASCET: " nascetVal "% stenosis (distal " distalRound "mm, stenosis " stenosisRound "mm), "
 
     if (nascetVal < 50)
         result .= "mild stenosis."
@@ -553,52 +582,59 @@ CalculateNASCETResult(distal, stenosis) {
 }
 
 ShowNASCETGui() {
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global NASCETGuiObj
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
-    Gui, NASCETGui:New, +AlwaysOnTop
-    Gui, NASCETGui:Add, Text, x10 y10 w280, NASCET Carotid Stenosis Calculator
-    Gui, NASCETGui:Add, Text, x10 y40, Distal ICA diameter (mm):
-    Gui, NASCETGui:Add, Edit, x160 y37 w60 vNASCETDistal
-    Gui, NASCETGui:Add, Text, x10 y70, Stenosis diameter (mm):
-    Gui, NASCETGui:Add, Edit, x160 y67 w60 vNASCETStenosis
-    Gui, NASCETGui:Add, Button, x10 y105 w90 gCalcNASCETGui, Calculate
-    Gui, NASCETGui:Add, Button, x110 y105 w80 gNASCETGuiClose, Cancel
-    Gui, NASCETGui:Show, x%xPos% y%yPos% w240 h145, NASCET Calculator
-    return
+    NASCETGuiObj := Gui("+AlwaysOnTop")
+    NASCETGuiObj.Title := "NASCET Calculator"
+    NASCETGuiObj.Add("Text", "x10 y10 w280", "NASCET Carotid Stenosis Calculator")
+    NASCETGuiObj.Add("Text", "x10 y40", "Distal ICA diameter (mm):")
+    NASCETGuiObj.Add("Edit", "x160 y37 w60 vNASCETDistal")
+    NASCETGuiObj.Add("Text", "x10 y70", "Stenosis diameter (mm):")
+    NASCETGuiObj.Add("Edit", "x160 y67 w60 vNASCETStenosis")
+    NASCETGuiObj.Add("Button", "x10 y105 w90", "Calculate").OnEvent("Click", CalcNASCETGui)
+    NASCETGuiObj.Add("Button", "x110 y105 w80", "Cancel").OnEvent("Click", NASCETGuiClose)
+    NASCETGuiObj.OnEvent("Close", NASCETGuiClose)
+    NASCETGuiObj.Show("x" xPos " y" yPos " w240 h145")
 }
 
-NASCETGuiClose:
-    Gui, NASCETGui:Destroy
-return
+NASCETGuiClose(*) {
+    global NASCETGuiObj
+    if (NASCETGuiObj)
+        NASCETGuiObj.Destroy()
+    NASCETGuiObj := ""
+}
 
-CalcNASCETGui:
-    Gui, NASCETGui:Submit, NoHide
+CalcNASCETGui(*) {
+    global NASCETGuiObj
+    saved := NASCETGuiObj.Submit(false)
 
-    if (NASCETDistal = "" || NASCETStenosis = "") {
-        MsgBox, 16, Error, Please enter both measurements.
+    if (saved.NASCETDistal = "" || saved.NASCETStenosis = "") {
+        MsgBox("Please enter both measurements.", "Error", 16)
         return
     }
 
-    distal := NASCETDistal + 0
-    stenosis := NASCETStenosis + 0
+    distal := saved.NASCETDistal + 0
+    stenosis := saved.NASCETStenosis + 0
 
     if (distal <= 0) {
-        MsgBox, 16, Error, Distal ICA must be greater than 0.
+        MsgBox("Distal ICA must be greater than 0.", "Error", 16)
         return
     }
 
     if (stenosis >= distal) {
-        MsgBox, 16, Error, Stenosis should be less than distal ICA.
+        MsgBox("Stenosis should be less than distal ICA.", "Error", 16)
         return
     }
 
     result := CalculateNASCETResult(distal, stenosis)
-    Gui, NASCETGui:Destroy
+    NASCETGuiObj.Destroy()
+    NASCETGuiObj := ""
     ShowResult(result)
-return
+}
 
 ; -----------------------------------------
 ; CALCULATOR 3b: General Stenosis Calculator
@@ -606,49 +642,56 @@ return
 ; into single parameterized function: ShowStenosisGui(preset := "")
 ; where preset="NASCET" adds ICA-specific labels.
 ; -----------------------------------------
+global StenosisGuiObj := ""
+
 ShowStenosisGui() {
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global StenosisGuiObj
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
-    Gui, StenosisGui:New, +AlwaysOnTop
-    Gui, StenosisGui:Add, Text, x10 y10 w280, Vessel Stenosis Calculator
-    Gui, StenosisGui:Add, Text, x10 y35, Vessel (optional):
-    Gui, StenosisGui:Add, Edit, x120 y32 w130 vStenosisVessel,
-    Gui, StenosisGui:Add, Text, x10 y65, Normal diameter (mm):
-    Gui, StenosisGui:Add, Edit, x140 y62 w60 vStenosisNormal
-    Gui, StenosisGui:Add, Text, x10 y95, Stenosis diameter (mm):
-    Gui, StenosisGui:Add, Edit, x140 y92 w60 vStenosisMeasure
-    Gui, StenosisGui:Add, Button, x10 y130 w90 gCalcStenosis, Calculate
-    Gui, StenosisGui:Add, Button, x110 y130 w80 gStenosisGuiClose, Cancel
-    Gui, StenosisGui:Show, x%xPos% y%yPos% w270 h170, Stenosis Calculator
-    return
+    StenosisGuiObj := Gui("+AlwaysOnTop")
+    StenosisGuiObj.Title := "Stenosis Calculator"
+    StenosisGuiObj.Add("Text", "x10 y10 w280", "Vessel Stenosis Calculator")
+    StenosisGuiObj.Add("Text", "x10 y35", "Vessel (optional):")
+    StenosisGuiObj.Add("Edit", "x120 y32 w130 vStenosisVessel")
+    StenosisGuiObj.Add("Text", "x10 y65", "Normal diameter (mm):")
+    StenosisGuiObj.Add("Edit", "x140 y62 w60 vStenosisNormal")
+    StenosisGuiObj.Add("Text", "x10 y95", "Stenosis diameter (mm):")
+    StenosisGuiObj.Add("Edit", "x140 y92 w60 vStenosisMeasure")
+    StenosisGuiObj.Add("Button", "x10 y130 w90", "Calculate").OnEvent("Click", CalcStenosis)
+    StenosisGuiObj.Add("Button", "x110 y130 w80", "Cancel").OnEvent("Click", StenosisGuiClose)
+    StenosisGuiObj.OnEvent("Close", StenosisGuiClose)
+    StenosisGuiObj.Show("x" xPos " y" yPos " w270 h170")
 }
 
-StenosisGuiClose:
-    Gui, StenosisGui:Destroy
-return
+StenosisGuiClose(*) {
+    global StenosisGuiObj
+    if (StenosisGuiObj)
+        StenosisGuiObj.Destroy()
+    StenosisGuiObj := ""
+}
 
-CalcStenosis:
-    Gui, StenosisGui:Submit, NoHide
-    global ShowCitations
+CalcStenosis(*) {
+    global StenosisGuiObj, ShowCitations
+    saved := StenosisGuiObj.Submit(false)
 
-    if (StenosisNormal = "" || StenosisMeasure = "") {
-        MsgBox, 16, Error, Please enter both diameter measurements.
+    if (saved.StenosisNormal = "" || saved.StenosisMeasure = "") {
+        MsgBox("Please enter both diameter measurements.", "Error", 16)
         return
     }
 
-    normal := StenosisNormal + 0
-    stenosis := StenosisMeasure + 0
+    normal := saved.StenosisNormal + 0
+    stenosis := saved.StenosisMeasure + 0
 
     if (normal <= 0) {
-        MsgBox, 16, Error, Normal diameter must be greater than 0.
+        MsgBox("Normal diameter must be greater than 0.", "Error", 16)
         return
     }
 
     if (stenosis >= normal) {
-        MsgBox, 16, Error, Stenosis should be less than normal diameter.
+        MsgBox("Stenosis should be less than normal diameter.", "Error", 16)
         return
     }
 
@@ -656,7 +699,7 @@ CalcStenosis:
     stenosisPercent := ((normal - stenosis) / normal) * 100
     stenosisPercent := Round(stenosisPercent, 1)
 
-    vesselName := StenosisVessel != "" ? StenosisVessel : "Vessel"
+    vesselName := saved.StenosisVessel != "" ? saved.StenosisVessel : "Vessel"
 
     ; WHY: Sentence style for inline insertion - leading space for dictation continuity
     ; ARCHITECTURE: Matches NASCET parser output format for consistency
@@ -672,50 +715,59 @@ CalcStenosis:
         severity := "severe stenosis"
 
     ; Sentence format: " Stenosis: X% (normal Ymm, stenosis Zmm), severity."
-    result := " " . vesselName . " stenosis: " . stenosisPercent . "% (normal " . normalRound . "mm, stenosis " . stenosisRound . "mm), " . severity . "."
+    result := " " vesselName " stenosis: " stenosisPercent "% (normal " normalRound "mm, stenosis " stenosisRound "mm), " severity "."
 
-    Gui, StenosisGui:Destroy
+    StenosisGuiObj.Destroy()
+    StenosisGuiObj := ""
     ShowResult(result)
-return
+}
 
 ; =========================================
 ; CALCULATOR 4: RV/LV Ratio
 ; =========================================
+global RVLVGuiObj := ""
+
 ShowRVLVGui() {
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global RVLVGuiObj
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
-    Gui, RVLVGui:New, +AlwaysOnTop
-    Gui, RVLVGui:Add, Text, x10 y10 w280, RV/LV Ratio Calculator (4-chamber axial)
-    Gui, RVLVGui:Add, Text, x10 y40, RV diameter (mm):
-    Gui, RVLVGui:Add, Edit, x130 y37 w60 vRVDiam
-    Gui, RVLVGui:Add, Text, x10 y70, LV diameter (mm):
-    Gui, RVLVGui:Add, Edit, x130 y67 w60 vLVDiam
-    Gui, RVLVGui:Add, Button, x10 y105 w90 gCalcRVLV, Calculate
-    Gui, RVLVGui:Add, Button, x110 y105 w80 gRVLVGuiClose, Cancel
-    Gui, RVLVGui:Show, x%xPos% y%yPos% w220 h145, RV/LV Ratio
-    return
+    RVLVGuiObj := Gui("+AlwaysOnTop")
+    RVLVGuiObj.Title := "RV/LV Ratio"
+    RVLVGuiObj.Add("Text", "x10 y10 w280", "RV/LV Ratio Calculator (4-chamber axial)")
+    RVLVGuiObj.Add("Text", "x10 y40", "RV diameter (mm):")
+    RVLVGuiObj.Add("Edit", "x130 y37 w60 vRVDiam")
+    RVLVGuiObj.Add("Text", "x10 y70", "LV diameter (mm):")
+    RVLVGuiObj.Add("Edit", "x130 y67 w60 vLVDiam")
+    RVLVGuiObj.Add("Button", "x10 y105 w90", "Calculate").OnEvent("Click", CalcRVLV)
+    RVLVGuiObj.Add("Button", "x110 y105 w80", "Cancel").OnEvent("Click", RVLVGuiClose)
+    RVLVGuiObj.OnEvent("Close", RVLVGuiClose)
+    RVLVGuiObj.Show("x" xPos " y" yPos " w220 h145")
 }
 
-RVLVGuiClose:
-    Gui, RVLVGui:Destroy
-return
+RVLVGuiClose(*) {
+    global RVLVGuiObj
+    if (RVLVGuiObj)
+        RVLVGuiObj.Destroy()
+    RVLVGuiObj := ""
+}
 
-CalcRVLV:
-    Gui, RVLVGui:Submit, NoHide
+CalcRVLV(*) {
+    global RVLVGuiObj, ShowCitations
+    saved := RVLVGuiObj.Submit(false)
 
-    if (RVDiam = "" || LVDiam = "") {
-        MsgBox, 16, Error, Please enter both RV and LV diameters.
+    if (saved.RVDiam = "" || saved.LVDiam = "") {
+        MsgBox("Please enter both RV and LV diameters.", "Error", 16)
         return
     }
 
-    rv := RVDiam + 0
-    lv := LVDiam + 0
+    rv := saved.RVDiam + 0
+    lv := saved.LVDiam + 0
 
     if (lv <= 0) {
-        MsgBox, 16, Error, LV diameter must be greater than 0.
+        MsgBox("LV diameter must be greater than 0.", "Error", 16)
         return
     }
 
@@ -736,73 +788,82 @@ CalcRVLV:
         interpretation := "within normal limits"
 
     ; Sentence format: " RV/LV ratio: X (RV Ymm, LV Zmm), interpretation."
-    result := " RV/LV ratio: " . ratio . " (RV " . rvRound . "mm, LV " . lvRound . "mm), " . interpretation . "."
+    result := " RV/LV ratio: " ratio " (RV " rvRound "mm, LV " lvRound "mm), " interpretation "."
 
     if (ShowCitations)
         result .= " (Meinel et al. Radiology 2015)"
 
-    Gui, RVLVGui:Destroy
+    RVLVGuiObj.Destroy()
+    RVLVGuiObj := ""
     ShowResult(result)
-return
+}
 
 ; =========================================
 ; CALCULATOR 5: Fleischner 2017
 ; =========================================
+global FleischnerGuiObj := ""
+
 ShowFleischnerGui() {
-    global IncludeDatamining
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global FleischnerGuiObj, IncludeDatamining
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
-    Gui, FleischnerGui:New, +AlwaysOnTop
-    Gui, FleischnerGui:Add, Text, x10 y10 w300, Fleischner 2017 - Incidental Pulmonary Nodule
-    Gui, FleischnerGui:Add, Text, x10 y40, Nodule size (mm):
-    Gui, FleischnerGui:Add, Edit, x130 y37 w60 vFleischSize
-    Gui, FleischnerGui:Add, Text, x10 y70, Nodule type:
-    Gui, FleischnerGui:Add, DropDownList, x130 y67 w120 vFleischType Choose1, Solid|Part-solid|Ground glass
-    Gui, FleischnerGui:Add, Text, x10 y100, Number:
-    Gui, FleischnerGui:Add, DropDownList, x130 y97 w120 vFleischNumber Choose1, Single|Multiple
-    Gui, FleischnerGui:Add, Text, x10 y130, Risk:
-    Gui, FleischnerGui:Add, DropDownList, x130 y127 w120 vFleischRisk Choose1, Low risk|High risk
+    FleischnerGuiObj := Gui("+AlwaysOnTop")
+    FleischnerGuiObj.Title := "Fleischner 2017"
+    FleischnerGuiObj.Add("Text", "x10 y10 w300", "Fleischner 2017 - Incidental Pulmonary Nodule")
+    FleischnerGuiObj.Add("Text", "x10 y40", "Nodule size (mm):")
+    FleischnerGuiObj.Add("Edit", "x130 y37 w60 vFleischSize")
+    FleischnerGuiObj.Add("Text", "x10 y70", "Nodule type:")
+    FleischnerGuiObj.Add("DropDownList", "x130 y67 w120 vFleischType Choose1", ["Solid", "Part-solid", "Ground glass"])
+    FleischnerGuiObj.Add("Text", "x10 y100", "Number:")
+    FleischnerGuiObj.Add("DropDownList", "x130 y97 w120 vFleischNumber Choose1", ["Single", "Multiple"])
+    FleischnerGuiObj.Add("Text", "x10 y130", "Risk:")
+    FleischnerGuiObj.Add("DropDownList", "x130 y127 w120 vFleischRisk Choose1", ["Low risk", "High risk"])
     dmChecked := IncludeDatamining ? "Checked" : ""
-    Gui, FleischnerGui:Add, Checkbox, x10 y160 w250 vFleischDatamine %dmChecked%, Include datamining phrase (SSM lung nodule)
-    Gui, FleischnerGui:Add, Button, x10 y190 w100 gCalcFleischner, Get Recommendation
-    Gui, FleischnerGui:Add, Button, x120 y190 w80 gFleischnerGuiClose, Cancel
-    Gui, FleischnerGui:Show, x%xPos% y%yPos% w280 h230, Fleischner 2017
-    return
+    FleischnerGuiObj.Add("Checkbox", "x10 y160 w250 vFleischDatamine " dmChecked, "Include datamining phrase (SSM lung nodule)")
+    FleischnerGuiObj.Add("Button", "x10 y190 w100", "Get Recommendation").OnEvent("Click", CalcFleischner)
+    FleischnerGuiObj.Add("Button", "x120 y190 w80", "Cancel").OnEvent("Click", FleischnerGuiClose)
+    FleischnerGuiObj.OnEvent("Close", FleischnerGuiClose)
+    FleischnerGuiObj.Show("x" xPos " y" yPos " w280 h230")
 }
 
-FleischnerGuiClose:
-    Gui, FleischnerGui:Destroy
-return
+FleischnerGuiClose(*) {
+    global FleischnerGuiObj
+    if (FleischnerGuiObj)
+        FleischnerGuiObj.Destroy()
+    FleischnerGuiObj := ""
+}
 
-CalcFleischner:
-    Gui, FleischnerGui:Submit, NoHide
+CalcFleischner(*) {
+    global FleischnerGuiObj, DataminingPhrase, ShowCitations
+    saved := FleischnerGuiObj.Submit(false)
 
-    if (FleischSize = "") {
-        MsgBox, 16, Error, Please enter nodule size.
+    if (saved.FleischSize = "") {
+        MsgBox("Please enter nodule size.", "Error", 16)
         return
     }
 
-    size := FleischSize + 0
+    size := saved.FleischSize + 0
     result := "Fleischner 2017 Recommendation:`n"
-    result .= "Size: " . size . " mm | " . FleischType . " | " . FleischNumber . " | " . FleischRisk . "`n`n"
+    result .= "Size: " size " mm | " saved.FleischType " | " saved.FleischNumber " | " saved.FleischRisk "`n`n"
 
     ; Determine recommendation based on 2017 Fleischner guidelines
-    recommendation := GetFleischnerRecommendation(size, FleischType, FleischNumber, FleischRisk)
+    recommendation := GetFleischnerRecommendation(size, saved.FleischType, saved.FleischNumber, saved.FleischRisk)
     result .= recommendation
 
-    if (FleischDatamine) {
-        result .= "`n`n[" . DataminingPhrase . "]"
+    if (saved.FleischDatamine) {
+        result .= "`n`n[" DataminingPhrase "]"
     }
 
     if (ShowCitations)
         result .= "`n`nRef: MacMahon H et al. Radiology 2017;284:228-243"
 
-    Gui, FleischnerGui:Destroy
+    FleischnerGuiObj.Destroy()
+    FleischnerGuiObj := ""
     ShowResult(result)
-return
+}
 
 GetFleischnerRecommendation(size, type, number, risk) {
     ; Solid nodules
@@ -862,9 +923,9 @@ GetFleischnerRecommendation(size, type, number, risk) {
 ; =========================================
 
 ShowEllipsoidVolumeGuiPrefilled(d1, d2, d3) {
-    ; Position near mouse
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global EllipsoidGuiObj
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
@@ -873,67 +934,73 @@ ShowEllipsoidVolumeGuiPrefilled(d1, d2, d3) {
     dim2 := Round(d2, 2)
     dim3 := Round(d3, 2)
 
-    Gui, EllipsoidGui:New, +AlwaysOnTop
-    Gui, EllipsoidGui:Add, Text, x10 y10 w280, Ellipsoid Volume Calculator (Pre-filled)
-    Gui, EllipsoidGui:Add, Text, x10 y35, AP (L):
-    Gui, EllipsoidGui:Add, Edit, x80 y32 w50 vEllipDim1, %dim1%
-    Gui, EllipsoidGui:Add, Text, x135 y35, x   T (W):
-    Gui, EllipsoidGui:Add, Edit, x185 y32 w50 vEllipDim2, %dim2%
-    Gui, EllipsoidGui:Add, Text, x10 y60, CC (H):
-    Gui, EllipsoidGui:Add, Edit, x80 y57 w50 vEllipDim3, %dim3%
-    Gui, EllipsoidGui:Add, Text, x135 y60, Units:
-    Gui, EllipsoidGui:Add, DropDownList, x185 y57 w50 vEllipUnits Choose2, mm|cm
-    Gui, EllipsoidGui:Add, Button, x10 y95 w100 gCalcEllipsoid, Calculate
-    Gui, EllipsoidGui:Add, Button, x120 y95 w80 gEllipsoidGuiClose, Cancel
-    Gui, EllipsoidGui:Show, x%xPos% y%yPos% w250 h135, Ellipsoid Volume
-    return
+    EllipsoidGuiObj := Gui("+AlwaysOnTop")
+    EllipsoidGuiObj.Title := "Ellipsoid Volume"
+    EllipsoidGuiObj.Add("Text", "x10 y10 w280", "Ellipsoid Volume Calculator (Pre-filled)")
+    EllipsoidGuiObj.Add("Text", "x10 y35", "AP (L):")
+    EllipsoidGuiObj.Add("Edit", "x80 y32 w50 vEllipDim1", dim1)
+    EllipsoidGuiObj.Add("Text", "x135 y35", "x   T (W):")
+    EllipsoidGuiObj.Add("Edit", "x185 y32 w50 vEllipDim2", dim2)
+    EllipsoidGuiObj.Add("Text", "x10 y60", "CC (H):")
+    EllipsoidGuiObj.Add("Edit", "x80 y57 w50 vEllipDim3", dim3)
+    EllipsoidGuiObj.Add("Text", "x135 y60", "Units:")
+    EllipsoidGuiObj.Add("DropDownList", "x185 y57 w50 vEllipUnits Choose2", ["mm", "cm"])
+    EllipsoidGuiObj.Add("Button", "x10 y95 w100", "Calculate").OnEvent("Click", CalcEllipsoid)
+    EllipsoidGuiObj.Add("Button", "x120 y95 w80", "Cancel").OnEvent("Click", EllipsoidGuiClose)
+    EllipsoidGuiObj.OnEvent("Close", EllipsoidGuiClose)
+    EllipsoidGuiObj.Show("x" xPos " y" yPos " w250 h135")
 }
 
 ShowRVLVGuiPrefilled(rv, lv) {
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global RVLVGuiObj
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
     rvVal := Round(rv, 1)
     lvVal := Round(lv, 1)
 
-    Gui, RVLVGui:New, +AlwaysOnTop
-    Gui, RVLVGui:Add, Text, x10 y10 w280, RV/LV Ratio Calculator (Pre-filled)
-    Gui, RVLVGui:Add, Text, x10 y40, RV diameter (mm):
-    Gui, RVLVGui:Add, Edit, x130 y37 w60 vRVDiam, %rvVal%
-    Gui, RVLVGui:Add, Text, x10 y70, LV diameter (mm):
-    Gui, RVLVGui:Add, Edit, x130 y67 w60 vLVDiam, %lvVal%
-    Gui, RVLVGui:Add, Button, x10 y105 w90 gCalcRVLV, Calculate
-    Gui, RVLVGui:Add, Button, x110 y105 w80 gRVLVGuiClose, Cancel
-    Gui, RVLVGui:Show, x%xPos% y%yPos% w220 h145, RV/LV Ratio
-    return
+    RVLVGuiObj := Gui("+AlwaysOnTop")
+    RVLVGuiObj.Title := "RV/LV Ratio"
+    RVLVGuiObj.Add("Text", "x10 y10 w280", "RV/LV Ratio Calculator (Pre-filled)")
+    RVLVGuiObj.Add("Text", "x10 y40", "RV diameter (mm):")
+    RVLVGuiObj.Add("Edit", "x130 y37 w60 vRVDiam", rvVal)
+    RVLVGuiObj.Add("Text", "x10 y70", "LV diameter (mm):")
+    RVLVGuiObj.Add("Edit", "x130 y67 w60 vLVDiam", lvVal)
+    RVLVGuiObj.Add("Button", "x10 y105 w90", "Calculate").OnEvent("Click", CalcRVLV)
+    RVLVGuiObj.Add("Button", "x110 y105 w80", "Cancel").OnEvent("Click", RVLVGuiClose)
+    RVLVGuiObj.OnEvent("Close", RVLVGuiClose)
+    RVLVGuiObj.Show("x" xPos " y" yPos " w220 h145")
 }
 
 ShowNASCETGuiPrefilled(distal, stenosis) {
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global NASCETGuiObj
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
     distalVal := Round(distal, 1)
     stenosisVal := Round(stenosis, 1)
 
-    Gui, NASCETGui:New, +AlwaysOnTop
-    Gui, NASCETGui:Add, Text, x10 y10 w280, NASCET Calculator (Pre-filled)
-    Gui, NASCETGui:Add, Text, x10 y40, Distal ICA diameter (mm):
-    Gui, NASCETGui:Add, Edit, x160 y37 w60 vNASCETDistal, %distalVal%
-    Gui, NASCETGui:Add, Text, x10 y70, Stenosis diameter (mm):
-    Gui, NASCETGui:Add, Edit, x160 y67 w60 vNASCETStenosis, %stenosisVal%
-    Gui, NASCETGui:Add, Button, x10 y105 w90 gCalcNASCETGui, Calculate
-    Gui, NASCETGui:Add, Button, x110 y105 w80 gNASCETGuiClose, Cancel
-    Gui, NASCETGui:Show, x%xPos% y%yPos% w240 h145, NASCET Calculator
-    return
+    NASCETGuiObj := Gui("+AlwaysOnTop")
+    NASCETGuiObj.Title := "NASCET Calculator"
+    NASCETGuiObj.Add("Text", "x10 y10 w280", "NASCET Calculator (Pre-filled)")
+    NASCETGuiObj.Add("Text", "x10 y40", "Distal ICA diameter (mm):")
+    NASCETGuiObj.Add("Edit", "x160 y37 w60 vNASCETDistal", distalVal)
+    NASCETGuiObj.Add("Text", "x10 y70", "Stenosis diameter (mm):")
+    NASCETGuiObj.Add("Edit", "x160 y67 w60 vNASCETStenosis", stenosisVal)
+    NASCETGuiObj.Add("Button", "x10 y105 w90", "Calculate").OnEvent("Click", CalcNASCETGui)
+    NASCETGuiObj.Add("Button", "x110 y105 w80", "Cancel").OnEvent("Click", NASCETGuiClose)
+    NASCETGuiObj.OnEvent("Close", NASCETGuiClose)
+    NASCETGuiObj.Show("x" xPos " y" yPos " w240 h145")
 }
 
 ShowAdrenalWashoutGuiPrefilled(pre, post, delayed) {
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global AdrenalGuiObj
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
@@ -941,24 +1008,25 @@ ShowAdrenalWashoutGuiPrefilled(pre, post, delayed) {
     postVal := Round(post, 0)
     delayedVal := Round(delayed, 0)
 
-    Gui, AdrenalGui:New, +AlwaysOnTop
-    Gui, AdrenalGui:Add, Text, x10 y10 w280, Adrenal Washout Calculator (Pre-filled)
-    Gui, AdrenalGui:Add, Text, x10 y40, Pre-contrast (HU):
-    Gui, AdrenalGui:Add, Edit, x140 y37 w70 vAdrenalPre, %preVal%
-    Gui, AdrenalGui:Add, Text, x10 y70, Post-contrast (HU):
-    Gui, AdrenalGui:Add, Edit, x140 y67 w70 vAdrenalPost, %postVal%
-    Gui, AdrenalGui:Add, Text, x10 y100, Delayed (15 min) (HU):
-    Gui, AdrenalGui:Add, Edit, x140 y97 w70 vAdrenalDelayed, %delayedVal%
-    Gui, AdrenalGui:Add, Button, x10 y135 w90 gCalcAdrenal, Calculate
-    Gui, AdrenalGui:Add, Button, x110 y135 w80 gAdrenalGuiClose, Cancel
-    Gui, AdrenalGui:Show, x%xPos% y%yPos% w230 h175, Adrenal Washout
-    return
+    AdrenalGuiObj := Gui("+AlwaysOnTop")
+    AdrenalGuiObj.Title := "Adrenal Washout"
+    AdrenalGuiObj.Add("Text", "x10 y10 w280", "Adrenal Washout Calculator (Pre-filled)")
+    AdrenalGuiObj.Add("Text", "x10 y40", "Pre-contrast (HU):")
+    AdrenalGuiObj.Add("Edit", "x140 y37 w70 vAdrenalPre", preVal)
+    AdrenalGuiObj.Add("Text", "x10 y70", "Post-contrast (HU):")
+    AdrenalGuiObj.Add("Edit", "x140 y67 w70 vAdrenalPost", postVal)
+    AdrenalGuiObj.Add("Text", "x10 y100", "Delayed (15 min) (HU):")
+    AdrenalGuiObj.Add("Edit", "x140 y97 w70 vAdrenalDelayed", delayedVal)
+    AdrenalGuiObj.Add("Button", "x10 y135 w90", "Calculate").OnEvent("Click", CalcAdrenal)
+    AdrenalGuiObj.Add("Button", "x110 y135 w80", "Cancel").OnEvent("Click", AdrenalGuiClose)
+    AdrenalGuiObj.OnEvent("Close", AdrenalGuiClose)
+    AdrenalGuiObj.Show("x" xPos " y" yPos " w230 h175")
 }
 
 ShowFleischnerGuiPrefilled(size, nodeType, number) {
-    global IncludeDatamining
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global FleischnerGuiObj, IncludeDatamining
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
@@ -974,31 +1042,32 @@ ShowFleischnerGuiPrefilled(size, nodeType, number) {
     ; Determine dropdown selection for number
     numberSelect := (number = "Multiple") ? 2 : 1
 
-    Gui, FleischnerGui:New, +AlwaysOnTop
-    Gui, FleischnerGui:Add, Text, x10 y10 w300, Fleischner 2017 (Pre-filled)
-    Gui, FleischnerGui:Add, Text, x10 y40, Nodule size (mm):
-    Gui, FleischnerGui:Add, Edit, x130 y37 w60 vFleischSize, %sizeVal%
-    Gui, FleischnerGui:Add, Text, x10 y70, Nodule type:
-    Gui, FleischnerGui:Add, DropDownList, x130 y67 w120 vFleischType Choose%typeSelect%, Solid|Part-solid|Ground glass
-    Gui, FleischnerGui:Add, Text, x10 y100, Number:
-    Gui, FleischnerGui:Add, DropDownList, x130 y97 w120 vFleischNumber Choose%numberSelect%, Single|Multiple
-    Gui, FleischnerGui:Add, Text, x10 y130, Risk:
-    Gui, FleischnerGui:Add, DropDownList, x130 y127 w120 vFleischRisk Choose1, Low risk|High risk
+    FleischnerGuiObj := Gui("+AlwaysOnTop")
+    FleischnerGuiObj.Title := "Fleischner 2017"
+    FleischnerGuiObj.Add("Text", "x10 y10 w300", "Fleischner 2017 (Pre-filled)")
+    FleischnerGuiObj.Add("Text", "x10 y40", "Nodule size (mm):")
+    FleischnerGuiObj.Add("Edit", "x130 y37 w60 vFleischSize", sizeVal)
+    FleischnerGuiObj.Add("Text", "x10 y70", "Nodule type:")
+    FleischnerGuiObj.Add("DropDownList", "x130 y67 w120 vFleischType Choose" typeSelect, ["Solid", "Part-solid", "Ground glass"])
+    FleischnerGuiObj.Add("Text", "x10 y100", "Number:")
+    FleischnerGuiObj.Add("DropDownList", "x130 y97 w120 vFleischNumber Choose" numberSelect, ["Single", "Multiple"])
+    FleischnerGuiObj.Add("Text", "x10 y130", "Risk:")
+    FleischnerGuiObj.Add("DropDownList", "x130 y127 w120 vFleischRisk Choose1", ["Low risk", "High risk"])
     dmChecked := IncludeDatamining ? "Checked" : ""
-    Gui, FleischnerGui:Add, Checkbox, x10 y160 w250 vFleischDatamine %dmChecked%, Include datamining phrase
-    Gui, FleischnerGui:Add, Button, x10 y190 w100 gCalcFleischner, Get Recommendation
-    Gui, FleischnerGui:Add, Button, x120 y190 w80 gFleischnerGuiClose, Cancel
-    Gui, FleischnerGui:Show, x%xPos% y%yPos% w280 h230, Fleischner 2017
-    return
+    FleischnerGuiObj.Add("Checkbox", "x10 y160 w250 vFleischDatamine " dmChecked, "Include datamining phrase")
+    FleischnerGuiObj.Add("Button", "x10 y190 w100", "Get Recommendation").OnEvent("Click", CalcFleischner)
+    FleischnerGuiObj.Add("Button", "x120 y190 w80", "Cancel").OnEvent("Click", FleischnerGuiClose)
+    FleischnerGuiObj.OnEvent("Close", FleischnerGuiClose)
+    FleischnerGuiObj.Show("x" xPos " y" yPos " w280 h230")
 }
 
 ; -----------------------------------------
 ; Utility: Get mouse position for GUI placement
 ; WHY: Reduces code duplication across 15+ GUI functions
 ; -----------------------------------------
-GetGuiPosition(ByRef xPos, ByRef yPos, offset := 10) {
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+GetGuiPosition(&xPos, &yPos, offset := 10) {
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + offset
     yPos := mouseY + offset
 }
@@ -1015,12 +1084,12 @@ GetGuiPosition(ByRef xPos, ByRef yPos, offset := 10) {
 ; TRADEOFF: Slight overhead for save/restore, but safer
 ; -----------------------------------------
 PasteTextPreserveClipboard(text, waitMs := 100) {
-    ClipSaved := ClipboardAll
-    Clipboard := text
-    ClipWait, 0.5
-    Send, ^v
-    Sleep, %waitMs%
-    Clipboard := ClipSaved
+    ClipSaved := ClipboardAll()
+    A_Clipboard := text
+    ClipWait(0.5)
+    Send("^v")
+    Sleep(waitMs)
+    A_Clipboard := ClipSaved
 }
 
 ; -----------------------------------------
@@ -1029,14 +1098,14 @@ PasteTextPreserveClipboard(text, waitMs := 100) {
 ; -----------------------------------------
 InsertAfterSelection(textToInsert) {
     ; Move cursor to end of selection and insert text
-    Send, {Right}
-    Sleep, 50
+    Send("{Right}")
+    Sleep(50)
 
     ; Use helper to paste text while preserving clipboard
     PasteTextPreserveClipboard(textToInsert)
 
-    ToolTip, Calculation inserted!
-    SetTimer, RemoveToolTip, -1500
+    ToolTip("Calculation inserted!")
+    SetTimer(RemoveToolTip, -1500)
 }
 
 ; -----------------------------------------
@@ -1048,25 +1117,25 @@ InsertAfterSelection(textToInsert) {
 ; -----------------------------------------
 InsertAtImpression(textToInsert) {
     ; Save current clipboard and cursor position marker
-    ClipSaved := ClipboardAll
+    ClipSaved := ClipboardAll()
 
     ; Copy document to check for IMPRESSION: existence
     ; NOTE: This briefly exposes full document on clipboard; cleared immediately after check
     ; TRADEOFF: Faster than incremental search, clipboard cleared right after copy
-    Clipboard := ""
-    Send, ^a  ; Select all
-    Sleep, 20
-    Send, ^c  ; Copy
-    ClipWait, 0.5
-    docText := Clipboard
-    Clipboard := ""  ; Clear clipboard immediately to minimize PHI exposure
+    A_Clipboard := ""
+    Send("^a")  ; Select all
+    Sleep(20)
+    Send("^c")  ; Copy
+    ClipWait(0.5)
+    docText := A_Clipboard
+    A_Clipboard := ""  ; Clear clipboard immediately to minimize PHI exposure
 
     ; CRITICAL: Deselect document text before any further operations
     ; WHY: Prevents accidental replacement if Find dialog is slow to open
-    Send, {Escape}
-    Sleep, 30
-    Send, {Right}
-    Sleep, 30
+    Send("{Escape}")
+    Sleep(30)
+    Send("{Right}")
+    Sleep(30)
 
     ; WHY: Match variations of IMPRESSION header used in different templates
     ; TRADEOFF: Multiple checks vs comprehensive coverage
@@ -1082,57 +1151,57 @@ InsertAtImpression(textToInsert) {
 
     if (searchTerm = "") {
         ; IMPRESSION not found - fall back to insert after selection
-        Clipboard := ClipSaved  ; Restore clipboard first
+        A_Clipboard := ClipSaved  ; Restore clipboard first
         InsertAfterSelection(textToInsert)
-        ToolTip, IMPRESSION: not found - inserted at cursor
-        SetTimer, RemoveToolTip, -2000
+        ToolTip("IMPRESSION: not found - inserted at cursor")
+        SetTimer(RemoveToolTip, -2000)
         return
     }
 
     ; Go to start of document
-    Send, ^{Home}
-    Sleep, 50
+    Send("^{Home}")
+    Sleep(50)
 
     ; Open Find dialog (Ctrl+F)
-    Send, ^f
-    Sleep, 500  ; WHY: PowerScribe Find dialog can be very slow to open
+    Send("^f")
+    Sleep(500)  ; WHY: PowerScribe Find dialog can be very slow to open
 
     ; Clear any previous search and type new search text
     ; NOTE: ^a here targets the Find dialog's text field, not the document
-    Send, ^a
-    Sleep, 50
-    Send, {Raw}%searchTerm%
-    Sleep, 200
+    Send("^a")
+    Sleep(50)
+    Send("{Raw}" searchTerm)
+    Sleep(200)
 
     ; Press Enter to find (or F3/Find Next depending on app)
-    Send, {Enter}
-    Sleep, 150
+    Send("{Enter}")
+    Sleep(150)
 
     ; Close Find dialog (Escape) - press twice to ensure closed
-    Send, {Escape}
-    Sleep, 100
-    Send, {Escape}
-    Sleep, 100
+    Send("{Escape}")
+    Sleep(100)
+    Send("{Escape}")
+    Sleep(100)
 
     ; Go to end of line where IMPRESSION: was found
-    Send, {End}
-    Sleep, 50
+    Send("{End}")
+    Sleep(50)
 
     ; Add blank line (Enter twice for spacing)
-    Send, {Enter}{Enter}
-    Sleep, 30
+    Send("{Enter}{Enter}")
+    Sleep(30)
 
     ; Set clipboard to text and paste
-    Clipboard := textToInsert
-    ClipWait, 0.5
-    Send, ^v
-    Sleep, 100
+    A_Clipboard := textToInsert
+    ClipWait(0.5)
+    Send("^v")
+    Sleep(100)
 
     ; Restore clipboard
-    Clipboard := ClipSaved
+    A_Clipboard := ClipSaved
 
-    ToolTip, Inserted after IMPRESSION:
-    SetTimer, RemoveToolTip, -1500
+    ToolTip("Inserted after IMPRESSION:")
+    SetTimer(RemoveToolTip, -1500)
 }
 
 ; -----------------------------------------
@@ -1140,7 +1209,7 @@ InsertAtImpression(textToInsert) {
 ; WHY: Multiple patterns may match same nodule, avoid double-counting
 ; -----------------------------------------
 DeduplicateSizes(arr) {
-    if (arr.Length() <= 1)
+    if (arr.Length <= 1)
         return arr
 
     result := []
@@ -1196,6 +1265,8 @@ FilterNonMeasurements(input) {
 ; WHY: User verification prevents wrong insertions
 ; RETURNS: "insert", "edit", or "cancel"
 ; -----------------------------------------
+global ConfirmGuiObj := ""
+
 ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     global SmartParseFallbackToGUI, g_ConfirmAction, g_ParsedResultText
 
@@ -1219,70 +1290,69 @@ ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     }
 
     ; Build GUI
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    global ConfirmGuiObj
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
     ; Destroy any existing confirm GUI
-    Gui, ConfirmGui:Destroy
+    if (ConfirmGuiObj != "")
+        ConfirmGuiObj.Destroy()
 
-    Gui, ConfirmGui:New, +AlwaysOnTop
-    Gui, ConfirmGui:Add, Text, x10 y10 w350 +0x1, Smart Parse Confirmation
-    Gui, ConfirmGui:Add, Edit, x10 y35 w350 h130 ReadOnly, %displayText%
+    ConfirmGuiObj := Gui("+AlwaysOnTop")
+    ConfirmGuiObj.OnEvent("Close", ConfirmGuiClose)
+    ConfirmGuiObj.OnEvent("Escape", ConfirmGuiClose)
+    ConfirmGuiObj.Add("Text", "x10 y10 w350 +0x1", "Smart Parse Confirmation")
+    ConfirmGuiObj.Add("Edit", "x10 y35 w350 h130 ReadOnly", displayText)
 
     ; Different buttons based on confidence
     if (confidence < 50 && SmartParseFallbackToGUI) {
         ; Low confidence: default to Cancel, offer GUI edit
-        Gui, ConfirmGui:Add, Button, x10 y175 w100 gConfirmInsert, Insert Anyway
-        Gui, ConfirmGui:Add, Button, x120 y175 w110 gConfirmEdit Default, Edit in GUI
-        Gui, ConfirmGui:Add, Button, x240 y175 w100 gConfirmCancel, Cancel
+        ConfirmGuiObj.Add("Button", "x10 y175 w100", "Insert Anyway").OnEvent("Click", ConfirmInsert)
+        ConfirmGuiObj.Add("Button", "x120 y175 w110 Default", "Edit in GUI").OnEvent("Click", ConfirmEdit)
+        ConfirmGuiObj.Add("Button", "x240 y175 w100", "Cancel").OnEvent("Click", ConfirmCancel)
     } else {
         ; High/medium confidence: default to Insert
-        Gui, ConfirmGui:Add, Button, x10 y175 w100 gConfirmInsert Default, Insert
-        Gui, ConfirmGui:Add, Button, x120 y175 w110 gConfirmEdit, Edit in GUI
-        Gui, ConfirmGui:Add, Button, x240 y175 w100 gConfirmCancel, Cancel
+        ConfirmGuiObj.Add("Button", "x10 y175 w100 Default", "Insert").OnEvent("Click", ConfirmInsert)
+        ConfirmGuiObj.Add("Button", "x120 y175 w110", "Edit in GUI").OnEvent("Click", ConfirmEdit)
+        ConfirmGuiObj.Add("Button", "x240 y175 w100", "Cancel").OnEvent("Click", ConfirmCancel)
     }
 
-    Gui, ConfirmGui:Show, x%xPos% y%yPos% w380 h215, Confirm Parse
-    WinGet, hWnd, ID, A
+    ConfirmGuiObj.Show("x" xPos " y" yPos " w380 h215")
+    ConfirmGuiObj.Title := "Confirm Parse"
+    hWnd := ConfirmGuiObj.Hwnd
 
     ; Reset and wait for user action (event-driven via WinWaitClose)
     g_ConfirmAction := ""
-    WinWaitClose, ahk_id %hWnd%
+    WinWaitClose("ahk_id " hWnd)
 
     return g_ConfirmAction
 }
 
-ConfirmInsert:
-    global g_ConfirmAction
+ConfirmInsert(*) {
+    global g_ConfirmAction, ConfirmGuiObj
     g_ConfirmAction := "insert"
-    Gui, ConfirmGui:Destroy
-return
+    ConfirmGuiObj.Destroy()
+}
 
-ConfirmEdit:
-    global g_ConfirmAction
+ConfirmEdit(*) {
+    global g_ConfirmAction, ConfirmGuiObj
     g_ConfirmAction := "edit"
-    Gui, ConfirmGui:Destroy
-return
+    ConfirmGuiObj.Destroy()
+}
 
-ConfirmCancel:
-    global g_ConfirmAction
+ConfirmCancel(*) {
+    global g_ConfirmAction, ConfirmGuiObj
     g_ConfirmAction := "cancel"
-    Gui, ConfirmGui:Destroy
-return
+    ConfirmGuiObj.Destroy()
+}
 
-ConfirmGuiClose:
-    global g_ConfirmAction
+ConfirmGuiClose(*) {
+    global g_ConfirmAction, ConfirmGuiObj
     g_ConfirmAction := "cancel"
-    Gui, ConfirmGui:Destroy
-return
-
-ConfirmGuiEscape:
-    global g_ConfirmAction
-    g_ConfirmAction := "cancel"
-    Gui, ConfirmGui:Destroy
-return
+    ConfirmGuiObj.Destroy()
+}
 
 ; -----------------------------------------
 ; SMART VOLUME PARSER
@@ -1307,42 +1377,42 @@ ParseAndInsertVolume(input) {
     ; Example: "Prostate measures 8.0 x 6.0 x 9.0 cm"
     strictPattern := "i)(prostate|abscess|lesion|cyst|mass|nodule|collection|hematoma|liver|spleen|kidney|bladder|uterus|ovary|thyroid|adrenal)\s+(?:measures?|measuring|sized?|is)\s+(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(cm|mm)"
 
-    if (RegExMatch(filtered, strictPattern, m)) {
-        organ := m1
-        d1 := m2
-        d2 := m3
-        d3 := m4
-        units := m5
+    if (RegExMatch(filtered, strictPattern, &m)) {
+        organ := m[1]
+        d1 := m[2]
+        d2 := m[3]
+        d3 := m[4]
+        units := m[5]
         confidence := 95
     }
     ; Pattern B (MEDIUM confidence 70): "measures" keyword + dimensions + units (no organ)
-    else if (RegExMatch(filtered, "i)(?:measures?|measuring)\s+(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(cm|mm)", m)) {
-        d1 := m1
-        d2 := m2
-        d3 := m3
-        units := m4
+    else if (RegExMatch(filtered, "i)(?:measures?|measuring)\s+(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(cm|mm)", &m)) {
+        d1 := m[1]
+        d2 := m[2]
+        d3 := m[3]
+        units := m[4]
         confidence := 70
     }
     ; Pattern C (MEDIUM confidence 60): dimensions + units (no keyword)
-    else if (RegExMatch(filtered, "(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(cm|mm)", m)) {
-        d1 := m1
-        d2 := m2
-        d3 := m3
-        units := m4
+    else if (RegExMatch(filtered, "(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(cm|mm)", &m)) {
+        d1 := m[1]
+        d2 := m[2]
+        d3 := m[3]
+        units := m[4]
         confidence := 60
     }
     ; Pattern D (LOW confidence 35): just three numbers with x separator (no units)
     ; WHY: Use DefaultMeasurementUnit setting when units not detected
-    else if (RegExMatch(filtered, "(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)", m)) {
-        d1 := m1
-        d2 := m2
-        d3 := m3
+    else if (RegExMatch(filtered, "(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)", &m)) {
+        d1 := m[1]
+        d2 := m[2]
+        d3 := m[3]
         units := DefaultMeasurementUnit  ; Use user's default setting
         confidence := 35
     }
     else {
         ; No match found
-        MsgBox, 48, Parse Error, Could not find dimensions in text.`n`nExpected: "measures 8.0 x 6.0 x 9.0 cm"`n`nTip: Include units (cm or mm) for better detection.
+        MsgBox("Could not find dimensions in text.`n`nExpected: `"measures 8.0 x 6.0 x 9.0 cm`"`n`nTip: Include units (cm or mm) for better detection.", "Parse Error", 48)
         return
     }
 
@@ -1380,7 +1450,7 @@ ParseAndInsertVolume(input) {
     ; Add organ-specific interpretation for prostate
     organLower := ""
     if (organ != "") {
-        StringLower, organLower, organ
+        organLower := StrLower(organ)
     }
     if (organLower = "prostate") {
         if (volume < 30) {
@@ -1494,64 +1564,64 @@ ParseAndInsertRVLV(input) {
     patternH := "i)rvval\s*(\d+(?:\.\d+)?)\s*(mm|cm)?\s*lvval\s*(\d+(?:\.\d+)?)\s*(mm|cm)?"
 
     ; Try patterns in order of confidence
-    if (RegExMatch(filtered, patternA, m)) {
-        rv := m1 + 0
-        rvUnits := NormalizeUnits(m2)
-        lv := m3 + 0
-        lvUnits := NormalizeUnits(m4)
+    if (RegExMatch(filtered, patternA, &m)) {
+        rv := m[1] + 0
+        rvUnits := NormalizeUnits(m[2])
+        lv := m[3] + 0
+        lvUnits := NormalizeUnits(m[4])
         confidence := 90
     }
-    else if (RegExMatch(filtered, patternB, m)) {
-        lv := m1 + 0
-        lvUnits := NormalizeUnits(m2)
-        rv := m3 + 0
-        rvUnits := NormalizeUnits(m4)
+    else if (RegExMatch(filtered, patternB, &m)) {
+        lv := m[1] + 0
+        lvUnits := NormalizeUnits(m[2])
+        rv := m[3] + 0
+        rvUnits := NormalizeUnits(m[4])
         confidence := 85
     }
-    else if (RegExMatch(filtered, patternE, m)) {
-        rv := m1 + 0
-        rvUnits := NormalizeUnits(m2)
-        lv := m3 + 0
-        lvUnits := NormalizeUnits(m4)
+    else if (RegExMatch(filtered, patternE, &m)) {
+        rv := m[1] + 0
+        rvUnits := NormalizeUnits(m[2])
+        lv := m[3] + 0
+        lvUnits := NormalizeUnits(m[4])
         confidence := 85
     }
-    else if (RegExMatch(filtered, patternG, m)) {
-        rv := m1 + 0
-        rvUnits := NormalizeUnits(m2)
-        lv := m3 + 0
-        lvUnits := NormalizeUnits(m4)
+    else if (RegExMatch(filtered, patternG, &m)) {
+        rv := m[1] + 0
+        rvUnits := NormalizeUnits(m[2])
+        lv := m[3] + 0
+        lvUnits := NormalizeUnits(m[4])
         confidence := 85
     }
-    else if (RegExMatch(filtered, patternF, m)) {
-        rv := m1 + 0
-        rvUnits := NormalizeUnits(m2)
-        lv := m3 + 0
-        lvUnits := NormalizeUnits(m4)
+    else if (RegExMatch(filtered, patternF, &m)) {
+        rv := m[1] + 0
+        rvUnits := NormalizeUnits(m[2])
+        lv := m[3] + 0
+        lvUnits := NormalizeUnits(m[4])
         confidence := 80
     }
-    else if (RegExMatch(filtered, patternC, m)) {
-        rv := m1 + 0
-        lv := m2 + 0
+    else if (RegExMatch(filtered, patternC, &m)) {
+        rv := m[1] + 0
+        lv := m[2] + 0
         confidence := 80
     }
-    else if (RegExMatch(filtered, patternD, m)) {
-        rv := m1 + 0
-        rvUnits := NormalizeUnits(m2)
-        lv := m3 + 0
-        lvUnits := NormalizeUnits(m4)
+    else if (RegExMatch(filtered, patternD, &m)) {
+        rv := m[1] + 0
+        rvUnits := NormalizeUnits(m[2])
+        lv := m[3] + 0
+        lvUnits := NormalizeUnits(m[4])
         confidence := 75
     }
-    else if (RegExMatch(filtered, patternH, m)) {
+    else if (RegExMatch(filtered, patternH, &m)) {
         ; PACS "rvval/lvval" format - default to cm if no units (typical cardiac CT)
-        rv := m1 + 0
-        rvUnits := (m2 != "") ? NormalizeUnits(m2) : "cm"
-        lv := m3 + 0
-        lvUnits := (m4 != "") ? NormalizeUnits(m4) : "cm"
+        rv := m[1] + 0
+        rvUnits := (m[2] != "") ? NormalizeUnits(m[2]) : "cm"
+        lv := m[3] + 0
+        lvUnits := (m[4] != "") ? NormalizeUnits(m[4]) : "cm"
         confidence := 80
     }
     ; No pattern matched
     else {
-        MsgBox, 48, Parse Error, Could not find RV/LV measurements.`n`nExpected formats:`n- "RV 42mm / LV 35mm"`n- "RV: 42, LV: 35"`n- "Right ventricle 4.2 cm"`n- "rvval 5.0 lvval 3.6"`n`nMust include RV/LV keywords.
+        MsgBox("Could not find RV/LV measurements.`n`nExpected formats:`n- `"RV 42mm / LV 35mm`"`n- `"RV: 42, LV: 35`"`n- `"Right ventricle 4.2 cm`"`n- `"rvval 5.0 lvval 3.6`"`n`nMust include RV/LV keywords.", "Parse Error", 48)
         return
     }
 
@@ -1567,7 +1637,7 @@ ParseAndInsertRVLV(input) {
     }
 
     if (lv <= 0) {
-        MsgBox, 48, Error, LV diameter must be greater than 0.
+        MsgBox("LV diameter must be greater than 0.", "Error", 48)
         return
     }
 
@@ -1589,7 +1659,7 @@ ParseAndInsertRVLV(input) {
     ; ARCHITECTURE: Leading space for dictation continuity
     ; TRADEOFF: Macro uses cm (PowerScribe), Inline uses mm (brevity)
     resultText := ""
-    StringLower, interpretLower, interpretation
+    interpretLower := StrLower(interpretation)
     if (RVLVOutputFormat = "Macro") {
         ; Macro format: sentence style with cm units for PowerScribe compatibility
         rv_cm := Round(rv / 10, 1)
@@ -1633,27 +1703,27 @@ ParseAndInsertNASCET(input) {
 
     ; Pattern A (HIGH confidence 90): "distal X mm ... stenosis Y mm"
     ; WHY: Captures units to handle mixed cm/mm measurements
-    if (RegExMatch(filtered, "i)distal\s*(?:ICA|internal\s*carotid)?.*?(\d+(?:\.\d+)?)\s*(mm|cm)?.*?stenosis.*?(\d+(?:\.\d+)?)\s*(mm|cm)?", m)) {
-        distal := m1 + 0
-        distalUnits := (m2 != "") ? m2 : "mm"
-        stenosis := m3 + 0
-        stenosisUnits := (m4 != "") ? m4 : "mm"
+    if (RegExMatch(filtered, "i)distal\s*(?:ICA|internal\s*carotid)?.*?(\d+(?:\.\d+)?)\s*(mm|cm)?.*?stenosis.*?(\d+(?:\.\d+)?)\s*(mm|cm)?", &m)) {
+        distal := m[1] + 0
+        distalUnits := (m[2] != "") ? m[2] : "mm"
+        stenosis := m[3] + 0
+        stenosisUnits := (m[4] != "") ? m[4] : "mm"
         confidence := 90
     }
     ; Pattern B (HIGH confidence 85): "stenosis X mm ... distal Y mm" (reverse order)
-    else if (RegExMatch(filtered, "i)stenosis.*?(\d+(?:\.\d+)?)\s*(mm|cm)?.*?distal\s*(?:ICA)?.*?(\d+(?:\.\d+)?)\s*(mm|cm)?", m)) {
-        stenosis := m1 + 0
-        stenosisUnits := (m2 != "") ? m2 : "mm"
-        distal := m3 + 0
-        distalUnits := (m4 != "") ? m4 : "mm"
+    else if (RegExMatch(filtered, "i)stenosis.*?(\d+(?:\.\d+)?)\s*(mm|cm)?.*?distal\s*(?:ICA)?.*?(\d+(?:\.\d+)?)\s*(mm|cm)?", &m)) {
+        stenosis := m[1] + 0
+        stenosisUnits := (m[2] != "") ? m[2] : "mm"
+        distal := m[3] + 0
+        distalUnits := (m[4] != "") ? m[4] : "mm"
         confidence := 85
     }
     ; Pattern C (MEDIUM confidence 65): ICA/carotid + narrowing context
-    else if (RegExMatch(filtered, "i)(?:ICA|carotid).*?(\d+(?:\.\d+)?)\s*(mm|cm)?.*?(?:narrow|residual).*?(\d+(?:\.\d+)?)\s*(mm|cm)?", m)) {
-        d1 := m1 + 0
-        d1Units := (m2 != "") ? m2 : "mm"
-        d2 := m3 + 0
-        d2Units := (m4 != "") ? m4 : "mm"
+    else if (RegExMatch(filtered, "i)(?:ICA|carotid).*?(\d+(?:\.\d+)?)\s*(mm|cm)?.*?(?:narrow|residual).*?(\d+(?:\.\d+)?)\s*(mm|cm)?", &m)) {
+        d1 := m[1] + 0
+        d1Units := (m[2] != "") ? m[2] : "mm"
+        d2 := m[3] + 0
+        d2Units := (m[4] != "") ? m[4] : "mm"
         ; Convert to mm before comparison
         d1_mm := (d1Units = "cm") ? d1 * 10 : d1
         d2_mm := (d2Units = "cm") ? d2 * 10 : d2
@@ -1672,7 +1742,7 @@ ParseAndInsertNASCET(input) {
     }
     ; NO FALLBACK TO JUST TWO NUMBERS - too risky
     else {
-        MsgBox, 48, Parse Error, Could not find stenosis measurements.`n`nExpected formats:`n- "distal 5.2mm, stenosis 2.1mm"`n- "distal ICA 0.5cm, stenosis 3mm"`n`nMust include "distal" or "stenosis" keywords.
+        MsgBox("Could not find stenosis measurements.`n`nExpected formats:`n- `"distal 5.2mm, stenosis 2.1mm`"`n- `"distal ICA 0.5cm, stenosis 3mm`"`n`nMust include `"distal`" or `"stenosis`" keywords.", "Parse Error", 48)
         return
     }
 
@@ -1684,11 +1754,11 @@ ParseAndInsertNASCET(input) {
 
     ; Validate
     if (distal <= 0) {
-        MsgBox, 48, Error, Distal ICA diameter must be greater than 0.
+        MsgBox("Distal ICA diameter must be greater than 0.", "Error", 48)
         return
     }
     if (stenosis >= distal) {
-        MsgBox, 48, Error, Stenosis diameter must be less than distal diameter.`n`nDistal: %distal% mm`nStenosis: %stenosis% mm
+        MsgBox("Stenosis diameter must be less than distal diameter.`n`nDistal: " distal " mm`nStenosis: " stenosis " mm", "Error", 48)
         return
     }
 
@@ -1751,33 +1821,33 @@ ParseAndInsertAdrenalWashout(input) {
     ; Example: "pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU"
     fullPattern := "i)(?:pre-?contrast|unenhanced|baseline|native|non-?con)[:\s]*(-?\d+)\s*HU.*?(?:post-?contrast|enhanced|arterial|portal)[:\s]*(-?\d+)\s*HU.*?(?:delayed|15\s*min|late)[:\s]*(-?\d+)\s*HU"
 
-    if (RegExMatch(filtered, fullPattern, m)) {
-        pre := m1 + 0
-        post := m2 + 0
-        delayed := m3 + 0
+    if (RegExMatch(filtered, fullPattern, &m)) {
+        pre := m[1] + 0
+        post := m[2] + 0
+        delayed := m[3] + 0
         confidence := 95
     }
     ; Pattern B (MEDIUM confidence 70): Post + delayed with labels
-    else if (RegExMatch(filtered, "i)(?:post-?contrast|enhanced)[:\s]*(-?\d+)\s*HU.*?(?:delayed|15\s*min)[:\s]*(-?\d+)\s*HU", m)) {
-        post := m1 + 0
-        delayed := m2 + 0
+    else if (RegExMatch(filtered, "i)(?:post-?contrast|enhanced)[:\s]*(-?\d+)\s*HU.*?(?:delayed|15\s*min)[:\s]*(-?\d+)\s*HU", &m)) {
+        post := m[1] + 0
+        delayed := m[2] + 0
         confidence := 70
     }
     ; Pattern C (MEDIUM confidence 55): Three HU values in sequence
-    else if (RegExMatch(filtered, "(-?\d+)\s*HU.*?(-?\d+)\s*HU.*?(-?\d+)\s*HU", m)) {
-        pre := m1 + 0
-        post := m2 + 0
-        delayed := m3 + 0
+    else if (RegExMatch(filtered, "(-?\d+)\s*HU.*?(-?\d+)\s*HU.*?(-?\d+)\s*HU", &m)) {
+        pre := m[1] + 0
+        post := m[2] + 0
+        delayed := m[3] + 0
         confidence := 55
     }
     ; NO raw number fallback - requires HU labels for safety
     else {
-        MsgBox, 48, Parse Error, Could not find HU values.`n`nExpected formats:`n- "pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU"`n- "10 HU, 80 HU, 40 HU"`n`nMust include "HU" labels.
+        MsgBox("Could not find HU values.`n`nExpected formats:`n- `"pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU`"`n- `"10 HU, 80 HU, 40 HU`"`n`nMust include `"HU`" labels.", "Parse Error", 48)
         return
     }
 
     if (post = "" || delayed = "") {
-        MsgBox, 48, Error, At least post-contrast and delayed HU values are required.
+        MsgBox("At least post-contrast and delayed HU values are required.", "Error", 48)
         return
     }
 
@@ -1857,7 +1927,7 @@ GetLargerSize(size1, size2, units) {
 ; HELPER: Classify nodule by type and store in appropriate array
 ; WHY: Fleischner guidelines differ by nodule type (solid vs subsolid vs part-solid)
 ; -----------------------------------------
-ClassifyAndStore(size, units, nodeType, ByRef solidArr, ByRef subsolidArr, ByRef partsolidArr) {
+ClassifyAndStore(size, units, nodeType, &solidArr, &subsolidArr, &partsolidArr) {
     ; Convert to mm
     if (units = "cm" || units = "centimeter" || units = "centimeters")
         size := size * 10
@@ -1867,7 +1937,7 @@ ClassifyAndStore(size, units, nodeType, ByRef solidArr, ByRef subsolidArr, ByRef
         return false
 
     ; Classify based on type keywords (case insensitive)
-    StringLower, nodeTypeLower, nodeType
+    nodeTypeLower := StrLower(nodeType)
     if (nodeType = "") {
         ; No type specified - default to solid
         solidArr.Push(size)
@@ -1955,104 +2025,104 @@ ParseAndInsertFleischner(input) {
 
     ; Search Pattern 1: Size then nodule
     pos := 1
-    while (pos := RegExMatch(filtered, pattern1, m, pos)) {
-        size := m1 + 0
-        size2 := m2 != "" ? m2 + 0 : 0
-        units := m3
+    while (pos := RegExMatch(filtered, pattern1, &m, pos)) {
+        size := m[1] + 0
+        size2 := m[2] != "" ? m[2] + 0 : 0
+        units := m[3]
         finalSize := (size2 > size) ? size2 : size
         ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
-        pos += StrLen(m)
+        pos += StrLen(m[0])
     }
 
     ; Search Pattern 1b: Nodule then size
     pos := 1
-    while (pos := RegExMatch(filtered, pattern1b, m, pos)) {
-        size := m1 + 0
-        size2 := m2 != "" ? m2 + 0 : 0
-        units := m3
+    while (pos := RegExMatch(filtered, pattern1b, &m, pos)) {
+        size := m[1] + 0
+        size2 := m[2] != "" ? m[2] + 0 : 0
+        units := m[3]
         finalSize := (size2 > size) ? size2 : size
         ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
-        pos += StrLen(m)
+        pos += StrLen(m[0])
     }
 
     ; Search Pattern 2: Type + size + nodule
     pos := 1
-    while (pos := RegExMatch(filtered, pattern2, m, pos)) {
-        nodeType := m1
-        size := m2 + 0
-        size2 := m3 != "" ? m3 + 0 : 0
-        units := m4
+    while (pos := RegExMatch(filtered, pattern2, &m, pos)) {
+        nodeType := m[1]
+        size := m[2] + 0
+        size2 := m[3] != "" ? m[3] + 0 : 0
+        units := m[4]
         finalSize := (size2 > size) ? size2 : size
         ClassifyAndStore(finalSize, units, nodeType, solidNodules, subsolidNodules, partsolidNodules)
-        pos += StrLen(m)
+        pos += StrLen(m[0])
     }
 
     ; Search Pattern 2b: Type + nodule + size
     pos := 1
-    while (pos := RegExMatch(filtered, pattern2b, m, pos)) {
-        nodeType := m1
-        size := m2 + 0
-        size2 := m3 != "" ? m3 + 0 : 0
-        units := m4
+    while (pos := RegExMatch(filtered, pattern2b, &m, pos)) {
+        nodeType := m[1]
+        size := m[2] + 0
+        size2 := m[3] != "" ? m[3] + 0 : 0
+        units := m[4]
         finalSize := (size2 > size) ? size2 : size
         ClassifyAndStore(finalSize, units, nodeType, solidNodules, subsolidNodules, partsolidNodules)
-        pos += StrLen(m)
+        pos += StrLen(m[0])
     }
 
     ; Search Pattern 2c: Size + type + nodule
     pos := 1
-    while (pos := RegExMatch(filtered, pattern2c, m, pos)) {
-        size := m1 + 0
-        size2 := m2 != "" ? m2 + 0 : 0
-        units := m3
-        nodeType := m4
+    while (pos := RegExMatch(filtered, pattern2c, &m, pos)) {
+        size := m[1] + 0
+        size2 := m[2] != "" ? m[2] + 0 : 0
+        units := m[3]
+        nodeType := m[4]
         finalSize := (size2 > size) ? size2 : size
         ClassifyAndStore(finalSize, units, nodeType, solidNodules, subsolidNodules, partsolidNodules)
-        pos += StrLen(m)
+        pos += StrLen(m[0])
     }
 
     ; Search Pattern 3: "largest/dominant" nodule
     pos := 1
-    while (pos := RegExMatch(filtered, pattern3, m, pos)) {
-        size := m1 + 0
-        size2 := m2 != "" ? m2 + 0 : 0
-        units := m3
+    while (pos := RegExMatch(filtered, pattern3, &m, pos)) {
+        size := m[1] + 0
+        size2 := m[2] != "" ? m[2] + 0 : 0
+        units := m[3]
         finalSize := (size2 > size) ? size2 : size
         ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
-        pos += StrLen(m)
+        pos += StrLen(m[0])
     }
 
     ; Search Pattern 4: "nodule is/measures X mm"
     pos := 1
-    while (pos := RegExMatch(filtered, pattern4, m, pos)) {
-        size := m1 + 0
-        size2 := m2 != "" ? m2 + 0 : 0
-        units := m3
+    while (pos := RegExMatch(filtered, pattern4, &m, pos)) {
+        size := m[1] + 0
+        size2 := m[2] != "" ? m[2] + 0 : 0
+        units := m[3]
         finalSize := (size2 > size) ? size2 : size
         ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
-        pos += StrLen(m)
+        pos += StrLen(m[0])
     }
 
     ; Search Pattern 5: Parenthetical "nodule (8 mm)"
     pos := 1
-    while (pos := RegExMatch(filtered, pattern5, m, pos)) {
-        size := m1 + 0
-        size2 := m2 != "" ? m2 + 0 : 0
-        units := m3
+    while (pos := RegExMatch(filtered, pattern5, &m, pos)) {
+        size := m[1] + 0
+        size2 := m[2] != "" ? m[2] + 0 : 0
+        units := m[3]
         finalSize := (size2 > size) ? size2 : size
         ClassifyAndStore(finalSize, units, "", solidNodules, subsolidNodules, partsolidNodules)
-        pos += StrLen(m)
+        pos += StrLen(m[0])
     }
 
     ; Check for "sub 6 mm nodules", "sub-6mm", "punctate nodules", "<6mm nodules", "scattered tiny nodules"
     if (RegExMatch(filtered, "i)(sub[- ]?6|<\s*6|punctate|miliary|tiny|innumerable|scattered small|multiple small|few small).{0,25}(" . nodulePattern . ")")) {
-        if (solidNodules.Length() = 0)
+        if (solidNodules.Length = 0)
             solidNodules.Push(5)
     }
 
     ; Also check for "nodules less than 6 mm" pattern
     if (RegExMatch(filtered, "i)(" . nodulePattern . ").{0,20}(less than|smaller than|under|<)\s*6\s*(mm|cm)?")) {
-        if (solidNodules.Length() = 0)
+        if (solidNodules.Length = 0)
             solidNodules.Push(5)
     }
 
@@ -2062,13 +2132,13 @@ ParseAndInsertFleischner(input) {
     partsolidNodules := DeduplicateSizes(partsolidNodules)
 
     ; If no nodules found, show error
-    if (solidNodules.Length() = 0 && subsolidNodules.Length() = 0 && partsolidNodules.Length() = 0) {
-        MsgBox, 48, Parse Error, Could not find nodule descriptions in text.`n`nExpected: Text containing "nodule" (or similar) with a size measurement.`n`nExamples:`n- "8 mm pulmonary nodule"`n- "solid nodule measuring 8 mm"`n- "groundglass opacity, 7mm"
+    if (solidNodules.Length = 0 && subsolidNodules.Length = 0 && partsolidNodules.Length = 0) {
+        MsgBox("Could not find nodule descriptions in text.`n`nExpected: Text containing `"nodule`" (or similar) with a size measurement.`n`nExamples:`n- `"8 mm pulmonary nodule`"`n- `"solid nodule measuring 8 mm`"`n- `"groundglass opacity, 7mm`"", "Parse Error", 48)
         return
     }
 
     ; Calculate confidence based on what was found
-    totalNodules := solidNodules.Length() + subsolidNodules.Length() + partsolidNodules.Length()
+    totalNodules := solidNodules.Length + subsolidNodules.Length + partsolidNodules.Length
     if (totalNodules > 0)
         confidence := 85
     if (totalNodules > 3)
@@ -2117,22 +2187,22 @@ ParseAndInsertFleischner(input) {
 
     if (maxSolid > 0) {
         resultText .= noduleNum . ". " . maxSolid . " mm solid nodule"
-        if (solidNodules.Length() > 1)
-            resultText .= " (largest of " . solidNodules.Length() . ")"
+        if (solidNodules.Length > 1)
+            resultText .= " (largest of " . solidNodules.Length . ")"
         resultText .= "`n"
         noduleNum++
     }
     if (maxSubsolid > 0) {
         resultText .= noduleNum . ". " . maxSubsolid . " mm ground glass/subsolid nodule"
-        if (subsolidNodules.Length() > 1)
-            resultText .= " (largest of " . subsolidNodules.Length() . ")"
+        if (subsolidNodules.Length > 1)
+            resultText .= " (largest of " . subsolidNodules.Length . ")"
         resultText .= "`n"
         noduleNum++
     }
     if (maxPartsolid > 0) {
         resultText .= noduleNum . ". " . maxPartsolid . " mm part-solid nodule"
-        if (partsolidNodules.Length() > 1)
-            resultText .= " (largest of " . partsolidNodules.Length() . ")"
+        if (partsolidNodules.Length > 1)
+            resultText .= " (largest of " . partsolidNodules.Length . ")"
         resultText .= "`n"
         noduleNum++
     }
@@ -2270,31 +2340,31 @@ ParseAndInsertICH(input) {
 
     ; Pattern A (HIGH confidence 90): "X x Y x Z cm" or "X x Y x Z mm"
     ; Example: "hemorrhage measuring 5.0 x 4.0 x 3.5 cm"
-    if (RegExMatch(input, "i)(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(cm|mm)?", m)) {
-        a := m1 + 0
-        b := m2 + 0
-        c := m3 + 0
-        units := (m4 != "") ? m4 : "cm"
+    if (RegExMatch(input, "i)(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(cm|mm)?", &m)) {
+        a := m[1] + 0
+        b := m[2] + 0
+        c := m[3] + 0
+        units := (m[4] != "") ? m[4] : "cm"
         confidence := 90
     }
     ; Pattern B (MEDIUM confidence 75): Labeled dimensions
     ; Example: "A 5.0, B 4.0, C 3.5" or "length 5, width 4, height 3"
-    else if (RegExMatch(input, "i)(?:A|length|L)\s*[:\s=]?\s*(\d+(?:\.\d+)?)\s*(cm|mm)?.*?(?:B|width|W)\s*[:\s=]?\s*(\d+(?:\.\d+)?)\s*(cm|mm)?.*?(?:C|height|H|depth|D)\s*[:\s=]?\s*(\d+(?:\.\d+)?)\s*(cm|mm)?", m)) {
-        a := m1 + 0
-        units := (m2 != "") ? m2 : "cm"
-        b := m3 + 0
-        c := m5 + 0
+    else if (RegExMatch(input, "i)(?:A|length|L)\s*[:\s=]?\s*(\d+(?:\.\d+)?)\s*(cm|mm)?.*?(?:B|width|W)\s*[:\s=]?\s*(\d+(?:\.\d+)?)\s*(cm|mm)?.*?(?:C|height|H|depth|D)\s*[:\s=]?\s*(\d+(?:\.\d+)?)\s*(cm|mm)?", &m)) {
+        a := m[1] + 0
+        units := (m[2] != "") ? m[2] : "cm"
+        b := m[3] + 0
+        c := m[5] + 0
         confidence := 75
     }
     ; Pattern C (LOW confidence 50): Three numbers in sequence
     else {
         numbers := []
         pos := 1
-        while (pos := RegExMatch(input, "(\d+(?:\.\d+)?)\s*(cm|mm)?", m, pos)) {
-            numbers.Push({val: m1 + 0, unit: m2})
-            pos += StrLen(m)
+        while (pos := RegExMatch(input, "(\d+(?:\.\d+)?)\s*(cm|mm)?", &m, pos)) {
+            numbers.Push({val: m[1] + 0, unit: m[2]})
+            pos += StrLen(m[0])
         }
-        if (numbers.Length() >= 3) {
+        if (numbers.Length >= 3) {
             a := numbers[1].val
             b := numbers[2].val
             c := numbers[3].val
@@ -2304,7 +2374,7 @@ ParseAndInsertICH(input) {
     }
 
     if (a = 0 || b = 0 || c = 0) {
-        MsgBox, 48, Parse Error, Could not find hemorrhage dimensions.`n`nExpected formats:`n- "5.0 x 4.0 x 3.5 cm"`n- "hemorrhage measuring X x Y x Z"
+        MsgBox("Could not find hemorrhage dimensions.`n`nExpected formats:`n- `"5.0 x 4.0 x 3.5 cm`"`n- `"hemorrhage measuring X x Y x Z`"", "Parse Error", 48)
         return
     }
 
@@ -2341,62 +2411,72 @@ ParseAndInsertICH(input) {
 ; -----------------------------------------
 ; ICH Volume GUI
 ; -----------------------------------------
-ShowICHVolumeGui() {
-    GetGuiPosition(xPos, yPos)
+global ICHGuiObj := ""
 
-    Gui, ICHGui:New, +AlwaysOnTop
-    Gui, ICHGui:Add, Text, x10 y10 w280, ICH Volume Calculator (ABC/2)
-    Gui, ICHGui:Add, Text, x10 y40, A (longest axis, cm):
-    Gui, ICHGui:Add, Edit, x140 y37 w60 vICHDimA
-    Gui, ICHGui:Add, Text, x10 y70, B (perpendicular, cm):
-    Gui, ICHGui:Add, Edit, x140 y67 w60 vICHDimB
-    Gui, ICHGui:Add, Text, x10 y100, C (# of slices x thickness, cm):
-    Gui, ICHGui:Add, Edit, x200 y97 w60 vICHDimC
-    Gui, ICHGui:Add, Button, x30 y135 w80 gCalcICH, Calculate
-    Gui, ICHGui:Add, Button, x130 y135 w80 gICHGuiClose, Cancel
-    Gui, ICHGui:Show, x%xPos% y%yPos% w280 h175, ICH Volume (ABC/2)
-    return
+ShowICHVolumeGui() {
+    global ICHGuiObj
+    GetGuiPosition(&xPos, &yPos)
+
+    ICHGuiObj := Gui("+AlwaysOnTop")
+    ICHGuiObj.OnEvent("Close", ICHGuiClose)
+    ICHGuiObj.OnEvent("Escape", ICHGuiClose)
+    ICHGuiObj.Add("Text", "x10 y10 w280", "ICH Volume Calculator (ABC/2)")
+    ICHGuiObj.Add("Text", "x10 y40", "A (longest axis, cm):")
+    ICHGuiObj.Add("Edit", "x140 y37 w60 vICHDimA")
+    ICHGuiObj.Add("Text", "x10 y70", "B (perpendicular, cm):")
+    ICHGuiObj.Add("Edit", "x140 y67 w60 vICHDimB")
+    ICHGuiObj.Add("Text", "x10 y100", "C (# of slices x thickness, cm):")
+    ICHGuiObj.Add("Edit", "x200 y97 w60 vICHDimC")
+    ICHGuiObj.Add("Button", "x30 y135 w80", "Calculate").OnEvent("Click", CalcICH)
+    ICHGuiObj.Add("Button", "x130 y135 w80", "Cancel").OnEvent("Click", ICHGuiClose)
+    ICHGuiObj.Show("x" xPos " y" yPos " w280 h175")
+    ICHGuiObj.Title := "ICH Volume (ABC/2)"
 }
 
 ShowICHVolumeGuiPrefilled(a, b, c) {
-    GetGuiPosition(xPos, yPos)
+    global ICHGuiObj
+    GetGuiPosition(&xPos, &yPos)
 
     aVal := Round(a, 1)
     bVal := Round(b, 1)
     cVal := Round(c, 1)
 
-    Gui, ICHGui:New, +AlwaysOnTop
-    Gui, ICHGui:Add, Text, x10 y10 w280, ICH Volume Calculator (Pre-filled)
-    Gui, ICHGui:Add, Text, x10 y40, A (longest axis, cm):
-    Gui, ICHGui:Add, Edit, x140 y37 w60 vICHDimA, %aVal%
-    Gui, ICHGui:Add, Text, x10 y70, B (perpendicular, cm):
-    Gui, ICHGui:Add, Edit, x140 y67 w60 vICHDimB, %bVal%
-    Gui, ICHGui:Add, Text, x10 y100, C (# of slices x thickness, cm):
-    Gui, ICHGui:Add, Edit, x200 y97 w60 vICHDimC, %cVal%
-    Gui, ICHGui:Add, Button, x30 y135 w80 gCalcICH, Calculate
-    Gui, ICHGui:Add, Button, x130 y135 w80 gICHGuiClose, Cancel
-    Gui, ICHGui:Show, x%xPos% y%yPos% w280 h175, ICH Volume (ABC/2)
-    return
+    ICHGuiObj := Gui("+AlwaysOnTop")
+    ICHGuiObj.OnEvent("Close", ICHGuiClose)
+    ICHGuiObj.OnEvent("Escape", ICHGuiClose)
+    ICHGuiObj.Add("Text", "x10 y10 w280", "ICH Volume Calculator (Pre-filled)")
+    ICHGuiObj.Add("Text", "x10 y40", "A (longest axis, cm):")
+    ICHGuiObj.Add("Edit", "x140 y37 w60 vICHDimA", aVal)
+    ICHGuiObj.Add("Text", "x10 y70", "B (perpendicular, cm):")
+    ICHGuiObj.Add("Edit", "x140 y67 w60 vICHDimB", bVal)
+    ICHGuiObj.Add("Text", "x10 y100", "C (# of slices x thickness, cm):")
+    ICHGuiObj.Add("Edit", "x200 y97 w60 vICHDimC", cVal)
+    ICHGuiObj.Add("Button", "x30 y135 w80", "Calculate").OnEvent("Click", CalcICH)
+    ICHGuiObj.Add("Button", "x130 y135 w80", "Cancel").OnEvent("Click", ICHGuiClose)
+    ICHGuiObj.Show("x" xPos " y" yPos " w280 h175")
+    ICHGuiObj.Title := "ICH Volume (ABC/2)"
 }
 
-ICHGuiClose:
-    Gui, ICHGui:Destroy
-return
+ICHGuiClose(*) {
+    global ICHGuiObj
+    ICHGuiObj.Destroy()
+}
 
-CalcICH:
-    Gui, ICHGui:Submit, NoHide
+CalcICH(*) {
+    global ICHGuiObj
+    saved := ICHGuiObj.Submit(false)
 
-    if (ICHDimA = "" || ICHDimB = "" || ICHDimC = "") {
-        MsgBox, 16, Error, Please enter all three dimensions.
+    if (saved.ICHDimA = "" || saved.ICHDimB = "" || saved.ICHDimC = "") {
+        MsgBox("Please enter all three dimensions.", "Error", 16)
         return
     }
 
-    a := ICHDimA + 0
-    b := ICHDimB + 0
-    c := ICHDimC + 0
+    a := saved.ICHDimA + 0
+    b := saved.ICHDimB + 0
+    c := saved.ICHDimC + 0
 
     if (a <= 0 || b <= 0 || c <= 0) {
-        MsgBox, 16, Error, All dimensions must be greater than 0.
+        MsgBox("All dimensions must be greater than 0.", "Error", 16)
         return
     }
 
@@ -2407,9 +2487,9 @@ CalcICH:
     ; Sentence style output
     result := " ICH volume approximately " . volume . " cc (ABC/2: " . Round(a, 1) . " x " . Round(b, 1) . " x " . Round(c, 1) . " cm)."
 
-    Gui, ICHGui:Destroy
+    ICHGuiObj.Destroy()
     ShowResult(result)
-return
+}
 
 ; =========================================
 ; CALCULATOR 8: Follow-up Date Calculator
@@ -2428,44 +2508,44 @@ ParseAndInsertDate(input) {
     confidence := 0
 
     ; Pattern A (HIGH confidence 95): "X months", "X weeks", "X days", "X year(s)"
-    if (RegExMatch(input, "i)(\d+)\s*(month|months|mo|m)\b", m)) {
-        interval := m1 + 0
+    if (RegExMatch(input, "i)(\d+)\s*(month|months|mo|m)\b", &m)) {
+        interval := m[1] + 0
         intervalUnit := "months"
         confidence := 95
-    } else if (RegExMatch(input, "i)(\d+)\s*(week|weeks|wk|w)\b", m)) {
-        interval := m1 + 0
+    } else if (RegExMatch(input, "i)(\d+)\s*(week|weeks|wk|w)\b", &m)) {
+        interval := m[1] + 0
         intervalUnit := "weeks"
         confidence := 95
-    } else if (RegExMatch(input, "i)(\d+)\s*(day|days|d)\b", m)) {
-        interval := m1 + 0
+    } else if (RegExMatch(input, "i)(\d+)\s*(day|days|d)\b", &m)) {
+        interval := m[1] + 0
         intervalUnit := "days"
         confidence := 95
-    } else if (RegExMatch(input, "i)(\d+)\s*(year|years|yr|y)\b", m)) {
-        interval := m1 + 0
+    } else if (RegExMatch(input, "i)(\d+)\s*(year|years|yr|y)\b", &m)) {
+        interval := m[1] + 0
         intervalUnit := "years"
         confidence := 95
     }
     ; Pattern B (MEDIUM confidence 80): Abbreviated format "3m", "6w", "45d", "1y"
-    else if (RegExMatch(input, "i)\b(\d+)(m|mo)\b", m)) {
-        interval := m1 + 0
+    else if (RegExMatch(input, "i)\b(\d+)(m|mo)\b", &m)) {
+        interval := m[1] + 0
         intervalUnit := "months"
         confidence := 80
-    } else if (RegExMatch(input, "i)\b(\d+)(w|wk)\b", m)) {
-        interval := m1 + 0
+    } else if (RegExMatch(input, "i)\b(\d+)(w|wk)\b", &m)) {
+        interval := m[1] + 0
         intervalUnit := "weeks"
         confidence := 80
-    } else if (RegExMatch(input, "i)\b(\d+)(d)\b", m)) {
-        interval := m1 + 0
+    } else if (RegExMatch(input, "i)\b(\d+)(d)\b", &m)) {
+        interval := m[1] + 0
         intervalUnit := "days"
         confidence := 80
-    } else if (RegExMatch(input, "i)\b(\d+)(y|yr)\b", m)) {
-        interval := m1 + 0
+    } else if (RegExMatch(input, "i)\b(\d+)(y|yr)\b", &m)) {
+        interval := m[1] + 0
         intervalUnit := "years"
         confidence := 80
     }
 
     if (interval = 0 || intervalUnit = "") {
-        MsgBox, 48, Parse Error, Could not find follow-up interval.`n`nExpected formats:`n- "3 months", "6 weeks", "1 year"`n- "3m", "6w", "45d", "1y"
+        MsgBox("Could not find follow-up interval.`n`nExpected formats:`n- `"3 months`", `"6 weeks`", `"1 year`"`n- `"3m`", `"6w`", `"45d`", `"1y`"", "Parse Error", 48)
         return
     }
 
@@ -2494,8 +2574,7 @@ ParseAndInsertDate(input) {
 ; -----------------------------------------
 CalculateFutureDate(interval, unit) {
     ; Get current date
-    FormatTime, today, , yyyyMMdd
-    today := today + 0
+    today := FormatTime(, "yyyyMMdd")
 
     ; Calculate days to add
     daysToAdd := 0
@@ -2509,33 +2588,38 @@ CalculateFutureDate(interval, unit) {
         daysToAdd := interval * 365  ; Approximate
 
     ; Add days to current date
-    futureDate := today
-    futureDate += daysToAdd, days
+    futureDate := DateAdd(today, daysToAdd, "days")
 
     ; Format the result date
-    FormatTime, futureFormatted, %futureDate%, MMMM d, yyyy
+    futureFormatted := FormatTime(futureDate, "MMMM d, yyyy")
     return futureFormatted
 }
 
 ; -----------------------------------------
 ; Date Calculator GUI
 ; -----------------------------------------
-ShowDateCalculatorGui() {
-    GetGuiPosition(xPos, yPos)
+global DateGuiObj := ""
 
-    Gui, DateGui:New, +AlwaysOnTop
-    Gui, DateGui:Add, Text, x10 y10 w250, Follow-up Date Calculator
-    Gui, DateGui:Add, Text, x10 y45, Interval:
-    Gui, DateGui:Add, Edit, x80 y42 w50 vDateInterval, 3
-    Gui, DateGui:Add, DropDownList, x140 y42 w100 vDateUnit Choose1, Months|Weeks|Days|Years
-    Gui, DateGui:Add, Button, x30 y85 w80 gCalcDate, Calculate
-    Gui, DateGui:Add, Button, x130 y85 w80 gDateGuiClose, Cancel
-    Gui, DateGui:Show, x%xPos% y%yPos% w260 h125, Follow-up Date
-    return
+ShowDateCalculatorGui() {
+    global DateGuiObj
+    GetGuiPosition(&xPos, &yPos)
+
+    DateGuiObj := Gui("+AlwaysOnTop")
+    DateGuiObj.OnEvent("Close", DateGuiClose)
+    DateGuiObj.OnEvent("Escape", DateGuiClose)
+    DateGuiObj.Add("Text", "x10 y10 w250", "Follow-up Date Calculator")
+    DateGuiObj.Add("Text", "x10 y45", "Interval:")
+    DateGuiObj.Add("Edit", "x80 y42 w50 vDateInterval", "3")
+    DateGuiObj.Add("DropDownList", "x140 y42 w100 vDateUnit Choose1", ["Months", "Weeks", "Days", "Years"])
+    DateGuiObj.Add("Button", "x30 y85 w80", "Calculate").OnEvent("Click", CalcDate)
+    DateGuiObj.Add("Button", "x130 y85 w80", "Cancel").OnEvent("Click", DateGuiClose)
+    DateGuiObj.Show("x" xPos " y" yPos " w260 h125")
+    DateGuiObj.Title := "Follow-up Date"
 }
 
 ShowDateCalculatorGuiPrefilled(interval, unit) {
-    GetGuiPosition(xPos, yPos)
+    global DateGuiObj
+    GetGuiPosition(&xPos, &yPos)
 
     ; Determine dropdown selection
     unitSelect := 1
@@ -2546,42 +2630,46 @@ ShowDateCalculatorGuiPrefilled(interval, unit) {
     else if (unit = "years")
         unitSelect := 4
 
-    Gui, DateGui:New, +AlwaysOnTop
-    Gui, DateGui:Add, Text, x10 y10 w250, Follow-up Date Calculator (Pre-filled)
-    Gui, DateGui:Add, Text, x10 y45, Interval:
-    Gui, DateGui:Add, Edit, x80 y42 w50 vDateInterval, %interval%
-    Gui, DateGui:Add, DropDownList, x140 y42 w100 vDateUnit Choose%unitSelect%, Months|Weeks|Days|Years
-    Gui, DateGui:Add, Button, x30 y85 w80 gCalcDate, Calculate
-    Gui, DateGui:Add, Button, x130 y85 w80 gDateGuiClose, Cancel
-    Gui, DateGui:Show, x%xPos% y%yPos% w260 h125, Follow-up Date
-    return
+    DateGuiObj := Gui("+AlwaysOnTop")
+    DateGuiObj.OnEvent("Close", DateGuiClose)
+    DateGuiObj.OnEvent("Escape", DateGuiClose)
+    DateGuiObj.Add("Text", "x10 y10 w250", "Follow-up Date Calculator (Pre-filled)")
+    DateGuiObj.Add("Text", "x10 y45", "Interval:")
+    DateGuiObj.Add("Edit", "x80 y42 w50 vDateInterval", interval)
+    DateGuiObj.Add("DropDownList", "x140 y42 w100 vDateUnit Choose" unitSelect, ["Months", "Weeks", "Days", "Years"])
+    DateGuiObj.Add("Button", "x30 y85 w80", "Calculate").OnEvent("Click", CalcDate)
+    DateGuiObj.Add("Button", "x130 y85 w80", "Cancel").OnEvent("Click", DateGuiClose)
+    DateGuiObj.Show("x" xPos " y" yPos " w260 h125")
+    DateGuiObj.Title := "Follow-up Date"
 }
 
-DateGuiClose:
-    Gui, DateGui:Destroy
-return
+DateGuiClose(*) {
+    global DateGuiObj
+    DateGuiObj.Destroy()
+}
 
-CalcDate:
-    Gui, DateGui:Submit, NoHide
+CalcDate(*) {
+    global DateGuiObj
+    saved := DateGuiObj.Submit(false)
 
-    if (DateInterval = "") {
-        MsgBox, 16, Error, Please enter an interval.
+    if (saved.DateInterval = "") {
+        MsgBox("Please enter an interval.", "Error", 16)
         return
     }
 
-    interval := DateInterval + 0
+    interval := saved.DateInterval + 0
     if (interval <= 0) {
-        MsgBox, 16, Error, Interval must be greater than 0.
+        MsgBox("Interval must be greater than 0.", "Error", 16)
         return
     }
 
     ; Normalize unit name
     unit := "months"
-    if (DateUnit = "Weeks")
+    if (saved.DateUnit = "Weeks")
         unit := "weeks"
-    else if (DateUnit = "Days")
+    else if (saved.DateUnit = "Days")
         unit := "days"
-    else if (DateUnit = "Years")
+    else if (saved.DateUnit = "Years")
         unit := "years"
 
     ; Calculate future date
@@ -2590,51 +2678,49 @@ CalcDate:
     ; Sentence style output
     result := " Recommend follow-up in " . interval . " " . unit . " (approximately " . futureDate . ")."
 
-    Gui, DateGui:Destroy
+    DateGuiObj.Destroy()
     ShowResult(result)
-return
+}
 
 ; =========================================
 ; TOOL 6: Sectra History Copy
 ; =========================================
 CopySectraHistory() {
-    global SectraWindowTitle
+    global SectraWindowTitle, g_SelectedText, TargetApps
 
     ; Save clipboard
-    ClipSaved := ClipboardAll
-    Clipboard := ""
+    ClipSaved := ClipboardAll()
+    A_Clipboard := ""
 
     ; Check if text is already selected (from our earlier capture)
     if (g_SelectedText != "") {
-        Clipboard := g_SelectedText
+        A_Clipboard := g_SelectedText
     } else {
         ; Try to get from Sectra
         if (WinExist(SectraWindowTitle)) {
-            WinActivate, %SectraWindowTitle%
-            WinWaitActive, %SectraWindowTitle%, , 2
-            if (!ErrorLevel) {
-                Send, ^c
-                ClipWait, 1
+            WinActivate(SectraWindowTitle)
+            if (WinWaitActive(SectraWindowTitle, , 2)) {
+                Send("^c")
+                ClipWait(1)
             }
         }
     }
 
-    if (Clipboard = "") {
-        MsgBox, 48, Info, No text found. Select history text in Sectra first.
-        Clipboard := ClipSaved
+    if (A_Clipboard = "") {
+        MsgBox("No text found. Select history text in Sectra first.", "Info", 48)
+        A_Clipboard := ClipSaved
         return
     }
 
-    historyText := Clipboard
+    historyText := A_Clipboard
 
     ; Find PowerScribe and paste
     foundPS := false
     for index, app in TargetApps {
         if (InStr(app, "PowerScribe") || InStr(app, "Nuance")) {
             if (WinExist(app)) {
-                WinActivate, %app%
-                WinWaitActive, %app%, , 2
-                if (!ErrorLevel) {
+                WinActivate(app)
+                if (WinWaitActive(app, , 2)) {
                     foundPS := true
                     break
                 }
@@ -2644,29 +2730,31 @@ CopySectraHistory() {
 
     if (!foundPS) {
         ; Just activate any target app
-        WinActivate, ahk_exe notepad.exe
-        WinWaitActive, ahk_exe notepad.exe, , 1
+        WinActivate("ahk_exe notepad.exe")
+        WinWaitActive("ahk_exe notepad.exe", , 1)
     }
 
-    Sleep, 100
-    Send, ^v
+    Sleep(100)
+    Send("^v")
 
     ; Restore clipboard
-    Sleep, 100
-    Clipboard := ClipSaved
+    Sleep(100)
+    A_Clipboard := ClipSaved
 
-    ToolTip, History pasted!
-    SetTimer, RemoveToolTip, -1500
+    ToolTip("History pasted!")
+    SetTimer(RemoveToolTip, -1500)
     return
 }
 
-RemoveToolTip:
-    ToolTip
-return
+RemoveToolTip(*) {
+    ToolTip()
+}
 
 ; =========================================
 ; Settings GUI
 ; =========================================
+global SettingsGuiObj := ""
+
 ShowSettings() {
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
     global SmartParseConfirmation, SmartParseFallbackToGUI
@@ -2674,9 +2762,10 @@ ShowSettings() {
     global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
     global ShowICHTools, ShowDateCalculator
+    global SettingsGuiObj
 
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
@@ -2696,70 +2785,71 @@ ShowSettings() {
     ichChecked := ShowICHTools ? "Checked" : ""
     dateChecked := ShowDateCalculator ? "Checked" : ""
 
-    ; Determine which item to select in dropdown
-    smartParseOptions := "Volume|RVLV|NASCET|Adrenal|Fleischner"
+    ; Determine which item to select in dropdown (1-based index)
+    smartParseSelect := 1
     if (DefaultSmartParse = "RVLV")
-        smartParseOptions := "Volume|RVLV||NASCET|Adrenal|Fleischner"
+        smartParseSelect := 2
     else if (DefaultSmartParse = "NASCET")
-        smartParseOptions := "Volume|RVLV|NASCET||Adrenal|Fleischner"
+        smartParseSelect := 3
     else if (DefaultSmartParse = "Adrenal")
-        smartParseOptions := "Volume|RVLV|NASCET|Adrenal||Fleischner"
+        smartParseSelect := 4
     else if (DefaultSmartParse = "Fleischner")
-        smartParseOptions := "Volume|RVLV|NASCET|Adrenal|Fleischner||"
-    else
-        smartParseOptions := "Volume||RVLV|NASCET|Adrenal|Fleischner"
+        smartParseSelect := 5
 
-    ; Unit options
-    unitOptions := (DefaultMeasurementUnit = "mm") ? "cm|mm||" : "cm||mm"
+    ; Unit selection
+    unitSelect := (DefaultMeasurementUnit = "mm") ? 2 : 1
 
-    ; RV/LV format options
-    rvlvOptions := (RVLVOutputFormat = "Inline") ? "Macro|Inline||" : "Macro||Inline"
+    ; RV/LV format selection
+    rvlvSelect := (RVLVOutputFormat = "Inline") ? 2 : 1
 
-    Gui, SettingsGui:New, +AlwaysOnTop
-    Gui, SettingsGui:Add, Text, x10 y10 w280, RadAssist v2.3 Settings
-    Gui, SettingsGui:Add, Text, x10 y40, Default Quick Parse:
-    Gui, SettingsGui:Add, DropDownList, x130 y37 w120 vSetDefaultParse, %smartParseOptions%
+    SettingsGuiObj := Gui("+AlwaysOnTop")
+    SettingsGuiObj.OnEvent("Close", SettingsGuiClose)
+    SettingsGuiObj.OnEvent("Escape", SettingsGuiClose)
+    SettingsGuiObj.Add("Text", "x10 y10 w280", "RadAssist v2.3 Settings")
+    SettingsGuiObj.Add("Text", "x10 y40", "Default Quick Parse:")
+    SettingsGuiObj.Add("DropDownList", "x130 y37 w120 vSetDefaultParse Choose" smartParseSelect, ["Volume", "RVLV", "NASCET", "Adrenal", "Fleischner"])
 
     ; Tool Visibility section (flat checkbox list per user preference)
-    Gui, SettingsGui:Add, GroupBox, x10 y65 w270 h125, Tool Visibility (uncheck to hide)
-    Gui, SettingsGui:Add, Checkbox, x20 y85 w120 vSetShowVolume %volChecked%, Volume
-    Gui, SettingsGui:Add, Checkbox, x150 y85 w120 vSetShowRVLV %rvlvChecked%, RV/LV Ratio
-    Gui, SettingsGui:Add, Checkbox, x20 y108 w120 vSetShowNASCET %nascetChecked%, NASCET
-    Gui, SettingsGui:Add, Checkbox, x150 y108 w120 vSetShowAdrenal %adrenalChecked%, Adrenal
-    Gui, SettingsGui:Add, Checkbox, x20 y131 w120 vSetShowFleischner %fleischnerChecked%, Fleischner
-    Gui, SettingsGui:Add, Checkbox, x150 y131 w120 vSetShowStenosis %stenosisChecked%, Stenosis
-    Gui, SettingsGui:Add, Checkbox, x20 y154 w120 vSetShowICH %ichChecked%, ICH Volume
-    Gui, SettingsGui:Add, Checkbox, x150 y154 w120 vSetShowDate %dateChecked%, Date Calculator
+    SettingsGuiObj.Add("GroupBox", "x10 y65 w270 h125", "Tool Visibility (uncheck to hide)")
+    SettingsGuiObj.Add("Checkbox", "x20 y85 w120 vSetShowVolume " volChecked, "Volume")
+    SettingsGuiObj.Add("Checkbox", "x150 y85 w120 vSetShowRVLV " rvlvChecked, "RV/LV Ratio")
+    SettingsGuiObj.Add("Checkbox", "x20 y108 w120 vSetShowNASCET " nascetChecked, "NASCET")
+    SettingsGuiObj.Add("Checkbox", "x150 y108 w120 vSetShowAdrenal " adrenalChecked, "Adrenal")
+    SettingsGuiObj.Add("Checkbox", "x20 y131 w120 vSetShowFleischner " fleischnerChecked, "Fleischner")
+    SettingsGuiObj.Add("Checkbox", "x150 y131 w120 vSetShowStenosis " stenosisChecked, "Stenosis")
+    SettingsGuiObj.Add("Checkbox", "x20 y154 w120 vSetShowICH " ichChecked, "ICH Volume")
+    SettingsGuiObj.Add("Checkbox", "x150 y154 w120 vSetShowDate " dateChecked, "Date Calculator")
 
-    Gui, SettingsGui:Add, GroupBox, x10 y195 w270 h105, Smart Parse Options
-    Gui, SettingsGui:Add, Checkbox, x20 y215 w250 vSetConfirmation %confirmChecked%, Show confirmation dialog before insert
-    Gui, SettingsGui:Add, Checkbox, x20 y240 w250 vSetFallbackGUI %fallbackChecked%, Fall back to GUI when confidence low
-    Gui, SettingsGui:Add, Text, x20 y268, Default units (no units in text):
-    Gui, SettingsGui:Add, DropDownList, x190 y265 w70 vSetDefaultUnit, %unitOptions%
+    SettingsGuiObj.Add("GroupBox", "x10 y195 w270 h105", "Smart Parse Options")
+    SettingsGuiObj.Add("Checkbox", "x20 y215 w250 vSetConfirmation " confirmChecked, "Show confirmation dialog before insert")
+    SettingsGuiObj.Add("Checkbox", "x20 y240 w250 vSetFallbackGUI " fallbackChecked, "Fall back to GUI when confidence low")
+    SettingsGuiObj.Add("Text", "x20 y268", "Default units (no units in text):")
+    SettingsGuiObj.Add("DropDownList", "x190 y265 w70 vSetDefaultUnit Choose" unitSelect, ["cm", "mm"])
 
-    Gui, SettingsGui:Add, GroupBox, x10 y305 w270 h80, RV/LV & Fleischner Output
-    Gui, SettingsGui:Add, Text, x20 y325, RV/LV format:
-    Gui, SettingsGui:Add, DropDownList, x100 y322 w80 vSetRVLVFormat, %rvlvOptions%
-    Gui, SettingsGui:Add, Text, x185 y325 w90, (Macro = cm)
-    Gui, SettingsGui:Add, Checkbox, x20 y350 w250 vSetFleischnerImpression %fleischnerImprChecked%, Insert Fleischner after IMPRESSION:
+    SettingsGuiObj.Add("GroupBox", "x10 y305 w270 h80", "RV/LV & Fleischner Output")
+    SettingsGuiObj.Add("Text", "x20 y325", "RV/LV format:")
+    SettingsGuiObj.Add("DropDownList", "x100 y322 w80 vSetRVLVFormat Choose" rvlvSelect, ["Macro", "Inline"])
+    SettingsGuiObj.Add("Text", "x185 y325 w90", "(Macro = cm)")
+    SettingsGuiObj.Add("Checkbox", "x20 y350 w250 vSetFleischnerImpression " fleischnerImprChecked, "Insert Fleischner after IMPRESSION:")
 
-    Gui, SettingsGui:Add, GroupBox, x10 y390 w270 h105, Output Options
-    Gui, SettingsGui:Add, Checkbox, x20 y410 w250 vSetDatamine %dmChecked%, Include datamining phrase by default
-    Gui, SettingsGui:Add, Checkbox, x20 y435 w250 vSetCitations %citChecked%, Show citations in output
-    Gui, SettingsGui:Add, Text, x20 y460, Datamining phrase:
-    Gui, SettingsGui:Add, Edit, x110 y457 w160 vSetDMPhrase, %DataminingPhrase%
+    SettingsGuiObj.Add("GroupBox", "x10 y390 w270 h105", "Output Options")
+    SettingsGuiObj.Add("Checkbox", "x20 y410 w250 vSetDatamine " dmChecked, "Include datamining phrase by default")
+    SettingsGuiObj.Add("Checkbox", "x20 y435 w250 vSetCitations " citChecked, "Show citations in output")
+    SettingsGuiObj.Add("Text", "x20 y460", "Datamining phrase:")
+    SettingsGuiObj.Add("Edit", "x110 y457 w160 vSetDMPhrase", DataminingPhrase)
 
-    Gui, SettingsGui:Add, Button, x70 y505 w80 gSaveSettings, Save
-    Gui, SettingsGui:Add, Button, x160 y505 w80 gSettingsGuiClose, Cancel
-    Gui, SettingsGui:Show, x%xPos% y%yPos% w295 h545, Settings
-    return
+    SettingsGuiObj.Add("Button", "x70 y505 w80", "Save").OnEvent("Click", SaveSettings)
+    SettingsGuiObj.Add("Button", "x160 y505 w80", "Cancel").OnEvent("Click", SettingsGuiClose)
+    SettingsGuiObj.Show("x" xPos " y" yPos " w295 h545")
+    SettingsGuiObj.Title := "Settings"
 }
 
-SettingsGuiClose:
-    Gui, SettingsGui:Destroy
-return
+SettingsGuiClose(*) {
+    global SettingsGuiObj
+    SettingsGuiObj.Destroy()
+}
 
-SaveSettings:
+SaveSettings(*) {
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
     global SmartParseConfirmation, SmartParseFallbackToGUI
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
@@ -2767,29 +2857,30 @@ SaveSettings:
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
     global ShowICHTools, ShowDateCalculator
     global PreferencesPath
+    global SettingsGuiObj
 
-    Gui, SettingsGui:Submit
+    saved := SettingsGuiObj.Submit()
 
     ; Convert checkbox values (variable names must match GUI vVar names)
-    IncludeDatamining := SetDatamine
-    ShowCitations := SetCitations
-    SmartParseConfirmation := SetConfirmation
-    SmartParseFallbackToGUI := SetFallbackGUI
-    FleischnerInsertAfterImpression := SetFleischnerImpression
-    DataminingPhrase := SetDMPhrase
-    DefaultSmartParse := SetDefaultParse
-    DefaultMeasurementUnit := SetDefaultUnit
-    RVLVOutputFormat := SetRVLVFormat
+    IncludeDatamining := saved.SetDatamine
+    ShowCitations := saved.SetCitations
+    SmartParseConfirmation := saved.SetConfirmation
+    SmartParseFallbackToGUI := saved.SetFallbackGUI
+    FleischnerInsertAfterImpression := saved.SetFleischnerImpression
+    DataminingPhrase := saved.SetDMPhrase
+    DefaultSmartParse := saved.SetDefaultParse
+    DefaultMeasurementUnit := saved.SetDefaultUnit
+    RVLVOutputFormat := saved.SetRVLVFormat
 
     ; Tool visibility settings
-    ShowVolumeTools := SetShowVolume
-    ShowRVLVTools := SetShowRVLV
-    ShowNASCETTools := SetShowNASCET
-    ShowAdrenalTools := SetShowAdrenal
-    ShowFleischnerTools := SetShowFleischner
-    ShowStenosisTools := SetShowStenosis
-    ShowICHTools := SetShowICH
-    ShowDateCalculator := SetShowDate
+    ShowVolumeTools := saved.SetShowVolume
+    ShowRVLVTools := saved.SetShowRVLV
+    ShowNASCETTools := saved.SetShowNASCET
+    ShowAdrenalTools := saved.SetShowAdrenal
+    ShowFleischnerTools := saved.SetShowFleischner
+    ShowStenosisTools := saved.SetShowStenosis
+    ShowICHTools := saved.SetShowICH
+    ShowDateCalculator := saved.SetShowDate
 
     ; Batch all writes together (reduces file operations)
     writeSuccess := true
@@ -2814,12 +2905,11 @@ SaveSettings:
     writeSuccess := writeSuccess && IniWriteWithRetry("ShowDateCalculator", ShowDateCalculator)
 
     if (!writeSuccess)
-        MsgBox, 48, Warning, Some settings may not have saved. Check file permissions or OneDrive sync status.
+        MsgBox("Some settings may not have saved. Check file permissions or OneDrive sync status.", "Warning", 48)
 
-    Gui, SettingsGui:Destroy
-    ToolTip, Settings saved
-    SetTimer, RemoveToolTip, -1500
-return
+    ToolTip("Settings saved")
+    SetTimer(RemoveToolTip, -1500)
+}
 
 ; -----------------------------------------
 ; INI Write with retry for OneDrive sync conflicts
@@ -2827,12 +2917,14 @@ return
 ; -----------------------------------------
 IniWriteWithRetry(key, value, maxRetries := 3) {
     global PreferencesPath
-    Loop, %maxRetries%
+    Loop maxRetries
     {
-        IniWrite, %value%, %PreferencesPath%, Settings, %key%
-        if (!ErrorLevel)
+        try {
+            IniWrite(value, PreferencesPath, "Settings", key)
             return true
-        Sleep, 100  ; Wait 100ms before retry
+        } catch {
+            Sleep(100)  ; Wait 100ms before retry
+        }
     }
     return false
 }
@@ -2840,45 +2932,53 @@ IniWriteWithRetry(key, value, maxRetries := 3) {
 ; =========================================
 ; Result Display
 ; =========================================
+global ResultGuiObj := ""
+
 ShowResult(text) {
+    global ResultGuiObj
     ; Copy to clipboard and show message
-    Clipboard := text
+    A_Clipboard := text
 
     ; Create result window
-    CoordMode, Mouse, Screen
-    MouseGetPos, mouseX, mouseY
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mouseX, &mouseY)
     xPos := mouseX + 10
     yPos := mouseY + 10
 
-    Gui, ResultGui:New, +AlwaysOnTop
-    Gui, ResultGui:Add, Edit, x10 y10 w380 h200 ReadOnly, %text%
-    Gui, ResultGui:Add, Button, x10 y220 w120 gInsertResult, Insert into Report
-    Gui, ResultGui:Add, Button, x140 y220 w120 gCopyResult, Copy to Clipboard
-    Gui, ResultGui:Add, Button, x270 y220 w120 gResultGuiClose, Close
-    Gui, ResultGui:Show, x%xPos% y%yPos% w400 h260, Result
-    return
+    ResultGuiObj := Gui("+AlwaysOnTop")
+    ResultGuiObj.OnEvent("Close", ResultGuiClose)
+    ResultGuiObj.OnEvent("Escape", ResultGuiClose)
+    ResultGuiObj.Add("Edit", "x10 y10 w380 h200 ReadOnly", text)
+    ResultGuiObj.Add("Button", "x10 y220 w120", "Insert into Report").OnEvent("Click", InsertResult)
+    ResultGuiObj.Add("Button", "x140 y220 w120", "Copy to Clipboard").OnEvent("Click", CopyResult)
+    ResultGuiObj.Add("Button", "x270 y220 w120", "Close").OnEvent("Click", ResultGuiClose)
+    ResultGuiObj.Show("x" xPos " y" yPos " w400 h260")
+    ResultGuiObj.Title := "Result"
 }
 
-ResultGuiClose:
-    Gui, ResultGui:Destroy
-return
+ResultGuiClose(*) {
+    global ResultGuiObj
+    ResultGuiObj.Destroy()
+}
 
-CopyResult:
+CopyResult(*) {
+    global ResultGuiObj
     ; Already in clipboard from ShowResult
-    ToolTip, Copied to clipboard!
-    SetTimer, RemoveToolTip, -1500
-    Gui, ResultGui:Destroy
-return
+    ToolTip("Copied to clipboard!")
+    SetTimer(RemoveToolTip, -1500)
+    ResultGuiObj.Destroy()
+}
 
-InsertResult:
-    Gui, ResultGui:Destroy
-    Sleep, 100
+InsertResult(*) {
+    global ResultGuiObj
+    ResultGuiObj.Destroy()
+    Sleep(100)
     ; WHY: Deselect any selected text first to prevent replacing it
     ; NOTE: Right arrow moves cursor to end of selection without deleting
-    Send, {Right}
-    Sleep, 50
-    Send, ^v
-return
+    Send("{Right}")
+    Sleep(50)
+    Send("^v")
+}
 
 ; =========================================
 ; Initialize Preferences Path (OneDrive Compatibility)
@@ -2893,11 +2993,11 @@ InitPreferencesPath() {
 
     ; Test if we can write to script directory
     canWrite := true
-    FileAppend, test, %testFile%
-    if (ErrorLevel) {
+    try {
+        FileAppend("test", testFile)
+        FileDelete(testFile)
+    } catch {
         canWrite := false
-    } else {
-        FileDelete, %testFile%
     }
 
     if (canWrite) {
@@ -2906,7 +3006,7 @@ InitPreferencesPath() {
         ; Fall back to LOCALAPPDATA
         fallbackDir := A_AppData . "\..\Local\RadAssist"
         if (!FileExist(fallbackDir)) {
-            FileCreateDir, %fallbackDir%
+            DirCreate(fallbackDir)
         }
         PreferencesPath := fallbackDir . "\RadAssist_preferences.ini"
     }
@@ -2926,25 +3026,25 @@ LoadPreferences() {
 
     ; Use PreferencesPath set by InitPreferencesPath() for OneDrive compatibility
     if (FileExist(PreferencesPath)) {
-        IniRead, IncludeDatamining, %PreferencesPath%, Settings, IncludeDatamining, 1
-        IniRead, ShowCitations, %PreferencesPath%, Settings, ShowCitations, 1
-        IniRead, DataminingPhrase, %PreferencesPath%, Settings, DataminingPhrase, SSM lung nodule
-        IniRead, DefaultSmartParse, %PreferencesPath%, Settings, DefaultSmartParse, Volume
-        IniRead, SmartParseConfirmation, %PreferencesPath%, Settings, SmartParseConfirmation, 1
-        IniRead, SmartParseFallbackToGUI, %PreferencesPath%, Settings, SmartParseFallbackToGUI, 1
-        IniRead, DefaultMeasurementUnit, %PreferencesPath%, Settings, DefaultMeasurementUnit, cm
-        IniRead, RVLVOutputFormat, %PreferencesPath%, Settings, RVLVOutputFormat, Macro
-        IniRead, FleischnerInsertAfterImpression, %PreferencesPath%, Settings, FleischnerInsertAfterImpression, 1
+        IncludeDatamining := IniRead(PreferencesPath, "Settings", "IncludeDatamining", "1")
+        ShowCitations := IniRead(PreferencesPath, "Settings", "ShowCitations", "1")
+        DataminingPhrase := IniRead(PreferencesPath, "Settings", "DataminingPhrase", "SSM lung nodule")
+        DefaultSmartParse := IniRead(PreferencesPath, "Settings", "DefaultSmartParse", "Volume")
+        SmartParseConfirmation := IniRead(PreferencesPath, "Settings", "SmartParseConfirmation", "1")
+        SmartParseFallbackToGUI := IniRead(PreferencesPath, "Settings", "SmartParseFallbackToGUI", "1")
+        DefaultMeasurementUnit := IniRead(PreferencesPath, "Settings", "DefaultMeasurementUnit", "cm")
+        RVLVOutputFormat := IniRead(PreferencesPath, "Settings", "RVLVOutputFormat", "Macro")
+        FleischnerInsertAfterImpression := IniRead(PreferencesPath, "Settings", "FleischnerInsertAfterImpression", "1")
 
         ; Tool visibility preferences (default to true/1)
-        IniRead, ShowVolumeTools, %PreferencesPath%, Settings, ShowVolumeTools, 1
-        IniRead, ShowRVLVTools, %PreferencesPath%, Settings, ShowRVLVTools, 1
-        IniRead, ShowNASCETTools, %PreferencesPath%, Settings, ShowNASCETTools, 1
-        IniRead, ShowAdrenalTools, %PreferencesPath%, Settings, ShowAdrenalTools, 1
-        IniRead, ShowFleischnerTools, %PreferencesPath%, Settings, ShowFleischnerTools, 1
-        IniRead, ShowStenosisTools, %PreferencesPath%, Settings, ShowStenosisTools, 1
-        IniRead, ShowICHTools, %PreferencesPath%, Settings, ShowICHTools, 1
-        IniRead, ShowDateCalculator, %PreferencesPath%, Settings, ShowDateCalculator, 1
+        ShowVolumeTools := IniRead(PreferencesPath, "Settings", "ShowVolumeTools", "1")
+        ShowRVLVTools := IniRead(PreferencesPath, "Settings", "ShowRVLVTools", "1")
+        ShowNASCETTools := IniRead(PreferencesPath, "Settings", "ShowNASCETTools", "1")
+        ShowAdrenalTools := IniRead(PreferencesPath, "Settings", "ShowAdrenalTools", "1")
+        ShowFleischnerTools := IniRead(PreferencesPath, "Settings", "ShowFleischnerTools", "1")
+        ShowStenosisTools := IniRead(PreferencesPath, "Settings", "ShowStenosisTools", "1")
+        ShowICHTools := IniRead(PreferencesPath, "Settings", "ShowICHTools", "1")
+        ShowDateCalculator := IniRead(PreferencesPath, "Settings", "ShowDateCalculator", "1")
 
         IncludeDatamining := (IncludeDatamining = "1")
         ShowCitations := (ShowCitations = "1")
@@ -2981,23 +3081,22 @@ LoadPreferences()
 ; =========================================
 ; Tray Menu
 ; =========================================
-Menu, Tray, Tip, RadAssist v2.4 - Smart Radiology Tools
-Menu, Tray, NoStandard
-Menu, Tray, Add, RadAssist v2.4, TrayAbout
-Menu, Tray, Add
-Menu, Tray, Add, Settings, MenuSettings
-Menu, Tray, Add, Reload, TrayReload
-Menu, Tray, Add, Exit, TrayExit
-return
+A_TrayMenu.Delete()
+A_TrayMenu.Add("RadAssist v2.4", TrayAbout)
+A_TrayMenu.Add()
+A_TrayMenu.Add("Settings", MenuSettings)
+A_TrayMenu.Add("Reload", TrayReload)
+A_TrayMenu.Add("Exit", TrayExit)
+A_IconTip := "RadAssist v2.4 - Smart Radiology Tools"
 
-TrayAbout:
-    MsgBox, 64, RadAssist, RadAssist v2.4`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (`)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk (Macro or Inline format)`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)
-return
+TrayAbout(*) {
+    MsgBox("RadAssist v2.4`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (``)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk (Macro or Inline format)`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)", "RadAssist", 64)
+}
 
-TrayReload:
-    Reload
-return
+TrayReload(*) {
+    Reload()
+}
 
-TrayExit:
-    ExitApp
-return
+TrayExit(*) {
+    ExitApp()
+}
