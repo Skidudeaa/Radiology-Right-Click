@@ -1,16 +1,34 @@
 ; ==========================================
 ; RadAssist - Radiology Assistant Tool
-; Version: 2.1
+; Version: 2.2
 ; Description: Lean radiology workflow tool with calculators
 ;              Triggered by Shift+Right-click in PowerScribe/Notepad
 ;              Smart text parsing with confirmation dialogs
 ; ARCHITECTURE: Context-filtered parsing with confidence scoring
-; WHY: v2.0 was fragile - picked up image numbers, no confirmation
+; WHY: v2.1 added smart parse; v2.2 adds OneDrive support, RV/LV macro format
+; CHANGES in v2.2:
+;   - Pause script with backtick key (`)
+;   - Fixed character encoding (<=/>= for ASCII compatibility)
+;   - cm default with auto-detection for measurements
+;   - RV/LV macro format for PowerScribe "Macro right heart"
+;   - Fleischner insert after IMPRESSION: field
+;   - OneDrive compatibility (fallback path, retry logic)
 ; ==========================================
 
 #NoEnv
 #SingleInstance, Force
 SetWorkingDir, %A_ScriptDir%
+
+; -----------------------------------------
+; OneDrive Compatibility - Determine preferences path
+; WHY: Script may run from OneDrive folder with sync conflicts
+; TRADEOFF: Falls back to LOCALAPPDATA if script dir is read-only
+; -----------------------------------------
+global PreferencesPath := ""
+
+; Initialize preferences path (function defined in Functions section below)
+; Call after global declaration to set path based on write permissions
+InitPreferencesPath()
 
 ; -----------------------------------------
 ; Global Configuration
@@ -23,6 +41,10 @@ global ShowCitations := true
 global DefaultSmartParse := "Volume"  ; Options: Volume, RVLV, NASCET, Adrenal, Fleischner
 global SmartParseConfirmation := true  ; Always show confirmation dialog before insert
 global SmartParseFallbackToGUI := true ; Fall back to GUI when parsing confidence is low
+global DefaultMeasurementUnit := "cm"  ; Options: cm, mm - used when no units in input
+global RVLVOutputFormat := "Macro"     ; Options: Inline, Macro - output format for RV/LV
+global UseASCIICharacters := true      ; Use ASCII <=/>= instead of Unicode
+global FleischnerInsertAfterImpression := true  ; Find IMPRESSION: and insert below
 global g_ConfirmAction := ""  ; Used by confirmation dialog
 global g_ParsedResultText := ""  ; Stores parsed result for insertion
 
@@ -32,6 +54,18 @@ global g_ParsedResultText := ""  ; Stores parsed result for insertion
 ; -----------------------------------------
 ^+h::
     CopySectraHistory()
+return
+
+; -----------------------------------------
+; Global Hotkey: Backtick (`) - Pause/Resume Script
+; WHY: Quick toggle without opening menu
+; -----------------------------------------
+`::
+    Suspend, Toggle
+    if (A_IsSuspended)
+        TrayTip, RadAssist, Script PAUSED - Press ` to resume, 1
+    else
+        TrayTip, RadAssist, Script RESUMED, 1
 return
 
 ; -----------------------------------------
@@ -328,7 +362,7 @@ CalcAdrenal:
         absWashout := Round(absWashout, 1)
         result .= "Absolute Washout: " . absWashout . "%`n"
         if (absWashout >= 60)
-            result .= "  -> ≥60%: Likely adenoma`n"
+            result .= "  -> >=60%: Likely adenoma`n"
         else
             result .= "  -> <60%: Indeterminate/suspicious`n"
     }
@@ -339,7 +373,7 @@ CalcAdrenal:
         relWashout := Round(relWashout, 1)
         result .= "`nRelative Washout: " . relWashout . "%`n"
         if (relWashout >= 40)
-            result .= "  -> ≥40%: Likely adenoma`n"
+            result .= "  -> >=40%: Likely adenoma`n"
         else
             result .= "  -> <40%: Indeterminate/suspicious`n"
     }
@@ -347,7 +381,7 @@ CalcAdrenal:
     ; Pre-contrast density assessment
     result .= "`nPre-contrast Assessment:`n"
     if (pre <= 10)
-        result .= "  -> ≤10 HU: Lipid-rich adenoma (no washout needed)`n"
+        result .= "  -> <=10 HU: Lipid-rich adenoma (no washout needed)`n"
     else
         result .= "  -> >10 HU: Lipid-poor, washout analysis required`n"
 
@@ -411,7 +445,7 @@ CalculateNASCETResult(distal, stenosis) {
         result .= "Interpretation: Moderate stenosis (50-69%)`n"
         result .= "- Consider intervention in symptomatic patients."
     } else {
-        result .= "Interpretation: Severe stenosis (≥70%)`n"
+        result .= "Interpretation: Severe stenosis (>=70%)`n"
         result .= "- Strong indication for CEA/CAS in symptomatic patients."
     }
 
@@ -537,7 +571,7 @@ CalcStenosis:
     } else if (stenosisPercent < 70) {
         result .= "Interpretation: Moderate stenosis (50-69%)"
     } else {
-        result .= "Interpretation: Severe stenosis (≥70%)"
+        result .= "Interpretation: Severe stenosis (>=70%)"
     }
 
     Gui, StenosisGui:Destroy
@@ -704,7 +738,7 @@ GetFleischnerRecommendation(size, type, number, risk) {
             if (size < 6) {
                 return "No routine follow-up recommended."
             } else {
-                return "CT at 3-6 months. If stable, annual CT for 5 years.`nIf solid component ≥6 mm, consider PET/CT or biopsy."
+                return "CT at 3-6 months. If stable, annual CT for 5 years.`nIf solid component >=6 mm, consider PET/CT or biopsy."
             }
         } else {
             return "CT at 3-6 months. If stable, annual CT for 5 years."
@@ -893,6 +927,83 @@ InsertAfterSelection(textToInsert) {
 }
 
 ; -----------------------------------------
+; Utility: Insert text after IMPRESSION: field in document
+; WHY: User wants Fleischner recommendations after the impression section
+; ARCHITECTURE: Uses Find dialog to locate IMPRESSION:, then inserts below
+; TRADEOFF: May not work in all applications; check settings to disable
+; NOTE: If IMPRESSION: not found, falls back to inserting after selection
+; -----------------------------------------
+InsertAtImpression(textToInsert) {
+    ; Save current clipboard and cursor position marker
+    ClipSaved := ClipboardAll
+
+    ; First, try to find IMPRESSION: using clipboard search
+    ; Copy all document text to check if IMPRESSION: exists
+    Clipboard := ""
+    Send, ^a  ; Select all
+    Sleep, 50
+    Send, ^c  ; Copy
+    ClipWait, 0.5
+    docText := Clipboard
+
+    ; Check if IMPRESSION: exists in document
+    if (!InStr(docText, "IMPRESSION")) {
+        ; IMPRESSION not found - fall back to insert after selection
+        Clipboard := ClipSaved  ; Restore clipboard first
+        Send, {Right}  ; Deselect and move cursor
+        Sleep, 50
+        InsertAfterSelection(textToInsert)
+        ToolTip, IMPRESSION: not found - inserted at cursor
+        SetTimer, RemoveToolTip, -2000
+        return
+    }
+
+    ; Deselect and go to start
+    Send, ^{Home}
+    Sleep, 50
+
+    ; Open Find dialog (Ctrl+F)
+    Send, ^f
+    Sleep, 200
+
+    ; Clear any previous search and type new search text
+    Send, ^a
+    Sleep, 50
+    Send, IMPRESSION:
+    Sleep, 100
+
+    ; Press Enter to find (or F3/Find Next depending on app)
+    Send, {Enter}
+    Sleep, 150
+
+    ; Close Find dialog (Escape) - press twice to ensure closed
+    Send, {Escape}
+    Sleep, 50
+    Send, {Escape}
+    Sleep, 100
+
+    ; Go to end of line
+    Send, {End}
+    Sleep, 50
+
+    ; Add blank line (Enter twice for spacing)
+    Send, {Enter}{Enter}
+    Sleep, 50
+
+    ; Set clipboard to text and paste
+    Clipboard := textToInsert
+    ClipWait, 0.5
+    Send, ^v
+    Sleep, 100
+
+    ; Restore clipboard
+    Clipboard := ClipSaved
+
+    ToolTip, Inserted after IMPRESSION:
+    SetTimer, RemoveToolTip, -1500
+}
+
+; -----------------------------------------
 ; Utility: Filter out non-measurement numbers
 ; WHY: Prevents picking up image numbers (23/75), slice numbers, etc.
 ; TRADEOFF: May occasionally filter legitimate measurements, but safety > convenience
@@ -1021,6 +1132,7 @@ return
 ; ARCHITECTURE: Strict patterns with confidence scoring, confirmation dialog, GUI fallback.
 ; -----------------------------------------
 ParseAndInsertVolume(input) {
+    global DefaultMeasurementUnit
     ; Step 1: Clean input and filter non-measurements
     input := RegExReplace(input, "`r?\n", " ")
     filtered := FilterNonMeasurements(input)
@@ -1031,7 +1143,7 @@ ParseAndInsertVolume(input) {
     d1 := 0
     d2 := 0
     d3 := 0
-    units := "cm"
+    units := ""  ; Will be set by pattern or default
 
     ; Pattern A (HIGH confidence 95): Organ + "measures" keyword + dimensions + units
     ; Example: "Prostate measures 8.0 x 6.0 x 9.0 cm"
@@ -1062,10 +1174,12 @@ ParseAndInsertVolume(input) {
         confidence := 60
     }
     ; Pattern D (LOW confidence 35): just three numbers with x separator (no units)
+    ; WHY: Use DefaultMeasurementUnit setting when units not detected
     else if (RegExMatch(filtered, "(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)", m)) {
         d1 := m1
         d2 := m2
         d3 := m3
+        units := DefaultMeasurementUnit  ; Use user's default setting
         confidence := 35
     }
     else {
@@ -1074,24 +1188,32 @@ ParseAndInsertVolume(input) {
         return
     }
 
-    ; Step 3: Convert to numbers and handle units
+    ; Step 3: Convert to numbers and store original values for display
     d1 := d1 + 0
     d2 := d2 + 0
     d3 := d3 + 0
+    originalUnits := units
+    origD1 := d1
+    origD2 := d2
+    origD3 := d3
 
+    ; Convert to cm for volume calculation (internal)
+    d1_cm := d1
+    d2_cm := d2
+    d3_cm := d3
     if (units = "mm") {
-        d1 := d1 / 10
-        d2 := d2 / 10
-        d3 := d3 / 10
+        d1_cm := d1 / 10
+        d2_cm := d2 / 10
+        d3_cm := d3 / 10
     }
 
     ; Step 4: Sanity check - dimensions should be plausible (<50cm)
-    if (d1 > 50 || d2 > 50 || d3 > 50) {
+    if (d1_cm > 50 || d2_cm > 50 || d3_cm > 50) {
         confidence := confidence - 30
     }
 
-    ; Step 5: Calculate ellipsoid volume: (π/6) × L × W × H
-    volume := 0.5236 * d1 * d2 * d3
+    ; Step 5: Calculate ellipsoid volume: (π/6) × L × W × H (using cm values)
+    volume := 0.5236 * d1_cm * d2_cm * d3_cm
     volumeRounded := Round(volume, 1)
 
     ; Step 6: Build result string
@@ -1116,20 +1238,20 @@ ParseAndInsertVolume(input) {
         resultText .= "."
     }
 
-    ; Step 7: Show confirmation dialog
+    ; Step 7: Show confirmation dialog (display in original units)
     parsedValues := {}
     parsedValues["Organ"] := organ != "" ? organ : "Not detected"
-    parsedValues["Dim 1"] := Round(d1, 2) . " cm"
-    parsedValues["Dim 2"] := Round(d2, 2) . " cm"
-    parsedValues["Dim 3"] := Round(d3, 2) . " cm"
+    parsedValues["Dim 1"] := Round(origD1, 2) . " " . originalUnits
+    parsedValues["Dim 2"] := Round(origD2, 2) . " " . originalUnits
+    parsedValues["Dim 3"] := Round(origD3, 2) . " " . originalUnits
 
     action := ShowParseConfirmation("Volume", parsedValues, resultText, confidence)
 
     if (action = "insert") {
         InsertAfterSelection(resultText)
     } else if (action = "edit") {
-        ; Open GUI with pre-filled values (in cm)
-        ShowEllipsoidVolumeGuiPrefilled(d1, d2, d3)
+        ; Open GUI with pre-filled values (in cm for internal use)
+        ShowEllipsoidVolumeGuiPrefilled(d1_cm, d2_cm, d3_cm)
     }
     ; else cancelled - do nothing
 }
@@ -1138,9 +1260,10 @@ ParseAndInsertVolume(input) {
 ; SMART RV/LV RATIO PARSER
 ; WHY: Parse "RV 42mm / LV 35mm" and insert ratio with PE risk interpretation.
 ; ARCHITECTURE: Requires explicit RV/LV keywords - no fallback to bare numbers (too risky).
+; TRADEOFF: Macro format uses cm for PowerScribe compatibility; Inline uses mm.
 ; -----------------------------------------
 ParseAndInsertRVLV(input) {
-    global ShowCitations
+    global ShowCitations, RVLVOutputFormat
     input := RegExReplace(input, "`r?\n", " ")
     filtered := FilterNonMeasurements(input)
 
@@ -1181,17 +1304,34 @@ ParseAndInsertRVLV(input) {
     ratio := rv / lv
     ratio := Round(ratio, 2)
 
-    ; Build result - inline sentence format for continued dictation
-    resultText := " RV/LV ratio: " . ratio . " (RV " . Round(rv, 1) . "mm / LV " . Round(lv, 1) . "mm), "
-
+    ; Build interpretation text
+    interpretation := ""
     if (ratio >= 1.0) {
-        resultText .= "significant right heart strain, suggestive of severe PE."
+        interpretation := "Significant right heart strain, suggestive of severe PE."
     } else if (ratio >= 0.9) {
-        resultText .= "suggestive of right heart strain."
+        interpretation := "Suggestive of right heart strain."
     } else {
-        resultText .= "within normal limits."
+        interpretation := "Within normal limits."
     }
-    ; Note: Citations removed per user preference - inline sentence format
+
+    ; Build result based on output format setting
+    resultText := ""
+    if (RVLVOutputFormat = "Macro") {
+        ; Macro format for PowerScribe "Macro right heart" - convert mm to cm
+        rv_cm := Round(rv / 10, 1)
+        lv_cm := Round(lv / 10, 1)
+        resultText := "`n`nEVALUATION FOR RIGHT HEART STRAIN:`n"
+        resultText .= "Standard axial measurements demonstrate:`n"
+        resultText .= "Right Ventricle: " . rv_cm . " cm`n"
+        resultText .= "Left Ventricle: " . lv_cm . " cm`n"
+        resultText .= "RV/LV Ratio: " . ratio . "`n"
+        resultText .= "Impression: " . interpretation
+    } else {
+        ; Inline format for continued dictation (original behavior)
+        resultText := " RV/LV ratio: " . ratio . " (RV " . Round(rv, 1) . "mm / LV " . Round(lv, 1) . "mm), "
+        StringLower, interpretLower, interpretation
+        resultText .= interpretLower
+    }
 
     ; Show confirmation dialog
     parsedValues := {}
@@ -1419,7 +1559,7 @@ ParseAndInsertAdrenalWashout(input) {
 ; ARCHITECTURE: Multi-pattern regex, requires "nodule" keyword, confirmation before insert.
 ; -----------------------------------------
 ParseAndInsertFleischner(input) {
-    global ShowCitations, DataminingPhrase, IncludeDatamining
+    global ShowCitations, DataminingPhrase, IncludeDatamining, FleischnerInsertAfterImpression
     input := RegExReplace(input, "`r?\n", " ")
     filtered := FilterNonMeasurements(input)
 
@@ -1601,7 +1741,11 @@ ParseAndInsertFleischner(input) {
     action := ShowParseConfirmation("Fleischner Nodules", parsedValues, "Full recommendation block will be inserted", confidence)
 
     if (action = "insert") {
-        InsertAfterSelection(resultText)
+        ; WHY: User wants Fleischner to appear after IMPRESSION: section
+        if (FleischnerInsertAfterImpression)
+            InsertAtImpression(resultText)
+        else
+            InsertAfterSelection(resultText)
     } else if (action = "edit") {
         ; Open Fleischner GUI with largest nodule pre-filled
         dominantSize := maxSolid > maxSubsolid ? maxSolid : maxSubsolid
@@ -1671,7 +1815,7 @@ GenerateFleischnerRec(maxSolid, maxSubsolid, maxPartsolid, isMultiple, risk) {
             if (isMultiple)
                 result .= "- Part-solid " . maxPartsolid . "mm (multiple): CT at 3-6 months. If stable, annual CT for 5 years."
             else
-                result .= "- Part-solid " . maxPartsolid . "mm: CT at 3-6 months. If stable, annual CT for 5 years. If solid component ≥6mm, consider PET/CT or biopsy."
+                result .= "- Part-solid " . maxPartsolid . "mm: CT at 3-6 months. If stable, annual CT for 5 years. If solid component >=6mm, consider PET/CT or biopsy."
         }
     }
 
@@ -1779,6 +1923,7 @@ return
 ShowSettings() {
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
     global SmartParseConfirmation, SmartParseFallbackToGUI
+    global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
 
     CoordMode, Mouse, Screen
     MouseGetPos, mouseX, mouseY
@@ -1789,6 +1934,7 @@ ShowSettings() {
     citChecked := ShowCitations ? "Checked" : ""
     confirmChecked := SmartParseConfirmation ? "Checked" : ""
     fallbackChecked := SmartParseFallbackToGUI ? "Checked" : ""
+    fleischnerImprChecked := FleischnerInsertAfterImpression ? "Checked" : ""
 
     ; Determine which item to select in dropdown
     smartParseOptions := "Volume|RVLV|NASCET|Adrenal|Fleischner"
@@ -1803,21 +1949,34 @@ ShowSettings() {
     else
         smartParseOptions := "Volume||RVLV|NASCET|Adrenal|Fleischner"
 
+    ; Unit options
+    unitOptions := (DefaultMeasurementUnit = "mm") ? "cm|mm||" : "cm||mm"
+
+    ; RV/LV format options
+    rvlvOptions := (RVLVOutputFormat = "Inline") ? "Macro|Inline||" : "Macro||Inline"
+
     Gui, SettingsGui:New, +AlwaysOnTop
-    Gui, SettingsGui:Add, Text, x10 y10 w280, RadAssist v2.1 Settings
+    Gui, SettingsGui:Add, Text, x10 y10 w280, RadAssist v2.2 Settings
     Gui, SettingsGui:Add, Text, x10 y40, Default Quick Parse:
     Gui, SettingsGui:Add, DropDownList, x130 y37 w120 vSetDefaultParse, %smartParseOptions%
-    Gui, SettingsGui:Add, GroupBox, x10 y65 w270 h80, Smart Parse Options
+    Gui, SettingsGui:Add, GroupBox, x10 y65 w270 h105, Smart Parse Options
     Gui, SettingsGui:Add, Checkbox, x20 y85 w250 vSetConfirmation %confirmChecked%, Show confirmation dialog before insert
     Gui, SettingsGui:Add, Checkbox, x20 y110 w250 vSetFallbackGUI %fallbackChecked%, Fall back to GUI when confidence low
-    Gui, SettingsGui:Add, GroupBox, x10 y150 w270 h105, Output Options
-    Gui, SettingsGui:Add, Checkbox, x20 y170 w250 vSetDatamine %dmChecked%, Include datamining phrase by default
-    Gui, SettingsGui:Add, Checkbox, x20 y195 w250 vSetCitations %citChecked%, Show citations in output
-    Gui, SettingsGui:Add, Text, x20 y220, Datamining phrase:
-    Gui, SettingsGui:Add, Edit, x110 y217 w160 vSetDMPhrase, %DataminingPhrase%
-    Gui, SettingsGui:Add, Button, x70 y265 w80 gSaveSettings, Save
-    Gui, SettingsGui:Add, Button, x160 y265 w80 gSettingsGuiClose, Cancel
-    Gui, SettingsGui:Show, x%xPos% y%yPos% w295 h305, Settings
+    Gui, SettingsGui:Add, Text, x20 y138, Default units (no units in text):
+    Gui, SettingsGui:Add, DropDownList, x190 y135 w70 vSetDefaultUnit, %unitOptions%
+    Gui, SettingsGui:Add, GroupBox, x10 y175 w270 h80, RV/LV & Fleischner Output
+    Gui, SettingsGui:Add, Text, x20 y195, RV/LV format:
+    Gui, SettingsGui:Add, DropDownList, x100 y192 w80 vSetRVLVFormat, %rvlvOptions%
+    Gui, SettingsGui:Add, Text, x185 y195 w90, (Macro = cm)
+    Gui, SettingsGui:Add, Checkbox, x20 y220 w250 vSetFleischnerImpression %fleischnerImprChecked%, Insert Fleischner after IMPRESSION:
+    Gui, SettingsGui:Add, GroupBox, x10 y260 w270 h105, Output Options
+    Gui, SettingsGui:Add, Checkbox, x20 y280 w250 vSetDatamine %dmChecked%, Include datamining phrase by default
+    Gui, SettingsGui:Add, Checkbox, x20 y305 w250 vSetCitations %citChecked%, Show citations in output
+    Gui, SettingsGui:Add, Text, x20 y330, Datamining phrase:
+    Gui, SettingsGui:Add, Edit, x110 y327 w160 vSetDMPhrase, %DataminingPhrase%
+    Gui, SettingsGui:Add, Button, x70 y375 w80 gSaveSettings, Save
+    Gui, SettingsGui:Add, Button, x160 y375 w80 gSettingsGuiClose, Cancel
+    Gui, SettingsGui:Show, x%xPos% y%yPos% w295 h415, Settings
     return
 }
 
@@ -1829,6 +1988,7 @@ SaveSettings:
     Gui, SettingsGui:Submit, NoHide
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
     global SmartParseConfirmation, SmartParseFallbackToGUI
+    global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
 
     IncludeDatamining := SetDatamine
     ShowCitations := SetCitations
@@ -1836,19 +1996,42 @@ SaveSettings:
     DefaultSmartParse := SetDefaultParse
     SmartParseConfirmation := SetConfirmation
     SmartParseFallbackToGUI := SetFallbackGUI
+    DefaultMeasurementUnit := SetDefaultUnit
+    RVLVOutputFormat := SetRVLVFormat
+    FleischnerInsertAfterImpression := SetFleischnerImpression
 
-    ; Save to INI file
-    IniWrite, %IncludeDatamining%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, IncludeDatamining
-    IniWrite, %ShowCitations%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, ShowCitations
-    IniWrite, %DataminingPhrase%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, DataminingPhrase
-    IniWrite, %DefaultSmartParse%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, DefaultSmartParse
-    IniWrite, %SmartParseConfirmation%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, SmartParseConfirmation
-    IniWrite, %SmartParseFallbackToGUI%, %A_ScriptDir%\RadAssist_preferences.ini, Settings, SmartParseFallbackToGUI
+    ; Save to INI file (using PreferencesPath for OneDrive compatibility)
+    global PreferencesPath
+    IniWriteWithRetry("IncludeDatamining", IncludeDatamining)
+    IniWriteWithRetry("ShowCitations", ShowCitations)
+    IniWriteWithRetry("DataminingPhrase", DataminingPhrase)
+    IniWriteWithRetry("DefaultSmartParse", DefaultSmartParse)
+    IniWriteWithRetry("SmartParseConfirmation", SmartParseConfirmation)
+    IniWriteWithRetry("SmartParseFallbackToGUI", SmartParseFallbackToGUI)
+    IniWriteWithRetry("DefaultMeasurementUnit", DefaultMeasurementUnit)
+    IniWriteWithRetry("RVLVOutputFormat", RVLVOutputFormat)
+    IniWriteWithRetry("FleischnerInsertAfterImpression", FleischnerInsertAfterImpression)
 
     Gui, SettingsGui:Destroy
     ToolTip, Settings saved!
     SetTimer, RemoveToolTip, -1500
 return
+
+; -----------------------------------------
+; INI Write with retry for OneDrive sync conflicts
+; WHY: OneDrive may lock files during sync, retry helps
+; -----------------------------------------
+IniWriteWithRetry(key, value, maxRetries := 3) {
+    global PreferencesPath
+    Loop, %maxRetries%
+    {
+        IniWrite, %value%, %PreferencesPath%, Settings, %key%
+        if (!ErrorLevel)
+            return true
+        Sleep, 100  ; Wait 100ms before retry
+    }
+    return false
+}
 
 ; =========================================
 ; Result Display
@@ -1890,25 +2073,63 @@ InsertResult:
 return
 
 ; =========================================
+; Initialize Preferences Path (OneDrive Compatibility)
+; WHY: Determines writable location for INI file
+; TRADEOFF: Falls back to LOCALAPPDATA if script dir is read-only
+; =========================================
+InitPreferencesPath() {
+    global PreferencesPath
+    ; Try script directory first
+    testPath := A_ScriptDir . "\RadAssist_preferences.ini"
+    testFile := A_ScriptDir . "\.radassist_write_test"
+
+    ; Test if we can write to script directory
+    canWrite := true
+    FileAppend, test, %testFile%
+    if (ErrorLevel) {
+        canWrite := false
+    } else {
+        FileDelete, %testFile%
+    }
+
+    if (canWrite) {
+        PreferencesPath := testPath
+    } else {
+        ; Fall back to LOCALAPPDATA
+        fallbackDir := A_AppData . "\..\Local\RadAssist"
+        if (!FileExist(fallbackDir)) {
+            FileCreateDir, %fallbackDir%
+        }
+        PreferencesPath := fallbackDir . "\RadAssist_preferences.ini"
+    }
+}
+
+; =========================================
 ; Load Preferences on Startup
 ; =========================================
 LoadPreferences() {
     global IncludeDatamining, ShowCitations, DataminingPhrase, DefaultSmartParse
     global SmartParseConfirmation, SmartParseFallbackToGUI
+    global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
+    global PreferencesPath
 
-    prefsFile := A_ScriptDir . "\RadAssist_preferences.ini"
-    if (FileExist(prefsFile)) {
-        IniRead, IncludeDatamining, %prefsFile%, Settings, IncludeDatamining, 1
-        IniRead, ShowCitations, %prefsFile%, Settings, ShowCitations, 1
-        IniRead, DataminingPhrase, %prefsFile%, Settings, DataminingPhrase, SSM lung nodule
-        IniRead, DefaultSmartParse, %prefsFile%, Settings, DefaultSmartParse, Volume
-        IniRead, SmartParseConfirmation, %prefsFile%, Settings, SmartParseConfirmation, 1
-        IniRead, SmartParseFallbackToGUI, %prefsFile%, Settings, SmartParseFallbackToGUI, 1
+    ; Use PreferencesPath set by InitPreferencesPath() for OneDrive compatibility
+    if (FileExist(PreferencesPath)) {
+        IniRead, IncludeDatamining, %PreferencesPath%, Settings, IncludeDatamining, 1
+        IniRead, ShowCitations, %PreferencesPath%, Settings, ShowCitations, 1
+        IniRead, DataminingPhrase, %PreferencesPath%, Settings, DataminingPhrase, SSM lung nodule
+        IniRead, DefaultSmartParse, %PreferencesPath%, Settings, DefaultSmartParse, Volume
+        IniRead, SmartParseConfirmation, %PreferencesPath%, Settings, SmartParseConfirmation, 1
+        IniRead, SmartParseFallbackToGUI, %PreferencesPath%, Settings, SmartParseFallbackToGUI, 1
+        IniRead, DefaultMeasurementUnit, %PreferencesPath%, Settings, DefaultMeasurementUnit, cm
+        IniRead, RVLVOutputFormat, %PreferencesPath%, Settings, RVLVOutputFormat, Macro
+        IniRead, FleischnerInsertAfterImpression, %PreferencesPath%, Settings, FleischnerInsertAfterImpression, 1
 
         IncludeDatamining := (IncludeDatamining = "1")
         ShowCitations := (ShowCitations = "1")
         SmartParseConfirmation := (SmartParseConfirmation = "1")
         SmartParseFallbackToGUI := (SmartParseFallbackToGUI = "1")
+        FleischnerInsertAfterImpression := (FleischnerInsertAfterImpression = "1")
     }
 }
 LoadPreferences()
@@ -1916,9 +2137,9 @@ LoadPreferences()
 ; =========================================
 ; Tray Menu
 ; =========================================
-Menu, Tray, Tip, RadAssist v2.1 - Smart Radiology Tools
+Menu, Tray, Tip, RadAssist v2.2 - Smart Radiology Tools
 Menu, Tray, NoStandard
-Menu, Tray, Add, RadAssist v2.1, TrayAbout
+Menu, Tray, Add, RadAssist v2.2, TrayAbout
 Menu, Tray, Add
 Menu, Tray, Add, Settings, MenuSettings
 Menu, Tray, Add, Reload, TrayReload
@@ -1926,7 +2147,7 @@ Menu, Tray, Add, Exit, TrayExit
 return
 
 TrayAbout:
-    MsgBox, 64, RadAssist, RadAssist v2.1`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nSmart Parse v2.1 Features:`n- Context-aware parsing (filters image/slice numbers)`n- Confirmation dialog before insertion`n- Confidence scoring with GUI fallback`n- Inline sentence output for dictation flow`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk interpretation`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nGUI Calculators:`n- Ellipsoid Volume`n- Adrenal Washout`n- NASCET Stenosis`n- RV/LV Ratio`n- Fleischner 2017`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)
+    MsgBox, 64, RadAssist, RadAssist v2.2`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (`)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk (Macro or Inline format)`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)
 return
 
 TrayReload:
