@@ -2029,12 +2029,16 @@ SaveSettings:
 
     Gui, SettingsGui:Submit
 
-    ; Convert checkbox values
-    IncludeDatamining := SetDatamining
+    ; Convert checkbox values (variable names must match GUI vVar names)
+    IncludeDatamining := SetDatamine
     ShowCitations := SetCitations
-    SmartParseConfirmation := SetSmartParseConfirm
-    SmartParseFallbackToGUI := SetFallbackToGUI
+    SmartParseConfirmation := SetConfirmation
+    SmartParseFallbackToGUI := SetFallbackGUI
     FleischnerInsertAfterImpression := SetFleischnerImpression
+    DataminingPhrase := SetDMPhrase
+    DefaultSmartParse := SetDefaultParse
+    DefaultMeasurementUnit := SetDefaultUnit
+    RVLVOutputFormat := SetRVLVFormat
 
     ; Batch all writes together (reduces file operations)
     writeSuccess := true
