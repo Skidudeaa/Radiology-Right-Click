@@ -1842,6 +1842,49 @@ ParseAndInsertAdrenalWashout(input) {
 }
 
 ; -----------------------------------------
+; HELPER: Get larger of two size values
+; WHY: Nodule ranges like "8 x 6 mm" should use the larger dimension
+; -----------------------------------------
+GetLargerSize(size1, size2, units) {
+    if (units = "cm" || units = "centimeter" || units = "centimeters")
+        size1 := size1 * 10
+    if (size2 != "" && size2 > size1)
+        return size2
+    return size1
+}
+
+; -----------------------------------------
+; HELPER: Classify nodule by type and store in appropriate array
+; WHY: Fleischner guidelines differ by nodule type (solid vs subsolid vs part-solid)
+; -----------------------------------------
+ClassifyAndStore(size, units, nodeType, ByRef solidArr, ByRef subsolidArr, ByRef partsolidArr) {
+    ; Convert to mm
+    if (units = "cm" || units = "centimeter" || units = "centimeters")
+        size := size * 10
+
+    ; Only accept plausible nodule sizes (1-50mm)
+    if (size < 1 || size > 50)
+        return false
+
+    ; Classify based on type keywords (case insensitive)
+    StringLower, nodeTypeLower, nodeType
+    if (nodeType = "") {
+        ; No type specified - default to solid
+        solidArr.Push(size)
+    } else if (InStr(nodeTypeLower, "part") || InStr(nodeTypeLower, "semi") || nodeTypeLower = "psn") {
+        partsolidArr.Push(size)
+    } else if (InStr(nodeTypeLower, "ground") || InStr(nodeTypeLower, "gg") || InStr(nodeTypeLower, "subsolid")
+            || InStr(nodeTypeLower, "sub-solid") || InStr(nodeTypeLower, "non-solid") || InStr(nodeTypeLower, "nonsolid")
+            || InStr(nodeTypeLower, "hazy") || InStr(nodeTypeLower, "ill-defined") || nodeTypeLower = "ssn") {
+        subsolidArr.Push(size)
+    } else {
+        ; "solid", "calcified", "spiculated", etc. = solid
+        solidArr.Push(size)
+    }
+    return true
+}
+
+; -----------------------------------------
 ; SMART FLEISCHNER NODULE PARSER
 ; WHY: Parse findings text for nodules and generate Fleischner 2017 recommendations.
 ; ARCHITECTURE: Robust multi-pattern regex for real-world radiology text variations.
@@ -1909,43 +1952,6 @@ ParseAndInsertFleischner(input) {
     ; === PATTERN 5: Parenthetical measurements ===
     ; Examples: "pulmonary nodule (8 mm)", "RUL nodule (0.8 cm)"
     pattern5 := "i)(?:" . nodulePattern . ").{0,15}\(" . sizePattern . "\)"
-
-    ; Helper function to get larger of two values
-    GetLargerSize(size1, size2, units) {
-        if (units = "cm" || units = "centimeter" || units = "centimeters")
-            size1 := size1 * 10
-        if (size2 != "" && size2 > size1)
-            return size2
-        return size1
-    }
-
-    ; Helper function to classify nodule type
-    ClassifyAndStore(size, units, nodeType, ByRef solidArr, ByRef subsolidArr, ByRef partsolidArr) {
-        ; Convert to mm
-        if (units = "cm" || units = "centimeter" || units = "centimeters")
-            size := size * 10
-
-        ; Only accept plausible nodule sizes (1-50mm)
-        if (size < 1 || size > 50)
-            return false
-
-        ; Classify based on type keywords (case insensitive)
-        StringLower, nodeTypeLower, nodeType
-        if (nodeType = "") {
-            ; No type specified - default to solid
-            solidArr.Push(size)
-        } else if (InStr(nodeTypeLower, "part") || InStr(nodeTypeLower, "semi") || nodeTypeLower = "psn") {
-            partsolidArr.Push(size)
-        } else if (InStr(nodeTypeLower, "ground") || InStr(nodeTypeLower, "gg") || InStr(nodeTypeLower, "subsolid")
-                || InStr(nodeTypeLower, "sub-solid") || InStr(nodeTypeLower, "non-solid") || InStr(nodeTypeLower, "nonsolid")
-                || InStr(nodeTypeLower, "hazy") || InStr(nodeTypeLower, "ill-defined") || nodeTypeLower = "ssn") {
-            subsolidArr.Push(size)
-        } else {
-            ; "solid", "calcified", "spiculated", etc. = solid
-            solidArr.Push(size)
-        }
-        return true
-    }
 
     ; Search Pattern 1: Size then nodule
     pos := 1
