@@ -1,58 +1,65 @@
-# RadAssist v2.4
+# RadAssist v2.5
 
-A lightweight AutoHotkey tool for radiologists using PowerScribe. Adds right-click calculators and smart text parsing for common radiology calculations.
+A lightweight radiology assistant tool with right-click calculators and smart text parsing. Available as both a Windows desktop app (AutoHotkey) and a modern web interface.
 
-## What's New in v2.4
+## Web Interface (New!)
 
-### New Calculators
+Open `index.html` in any browser for a modern, responsive calculator suite featuring:
+
+- **Quick Parse** - Auto-detect and parse measurement text instantly
+- **Dark theme** with premium medical aesthetic
+- **All 8 calculators** with real-time results and clinical interpretations
+- **Copy to clipboard** - One-click result copying
+- **Mobile responsive** - Works on tablets and phones
+
+![RadAssist Web UI](https://via.placeholder.com/800x450?text=RadAssist+Web+UI)
+
+### Calculators
+
+| Calculator | Description |
+|------------|-------------|
+| Ellipsoid Volume | Organ/mass volume from 3D dimensions |
+| RV/LV Ratio | Right heart strain evaluation for PE |
+| NASCET Stenosis | Carotid stenosis with severity grading |
+| Adrenal Washout | Absolute/relative washout for adenoma characterization |
+| Fleischner 2017 | Lung nodule follow-up recommendations |
+| ICH Volume | ABC/2 hemorrhage volume estimation |
+| Vessel Stenosis | General diameter-based stenosis |
+| Follow-up Date | Calculate imaging follow-up dates |
+
+## Desktop App (Windows)
+
+### What's New in v2.5
+
+- **AutoHotkey v2 conversion** - Full rewrite to AHK v2 syntax for modern compatibility
+- **Web interface** - New browser-based calculator suite
+
+### What's New in v2.4
+
 - **ICH Volume (ABC/2)**: Smart parse + GUI for intracerebral hemorrhage volume
 - **Follow-up Date Calculator**: Smart parse + GUI for calculating follow-up dates
-
-### Tool Visibility
-- Show/hide any of the 8 tools via Settings
-- Menu dynamically updates based on your preferences
-
-### Bug Fixes
-- RV/LV parser: Added Pattern H for "rvval 5.0 lvval 3.6" PACS format
-- NASCET parser: Fixed mixed cm/mm unit handling with automatic conversion
-- Stenosis Calculator: Fixed text deletion issue
-- Fleischner: Better IMPRESSION detection (handles IMPRESSIONS, CLINICAL IMPRESSION)
-
-### Output Formatting
-- All calculators now use consistent sentence-style output with leading space
-
-## What's New in v2.3
-
-- Enhanced Fleischner parser: 5 pattern types, size ranges (8 x 6 mm), prefixes (up to, approximately)
-- Enhanced RV/LV parser: 7 pattern types, full word support (Right ventricle), dilated/axial patterns
-- Fixed InsertAtImpression timing issues
-- Increased text selection timeout for slower applications
+- **Tool Visibility**: Show/hide any of the 8 tools via Settings
+- **Bug Fixes**: RV/LV parser, NASCET mixed units, Stenosis text deletion, Fleischner IMPRESSION detection
 
 ## Quick Start
 
-1. **Install AutoHotkey v1.1** from [autohotkey.com](https://www.autohotkey.com/)
+### Web Interface
+1. Open `index.html` in your browser
+2. Use Quick Parse or select a specific calculator
+3. Copy results to clipboard
+
+### Desktop App (Windows)
+1. **Install AutoHotkey v2** from [autohotkey.com](https://www.autohotkey.com/)
 2. **Download** `RadAssist.ahk` to any folder
 3. **Double-click** to run - look for the green "H" icon in your system tray
 4. **Use it**: In PowerScribe or Notepad, highlight text with measurements, then **Shift + Right-click**
 
-## How to Use
+## How to Use (Desktop)
 
 ### Smart Parsing (Fastest Method)
 1. Highlight text containing measurements (e.g., "prostate measures 4.2 x 3.1 x 3.5 cm")
 2. **Shift + Right-click** → Choose "Quick Parse" or a specific smart parser
 3. Review the parsed result → Click "Insert" to add it to your report
-
-### Manual Calculators
-1. **Shift + Right-click** anywhere in PowerScribe/Notepad
-2. Choose a calculator:
-   - **Ellipsoid Volume** - organs, masses, cysts
-   - **RV/LV Ratio** - PE evaluation
-   - **NASCET Stenosis** - carotid stenosis
-   - **Adrenal Washout** - adenoma vs metastasis
-   - **Fleischner 2017** - lung nodule follow-up
-   - **General Stenosis** - any vessel stenosis
-   - **ICH Volume** - hemorrhage ABC/2 calculation
-   - **Date Calculator** - follow-up date planning
 
 ### Keyboard Shortcuts
 | Key | Action |
@@ -61,7 +68,7 @@ A lightweight AutoHotkey tool for radiologists using PowerScribe. Adds right-cli
 | `Ctrl+Shift+H` | Copy Sectra history |
 | `Shift+Right-click` | Open RadAssist menu |
 
-## Settings
+## Settings (Desktop)
 
 Right-click the tray icon → **Settings** to customize:
 - Default calculator for Quick Parse
@@ -78,6 +85,10 @@ Right-click the tray icon → **Settings** to customize:
 
 ## Requirements
 
+### Web Interface
+- Any modern browser (Chrome, Firefox, Safari, Edge)
+
+### Desktop App
 - Windows 10/11
-- AutoHotkey v1.1.x
+- AutoHotkey v2.0+
 - PowerScribe 360 or Notepad

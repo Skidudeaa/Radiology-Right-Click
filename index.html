@@ -1,0 +1,2094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RadAssist | Radiology Calculator Suite</title>
+
+    <!-- Fonts: Playfair Display for elegance, DM Sans for clarity -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        /* ═══════════════════════════════════════════════════════════════
+           CSS CUSTOM PROPERTIES
+           ARCHITECTURE: Centralized theming for consistency
+           WHY: Single source of truth for colors, spacing, animations
+        ═══════════════════════════════════════════════════════════════ */
+        :root {
+            /* Dark theme with warm undertones */
+            --bg-primary: #0d0d0f;
+            --bg-secondary: #16161a;
+            --bg-elevated: #1c1c21;
+            --bg-card: #212127;
+            --bg-card-hover: #28282f;
+
+            /* Warm amber accent system */
+            --accent-primary: #d4a855;
+            --accent-secondary: #e8c77b;
+            --accent-dim: #a68942;
+            --accent-glow: rgba(212, 168, 85, 0.15);
+            --accent-glow-strong: rgba(212, 168, 85, 0.3);
+
+            /* Text hierarchy */
+            --text-primary: #f5f5f7;
+            --text-secondary: #a1a1a6;
+            --text-tertiary: #6e6e73;
+            --text-inverse: #0d0d0f;
+
+            /* Semantic colors */
+            --success: #34c759;
+            --success-dim: rgba(52, 199, 89, 0.15);
+            --warning: #ff9f0a;
+            --warning-dim: rgba(255, 159, 10, 0.15);
+            --error: #ff453a;
+            --error-dim: rgba(255, 69, 58, 0.15);
+            --info: #5e9eff;
+            --info-dim: rgba(94, 158, 255, 0.15);
+
+            /* Borders & Shadows */
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-default: rgba(255, 255, 255, 0.1);
+            --border-accent: rgba(212, 168, 85, 0.3);
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+            --shadow-lg: 0 8px 30px rgba(0,0,0,0.5);
+            --shadow-glow: 0 0 40px var(--accent-glow);
+
+            /* Typography */
+            --font-display: 'Playfair Display', Georgia, serif;
+            --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+
+            /* Spacing scale */
+            --space-xs: 0.25rem;
+            --space-sm: 0.5rem;
+            --space-md: 1rem;
+            --space-lg: 1.5rem;
+            --space-xl: 2rem;
+            --space-2xl: 3rem;
+            --space-3xl: 4rem;
+
+            /* Radius */
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+
+            /* Transitions */
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --duration-fast: 150ms;
+            --duration-normal: 300ms;
+            --duration-slow: 500ms;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           RESET & BASE STYLES
+        ═══════════════════════════════════════════════════════════════ */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            font-size: 16px;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Subtle grain texture overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            opacity: 0.03;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           LAYOUT STRUCTURE
+        ═══════════════════════════════════════════════════════════════ */
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar Navigation */
+        .sidebar {
+            width: 280px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-subtle);
+            padding: var(--space-xl);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+            transform: translateX(0);
+            transition: transform var(--duration-normal) var(--ease-out-expo);
+        }
+
+        .sidebar-header {
+            margin-bottom: var(--space-2xl);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .logo-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-dim));
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-inverse);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .logo-text {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+        }
+
+        .logo-version {
+            font-family: var(--font-body);
+            font-size: 0.7rem;
+            color: var(--text-tertiary);
+            font-weight: 400;
+            margin-top: 2px;
+            letter-spacing: 0.05em;
+        }
+
+        /* Navigation */
+        .nav-section {
+            margin-bottom: var(--space-xl);
+        }
+
+        .nav-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-tertiary);
+            margin-bottom: var(--space-sm);
+            padding-left: var(--space-md);
+        }
+
+        .nav-list {
+            list-style: none;
+        }
+
+        .nav-item {
+            margin-bottom: 2px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+            padding: var(--space-sm) var(--space-md);
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 400;
+            transition: all var(--duration-fast) ease;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+
+        .nav-link:hover {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+        }
+
+        .nav-link.active {
+            background: var(--accent-glow);
+            color: var(--accent-secondary);
+            border-color: var(--border-accent);
+        }
+
+        .nav-icon {
+            width: 20px;
+            height: 20px;
+            opacity: 0.7;
+            flex-shrink: 0;
+        }
+
+        .nav-link.active .nav-icon {
+            opacity: 1;
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding-top: var(--space-lg);
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .settings-link {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+            padding: var(--space-sm) var(--space-md);
+            border-radius: var(--radius-md);
+            color: var(--text-tertiary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: all var(--duration-fast) ease;
+            cursor: pointer;
+        }
+
+        .settings-link:hover {
+            color: var(--text-secondary);
+            background: var(--bg-elevated);
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            margin-left: 280px;
+            padding: var(--space-2xl) var(--space-3xl);
+            max-width: 1400px;
+        }
+
+        /* Page Header */
+        .page-header {
+            margin-bottom: var(--space-2xl);
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeInUp 0.6s var(--ease-out-expo) forwards;
+        }
+
+        .page-title {
+            font-family: var(--font-display);
+            font-size: 2.5rem;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            margin-bottom: var(--space-sm);
+            background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .page-subtitle {
+            color: var(--text-tertiary);
+            font-size: 1rem;
+            max-width: 600px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           CALCULATOR GRID
+        ═══════════════════════════════════════════════════════════════ */
+        .calculator-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: var(--space-lg);
+        }
+
+        .calculator-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl);
+            transition: all var(--duration-normal) var(--ease-out-expo);
+            opacity: 0;
+            transform: translateY(30px);
+            animation: fadeInUp 0.6s var(--ease-out-expo) forwards;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .calculator-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            opacity: 0;
+            transition: opacity var(--duration-normal) ease;
+        }
+
+        .calculator-card:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-default);
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg), var(--shadow-glow);
+        }
+
+        .calculator-card:hover::before {
+            opacity: 1;
+        }
+
+        /* Staggered animation delays */
+        .calculator-card:nth-child(1) { animation-delay: 0.1s; }
+        .calculator-card:nth-child(2) { animation-delay: 0.15s; }
+        .calculator-card:nth-child(3) { animation-delay: 0.2s; }
+        .calculator-card:nth-child(4) { animation-delay: 0.25s; }
+        .calculator-card:nth-child(5) { animation-delay: 0.3s; }
+        .calculator-card:nth-child(6) { animation-delay: 0.35s; }
+        .calculator-card:nth-child(7) { animation-delay: 0.4s; }
+        .calculator-card:nth-child(8) { animation-delay: 0.45s; }
+
+        .card-header {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--space-md);
+            margin-bottom: var(--space-lg);
+        }
+
+        .card-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--accent-glow);
+            border: 1px solid var(--border-accent);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .card-icon svg {
+            width: 24px;
+            height: 24px;
+            color: var(--accent-primary);
+        }
+
+        .card-title-group {
+            flex: 1;
+        }
+
+        .card-title {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-bottom: 4px;
+            letter-spacing: -0.01em;
+        }
+
+        .card-description {
+            font-size: 0.85rem;
+            color: var(--text-tertiary);
+            line-height: 1.4;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           FORM ELEMENTS
+        ═══════════════════════════════════════════════════════════════ */
+        .form-group {
+            margin-bottom: var(--space-md);
+        }
+
+        .form-row {
+            display: flex;
+            gap: var(--space-sm);
+        }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-tertiary);
+            margin-bottom: var(--space-xs);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: var(--space-sm) var(--space-md);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 1rem;
+            transition: all var(--duration-fast) ease;
+        }
+
+        .form-input::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        .form-input:hover {
+            border-color: var(--border-default);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+            background: var(--bg-elevated);
+        }
+
+        .form-select {
+            width: 100%;
+            padding: var(--space-sm) var(--space-md);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all var(--duration-fast) ease;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 40px;
+        }
+
+        .form-select:hover {
+            border-color: var(--border-default);
+        }
+
+        .form-select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        /* Dimension Input Group */
+        .dimension-inputs {
+            display: flex;
+            align-items: center;
+            gap: var(--space-xs);
+        }
+
+        .dimension-inputs .form-input {
+            width: 70px;
+            text-align: center;
+        }
+
+        .dimension-separator {
+            color: var(--text-tertiary);
+            font-weight: 500;
+        }
+
+        .unit-select {
+            width: 70px;
+            margin-left: var(--space-sm);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           BUTTONS
+        ═══════════════════════════════════════════════════════════════ */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-sm);
+            padding: var(--space-sm) var(--space-lg);
+            border-radius: var(--radius-sm);
+            font-family: var(--font-body);
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--duration-fast) ease;
+            border: none;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-dim));
+            color: var(--text-inverse);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md), 0 0 20px var(--accent-glow);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border-color: var(--border-default);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-tertiary);
+        }
+
+        .btn-ghost:hover {
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+        }
+
+        .btn-block {
+            width: 100%;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: var(--space-sm);
+            margin-top: var(--space-lg);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           RESULT DISPLAY
+        ═══════════════════════════════════════════════════════════════ */
+        .result-container {
+            margin-top: var(--space-md);
+            padding: var(--space-md);
+            background: var(--success-dim);
+            border: 1px solid rgba(52, 199, 89, 0.2);
+            border-radius: var(--radius-md);
+            display: none;
+            animation: resultReveal 0.4s var(--ease-out-back) forwards;
+        }
+
+        .result-container.visible {
+            display: block;
+        }
+
+        .result-container.warning {
+            background: var(--warning-dim);
+            border-color: rgba(255, 159, 10, 0.2);
+        }
+
+        .result-container.error {
+            background: var(--error-dim);
+            border-color: rgba(255, 69, 58, 0.2);
+        }
+
+        .result-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--success);
+            margin-bottom: var(--space-xs);
+        }
+
+        .result-container.warning .result-label {
+            color: var(--warning);
+        }
+
+        .result-container.error .result-label {
+            color: var(--error);
+        }
+
+        .result-value {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .result-detail {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: var(--space-xs);
+        }
+
+        .result-interpretation {
+            margin-top: var(--space-sm);
+            padding-top: var(--space-sm);
+            border-top: 1px solid rgba(255,255,255,0.1);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .copy-result-btn {
+            margin-top: var(--space-sm);
+            font-size: 0.8rem;
+            padding: var(--space-xs) var(--space-sm);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           ANIMATIONS
+        ═══════════════════════════════════════════════════════════════ */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes resultReveal {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           FLEISCHNER TABLE
+        ═══════════════════════════════════════════════════════════════ */
+        .fleischner-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-sm);
+            margin-bottom: var(--space-md);
+        }
+
+        .fleischner-option {
+            padding: var(--space-sm) var(--space-md);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--duration-fast) ease;
+            text-align: center;
+        }
+
+        .fleischner-option:hover {
+            border-color: var(--border-default);
+            background: var(--bg-elevated);
+        }
+
+        .fleischner-option.selected {
+            border-color: var(--accent-primary);
+            background: var(--accent-glow);
+        }
+
+        .fleischner-option .size {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .fleischner-option .label {
+            font-size: 0.75rem;
+            color: var(--text-tertiary);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           CHECKBOX STYLING
+        ═══════════════════════════════════════════════════════════════ */
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-sm);
+            margin-bottom: var(--space-md);
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-xs);
+            padding: var(--space-xs) var(--space-sm);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--duration-fast) ease;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .checkbox-item:hover {
+            border-color: var(--border-default);
+        }
+
+        .checkbox-item.checked {
+            border-color: var(--accent-primary);
+            background: var(--accent-glow);
+            color: var(--accent-secondary);
+        }
+
+        .checkbox-item input {
+            display: none;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           MOBILE RESPONSIVE
+        ═══════════════════════════════════════════════════════════════ */
+        .mobile-header {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 0 var(--space-lg);
+            align-items: center;
+            justify-content: space-between;
+            z-index: 101;
+        }
+
+        .menu-toggle {
+            width: 40px;
+            height: 40px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 99;
+        }
+
+        @media (max-width: 900px) {
+            .mobile-header {
+                display: flex;
+            }
+
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .sidebar-overlay.open {
+                display: block;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: calc(60px + var(--space-xl)) var(--space-lg) var(--space-xl);
+            }
+
+            .calculator-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .page-title {
+                font-size: 1.75rem;
+            }
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           TOOLTIP
+        ═══════════════════════════════════════════════════════════════ */
+        .tooltip {
+            position: relative;
+        }
+
+        .tooltip::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%) scale(0.9);
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            padding: var(--space-xs) var(--space-sm);
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: all var(--duration-fast) ease;
+            border: 1px solid var(--border-subtle);
+            box-shadow: var(--shadow-md);
+        }
+
+        .tooltip:hover::after {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           TOAST NOTIFICATIONS
+        ═══════════════════════════════════════════════════════════════ */
+        .toast-container {
+            position: fixed;
+            bottom: var(--space-xl);
+            right: var(--space-xl);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-sm);
+        }
+
+        .toast {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            padding: var(--space-md) var(--space-lg);
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+            animation: toastIn 0.4s var(--ease-out-back) forwards;
+            max-width: 360px;
+        }
+
+        .toast.success {
+            border-color: rgba(52, 199, 89, 0.3);
+        }
+
+        .toast-icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        .toast.success .toast-icon {
+            color: var(--success);
+        }
+
+        .toast-message {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
+        @keyframes toastIn {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes toastOut {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           QUICK PARSE INPUT (Hero Section)
+        ═══════════════════════════════════════════════════════════════ */
+        .hero-parse {
+            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
+            padding: var(--space-2xl);
+            margin-bottom: var(--space-2xl);
+            position: relative;
+            overflow: hidden;
+            opacity: 0;
+            animation: fadeInUp 0.6s var(--ease-out-expo) 0.05s forwards;
+        }
+
+        .hero-parse::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -20%;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero-title {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-bottom: var(--space-sm);
+            position: relative;
+        }
+
+        .hero-description {
+            font-size: 0.9rem;
+            color: var(--text-tertiary);
+            margin-bottom: var(--space-lg);
+            position: relative;
+        }
+
+        .hero-input-group {
+            display: flex;
+            gap: var(--space-md);
+            position: relative;
+        }
+
+        .hero-input {
+            flex: 1;
+            padding: var(--space-md) var(--space-lg);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 1rem;
+        }
+
+        .hero-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 4px var(--accent-glow);
+        }
+
+        .hero-select {
+            width: 180px;
+            padding: var(--space-md) var(--space-lg);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 1rem;
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 16px center;
+            padding-right: 48px;
+        }
+
+        .hero-btn {
+            padding: var(--space-md) var(--space-xl);
+        }
+    </style>
+</head>
+<body>
+    <!-- Mobile Header -->
+    <header class="mobile-header">
+        <a href="#" class="logo">
+            <div class="logo-icon">R</div>
+            <span class="logo-text">RadAssist</span>
+        </a>
+        <button class="menu-toggle" onclick="toggleSidebar()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+    </header>
+
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <a href="#" class="logo">
+                    <div class="logo-icon">R</div>
+                    <div>
+                        <div class="logo-text">RadAssist</div>
+                        <div class="logo-version">v2.5 Web Edition</div>
+                    </div>
+                </a>
+            </div>
+
+            <nav class="nav-section">
+                <div class="nav-label">Calculators</div>
+                <ul class="nav-list">
+                    <li class="nav-item">
+                        <a class="nav-link active" onclick="showSection('all')">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="3" width="7" height="7"></rect>
+                                <rect x="14" y="14" width="7" height="7"></rect>
+                                <rect x="3" y="14" width="7" height="7"></rect>
+                            </svg>
+                            All Tools
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" onclick="showSection('volume')">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <ellipse cx="12" cy="12" rx="10" ry="4"></ellipse>
+                            </svg>
+                            Ellipsoid Volume
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" onclick="showSection('rvlv')">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                            </svg>
+                            RV/LV Ratio
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" onclick="showSection('nascet')">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2v20M2 12h20"></path>
+                                <circle cx="12" cy="12" r="4"></circle>
+                            </svg>
+                            NASCET Stenosis
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" onclick="showSection('adrenal')">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"></path>
+                                <path d="M17 4a2 2 0 0 0 2 2a2 2 0 0 0 -2 2a2 2 0 0 0 -2 -2a2 2 0 0 0 2 -2"></path>
+                            </svg>
+                            Adrenal Washout
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" onclick="showSection('fleischner')">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M12 5v2M12 17v2M5 12h2M17 12h2"></path>
+                            </svg>
+                            Fleischner 2017
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" onclick="showSection('ich')">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M12 8v8M8 12h8"></path>
+                            </svg>
+                            ICH Volume
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" onclick="showSection('stenosis')">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                            </svg>
+                            Vessel Stenosis
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" onclick="showSection('date')">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                            Follow-up Date
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a class="settings-link" onclick="showSettings()">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    Settings
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="page-header">
+                <h1 class="page-title">Radiology Calculator Suite</h1>
+                <p class="page-subtitle">Professional-grade calculators for radiologists. Smart parsing, instant results, seamless workflow integration.</p>
+            </header>
+
+            <!-- Quick Parse Hero -->
+            <section class="hero-parse">
+                <h2 class="hero-title">Quick Parse</h2>
+                <p class="hero-description">Paste measurement text and instantly calculate. Supports dimensions, ratios, HU values, and more.</p>
+                <div class="hero-input-group">
+                    <input type="text" class="hero-input" id="quickParseInput" placeholder="e.g., prostate measures 4.2 x 3.1 x 3.5 cm">
+                    <select class="hero-select" id="quickParseType">
+                        <option value="auto">Auto-detect</option>
+                        <option value="volume">Volume</option>
+                        <option value="rvlv">RV/LV Ratio</option>
+                        <option value="nascet">NASCET</option>
+                        <option value="adrenal">Adrenal Washout</option>
+                    </select>
+                    <button class="btn btn-primary hero-btn" onclick="quickParse()">
+                        Parse
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
+                        </svg>
+                    </button>
+                </div>
+                <div class="result-container" id="quickParseResult">
+                    <div class="result-label">Result</div>
+                    <div class="result-value" id="quickParseResultValue"></div>
+                    <div class="result-detail" id="quickParseResultDetail"></div>
+                    <button class="btn btn-secondary copy-result-btn" onclick="copyResult('quickParseResultValue')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        Copy to Clipboard
+                    </button>
+                </div>
+            </section>
+
+            <!-- Calculator Grid -->
+            <div class="calculator-grid" id="calculatorGrid">
+
+                <!-- Ellipsoid Volume Calculator -->
+                <article class="calculator-card" data-section="volume">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <ellipse cx="12" cy="12" rx="10" ry="4"></ellipse>
+                            </svg>
+                        </div>
+                        <div class="card-title-group">
+                            <h3 class="card-title">Ellipsoid Volume</h3>
+                            <p class="card-description">Calculate organ/mass volume from three orthogonal dimensions</p>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Dimensions (L × W × H)</label>
+                        <div class="dimension-inputs">
+                            <input type="number" class="form-input" id="volDim1" placeholder="AP" step="0.1">
+                            <span class="dimension-separator">×</span>
+                            <input type="number" class="form-input" id="volDim2" placeholder="TR" step="0.1">
+                            <span class="dimension-separator">×</span>
+                            <input type="number" class="form-input" id="volDim3" placeholder="CC" step="0.1">
+                            <select class="form-select unit-select" id="volUnits">
+                                <option value="cm">cm</option>
+                                <option value="mm">mm</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-block" onclick="calcVolume()">Calculate Volume</button>
+                    </div>
+
+                    <div class="result-container" id="volumeResult">
+                        <div class="result-label">Volume</div>
+                        <div class="result-value" id="volumeResultValue"></div>
+                        <div class="result-detail" id="volumeResultDetail"></div>
+                        <button class="btn btn-secondary copy-result-btn" onclick="copyResult('volumeResultValue')">Copy Result</button>
+                    </div>
+                </article>
+
+                <!-- RV/LV Ratio Calculator -->
+                <article class="calculator-card" data-section="rvlv">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                            </svg>
+                        </div>
+                        <div class="card-title-group">
+                            <h3 class="card-title">RV/LV Ratio</h3>
+                            <p class="card-description">Evaluate right heart strain in pulmonary embolism</p>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">RV Diameter</label>
+                            <input type="number" class="form-input" id="rvDiam" placeholder="42" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">LV Diameter</label>
+                            <input type="number" class="form-input" id="lvDiam" placeholder="35" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Units</label>
+                            <select class="form-select" id="rvlvUnits">
+                                <option value="mm">mm</option>
+                                <option value="cm">cm</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-block" onclick="calcRVLV()">Calculate Ratio</button>
+                    </div>
+
+                    <div class="result-container" id="rvlvResult">
+                        <div class="result-label">RV/LV Ratio</div>
+                        <div class="result-value" id="rvlvResultValue"></div>
+                        <div class="result-interpretation" id="rvlvInterpretation"></div>
+                        <button class="btn btn-secondary copy-result-btn" onclick="copyResult('rvlvResultValue')">Copy Result</button>
+                    </div>
+                </article>
+
+                <!-- NASCET Calculator -->
+                <article class="calculator-card" data-section="nascet">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2v20M2 12h20"></path>
+                                <circle cx="12" cy="12" r="4"></circle>
+                            </svg>
+                        </div>
+                        <div class="card-title-group">
+                            <h3 class="card-title">NASCET Stenosis</h3>
+                            <p class="card-description">Carotid stenosis using NASCET criteria</p>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Distal ICA (normal)</label>
+                            <input type="number" class="form-input" id="nascetDistal" placeholder="5.2" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Stenosis</label>
+                            <input type="number" class="form-input" id="nascetStenosis" placeholder="2.1" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Units</label>
+                            <select class="form-select" id="nascetUnits">
+                                <option value="mm">mm</option>
+                                <option value="cm">cm</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-block" onclick="calcNASCET()">Calculate Stenosis</button>
+                    </div>
+
+                    <div class="result-container" id="nascetResult">
+                        <div class="result-label">NASCET Stenosis</div>
+                        <div class="result-value" id="nascetResultValue"></div>
+                        <div class="result-interpretation" id="nascetInterpretation"></div>
+                        <button class="btn btn-secondary copy-result-btn" onclick="copyResult('nascetResultValue')">Copy Result</button>
+                    </div>
+                </article>
+
+                <!-- Adrenal Washout Calculator -->
+                <article class="calculator-card" data-section="adrenal">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"></path>
+                                <path d="M17 4a2 2 0 0 0 2 2a2 2 0 0 0 -2 2a2 2 0 0 0 -2 -2a2 2 0 0 0 2 -2"></path>
+                            </svg>
+                        </div>
+                        <div class="card-title-group">
+                            <h3 class="card-title">Adrenal Washout</h3>
+                            <p class="card-description">Absolute and relative washout for adenoma characterization</p>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Pre-contrast (HU)</label>
+                        <input type="number" class="form-input" id="adrenalPre" placeholder="10">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Post-contrast (HU)</label>
+                            <input type="number" class="form-input" id="adrenalPost" placeholder="80">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Delayed 15min (HU)</label>
+                            <input type="number" class="form-input" id="adrenalDelayed" placeholder="40">
+                        </div>
+                    </div>
+
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-block" onclick="calcAdrenal()">Calculate Washout</button>
+                    </div>
+
+                    <div class="result-container" id="adrenalResult">
+                        <div class="result-label">Washout Analysis</div>
+                        <div class="result-value" id="adrenalResultValue"></div>
+                        <div class="result-interpretation" id="adrenalInterpretation"></div>
+                        <button class="btn btn-secondary copy-result-btn" onclick="copyResult('adrenalResultValue')">Copy Result</button>
+                    </div>
+                </article>
+
+                <!-- Fleischner 2017 Calculator -->
+                <article class="calculator-card" data-section="fleischner">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M12 5v2M12 17v2M5 12h2M17 12h2"></path>
+                            </svg>
+                        </div>
+                        <div class="card-title-group">
+                            <h3 class="card-title">Fleischner 2017</h3>
+                            <p class="card-description">Lung nodule follow-up recommendations</p>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Nodule Size</label>
+                        <div class="fleischner-grid" id="fleischnerSize">
+                            <div class="fleischner-option" data-value="<6" onclick="selectFleischner(this, 'size')">
+                                <div class="size">&lt;6 mm</div>
+                            </div>
+                            <div class="fleischner-option" data-value="6-8" onclick="selectFleischner(this, 'size')">
+                                <div class="size">6-8 mm</div>
+                            </div>
+                            <div class="fleischner-option" data-value=">8" onclick="selectFleischner(this, 'size')">
+                                <div class="size">&gt;8 mm</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Risk Factors</label>
+                        <div class="checkbox-group" id="fleischnerRisk">
+                            <label class="checkbox-item" onclick="toggleCheckbox(this)">
+                                <input type="checkbox" value="smoking">
+                                Smoking history
+                            </label>
+                            <label class="checkbox-item" onclick="toggleCheckbox(this)">
+                                <input type="checkbox" value="family">
+                                Family history
+                            </label>
+                            <label class="checkbox-item" onclick="toggleCheckbox(this)">
+                                <input type="checkbox" value="upper">
+                                Upper lobe
+                            </label>
+                            <label class="checkbox-item" onclick="toggleCheckbox(this)">
+                                <input type="checkbox" value="spiculated">
+                                Spiculated
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Nodule Count</label>
+                        <div class="fleischner-grid" id="fleischnerCount">
+                            <div class="fleischner-option" data-value="single" onclick="selectFleischner(this, 'count')">
+                                <div class="size">Single</div>
+                            </div>
+                            <div class="fleischner-option" data-value="multiple" onclick="selectFleischner(this, 'count')">
+                                <div class="size">Multiple</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-block" onclick="calcFleischner()">Get Recommendation</button>
+                    </div>
+
+                    <div class="result-container" id="fleischnerResult">
+                        <div class="result-label">Fleischner Recommendation</div>
+                        <div class="result-value" id="fleischnerResultValue"></div>
+                        <div class="result-interpretation" id="fleischnerInterpretation"></div>
+                        <button class="btn btn-secondary copy-result-btn" onclick="copyResult('fleischnerResultValue')">Copy Result</button>
+                    </div>
+                </article>
+
+                <!-- ICH Volume Calculator -->
+                <article class="calculator-card" data-section="ich">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M12 8v8M8 12h8"></path>
+                            </svg>
+                        </div>
+                        <div class="card-title-group">
+                            <h3 class="card-title">ICH Volume (ABC/2)</h3>
+                            <p class="card-description">Intracerebral hemorrhage volume estimation</p>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">A (length) cm</label>
+                            <input type="number" class="form-input" id="ichA" placeholder="5.0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">B (width) cm</label>
+                            <input type="number" class="form-input" id="ichB" placeholder="3.0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">C (slices × 5mm)</label>
+                            <input type="number" class="form-input" id="ichC" placeholder="6" step="1">
+                        </div>
+                    </div>
+
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-block" onclick="calcICH()">Calculate Volume</button>
+                    </div>
+
+                    <div class="result-container" id="ichResult">
+                        <div class="result-label">ICH Volume</div>
+                        <div class="result-value" id="ichResultValue"></div>
+                        <div class="result-interpretation" id="ichInterpretation"></div>
+                        <button class="btn btn-secondary copy-result-btn" onclick="copyResult('ichResultValue')">Copy Result</button>
+                    </div>
+                </article>
+
+                <!-- General Stenosis Calculator -->
+                <article class="calculator-card" data-section="stenosis">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                            </svg>
+                        </div>
+                        <div class="card-title-group">
+                            <h3 class="card-title">Vessel Stenosis</h3>
+                            <p class="card-description">General diameter-based stenosis calculation</p>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Normal Diameter</label>
+                            <input type="number" class="form-input" id="stenosisNormal" placeholder="8.0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Stenosis Diameter</label>
+                            <input type="number" class="form-input" id="stenosisStenosis" placeholder="3.0" step="0.1">
+                        </div>
+                    </div>
+
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-block" onclick="calcStenosis()">Calculate Stenosis</button>
+                    </div>
+
+                    <div class="result-container" id="stenosisResult">
+                        <div class="result-label">Stenosis</div>
+                        <div class="result-value" id="stenosisResultValue"></div>
+                        <div class="result-interpretation" id="stenosisInterpretation"></div>
+                        <button class="btn btn-secondary copy-result-btn" onclick="copyResult('stenosisResultValue')">Copy Result</button>
+                    </div>
+                </article>
+
+                <!-- Follow-up Date Calculator -->
+                <article class="calculator-card" data-section="date">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                        </div>
+                        <div class="card-title-group">
+                            <h3 class="card-title">Follow-up Date</h3>
+                            <p class="card-description">Calculate follow-up imaging dates</p>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Base Date</label>
+                        <input type="date" class="form-input" id="baseDate">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Interval</label>
+                            <input type="number" class="form-input" id="dateInterval" placeholder="6" value="6">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Unit</label>
+                            <select class="form-select" id="dateUnit">
+                                <option value="months">Months</option>
+                                <option value="weeks">Weeks</option>
+                                <option value="years">Years</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-block" onclick="calcDate()">Calculate Date</button>
+                    </div>
+
+                    <div class="result-container" id="dateResult">
+                        <div class="result-label">Follow-up Date</div>
+                        <div class="result-value" id="dateResultValue"></div>
+                        <div class="result-detail" id="dateResultDetail"></div>
+                        <button class="btn btn-secondary copy-result-btn" onclick="copyResult('dateResultValue')">Copy Result</button>
+                    </div>
+                </article>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        /* ═══════════════════════════════════════════════════════════════
+           CALCULATOR FUNCTIONS
+           ARCHITECTURE: Each calculator is self-contained with validation
+           WHY: Modularity allows easy testing and maintenance
+        ═══════════════════════════════════════════════════════════════ */
+
+        // Initialize date picker to today
+        document.getElementById('baseDate').valueAsDate = new Date();
+
+        // ─────────────────────────────────────────────────────────────
+        // VOLUME CALCULATOR
+        // ─────────────────────────────────────────────────────────────
+        function calcVolume() {
+            const d1 = parseFloat(document.getElementById('volDim1').value);
+            const d2 = parseFloat(document.getElementById('volDim2').value);
+            const d3 = parseFloat(document.getElementById('volDim3').value);
+            const units = document.getElementById('volUnits').value;
+
+            if (isNaN(d1) || isNaN(d2) || isNaN(d3) || d1 <= 0 || d2 <= 0 || d3 <= 0) {
+                showToast('Please enter all three dimensions', 'error');
+                return;
+            }
+
+            let dims = [d1, d2, d3];
+            if (units === 'mm') {
+                dims = dims.map(d => d / 10);
+            }
+
+            // Ellipsoid volume: (4/3) * π * (a/2) * (b/2) * (c/2) = 0.5236 * a * b * c
+            const volume = 0.5236 * dims[0] * dims[1] * dims[2];
+            const volumeRound = volume.toFixed(1);
+
+            document.getElementById('volumeResultValue').textContent = `${volumeRound} cc`;
+            document.getElementById('volumeResultDetail').textContent = `Dimensions: ${d1} × ${d2} × ${d3} ${units}`;
+            showResult('volumeResult');
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // RV/LV RATIO CALCULATOR
+        // ─────────────────────────────────────────────────────────────
+        function calcRVLV() {
+            const rv = parseFloat(document.getElementById('rvDiam').value);
+            const lv = parseFloat(document.getElementById('lvDiam').value);
+            const units = document.getElementById('rvlvUnits').value;
+
+            if (isNaN(rv) || isNaN(lv) || rv <= 0 || lv <= 0) {
+                showToast('Please enter both RV and LV measurements', 'error');
+                return;
+            }
+
+            const ratio = (rv / lv).toFixed(2);
+            let interpretation = '';
+            let resultClass = '';
+
+            if (ratio >= 1.0) {
+                interpretation = 'RV/LV ≥ 1.0 indicates right heart strain, concerning for hemodynamically significant PE.';
+                resultClass = 'warning';
+            } else if (ratio >= 0.9) {
+                interpretation = 'RV/LV 0.9-1.0 is borderline. Clinical correlation recommended.';
+                resultClass = '';
+            } else {
+                interpretation = 'RV/LV < 0.9 is within normal limits.';
+                resultClass = '';
+            }
+
+            document.getElementById('rvlvResultValue').textContent = `${ratio} (RV ${rv}${units} / LV ${lv}${units})`;
+            document.getElementById('rvlvInterpretation').textContent = interpretation;
+            showResult('rvlvResult', resultClass);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // NASCET STENOSIS CALCULATOR
+        // ─────────────────────────────────────────────────────────────
+        function calcNASCET() {
+            const distal = parseFloat(document.getElementById('nascetDistal').value);
+            const stenosis = parseFloat(document.getElementById('nascetStenosis').value);
+
+            if (isNaN(distal) || isNaN(stenosis) || distal <= 0 || stenosis < 0) {
+                showToast('Please enter valid measurements', 'error');
+                return;
+            }
+
+            if (stenosis >= distal) {
+                showToast('Stenosis cannot be larger than distal diameter', 'error');
+                return;
+            }
+
+            // NASCET: (distal - stenosis) / distal × 100
+            const percent = ((distal - stenosis) / distal * 100).toFixed(0);
+            let interpretation = '';
+            let resultClass = '';
+
+            if (percent >= 70) {
+                interpretation = `≥70% stenosis is considered severe. Surgical intervention (CEA) typically recommended if symptomatic.`;
+                resultClass = 'warning';
+            } else if (percent >= 50) {
+                interpretation = `50-69% stenosis is moderate. Medical management often recommended; CEA considered if symptomatic.`;
+                resultClass = '';
+            } else {
+                interpretation = `<50% stenosis is mild. Medical management typically recommended.`;
+                resultClass = '';
+            }
+
+            document.getElementById('nascetResultValue').textContent = `${percent}% stenosis (NASCET)`;
+            document.getElementById('nascetInterpretation').textContent = interpretation;
+            showResult('nascetResult', resultClass);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // ADRENAL WASHOUT CALCULATOR
+        // ─────────────────────────────────────────────────────────────
+        function calcAdrenal() {
+            const pre = parseFloat(document.getElementById('adrenalPre').value);
+            const post = parseFloat(document.getElementById('adrenalPost').value);
+            const delayed = parseFloat(document.getElementById('adrenalDelayed').value);
+
+            if (isNaN(pre) || isNaN(post) || isNaN(delayed)) {
+                showToast('Please enter all HU values', 'error');
+                return;
+            }
+
+            let results = [];
+            let interpretation = '';
+            let resultClass = '';
+
+            // Absolute washout (requires pre-contrast)
+            if (post !== pre) {
+                const absWashout = ((post - delayed) / (post - pre) * 100).toFixed(1);
+                results.push(`Absolute: ${absWashout}%`);
+
+                if (absWashout >= 60) {
+                    interpretation = 'Absolute washout ≥60% is consistent with adenoma.';
+                    resultClass = '';
+                } else {
+                    interpretation = 'Absolute washout <60% is indeterminate.';
+                    resultClass = 'warning';
+                }
+            }
+
+            // Relative washout
+            if (post !== 0) {
+                const relWashout = ((post - delayed) / post * 100).toFixed(1);
+                results.push(`Relative: ${relWashout}%`);
+
+                if (!interpretation && relWashout >= 40) {
+                    interpretation = 'Relative washout ≥40% is consistent with adenoma.';
+                    resultClass = '';
+                } else if (!interpretation) {
+                    interpretation = 'Relative washout <40% is indeterminate.';
+                    resultClass = 'warning';
+                }
+            }
+
+            // Pre-contrast characterization
+            if (pre <= 10) {
+                interpretation += ' Pre-contrast ≤10 HU alone is diagnostic of lipid-rich adenoma.';
+            }
+
+            document.getElementById('adrenalResultValue').textContent = results.join(' | ');
+            document.getElementById('adrenalInterpretation').textContent = interpretation;
+            showResult('adrenalResult', resultClass);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // FLEISCHNER 2017 CALCULATOR
+        // ─────────────────────────────────────────────────────────────
+        let fleischnerState = { size: null, count: null, riskFactors: [] };
+
+        function selectFleischner(el, type) {
+            // Remove selected from siblings
+            const siblings = el.parentElement.querySelectorAll('.fleischner-option');
+            siblings.forEach(s => s.classList.remove('selected'));
+            el.classList.add('selected');
+            fleischnerState[type] = el.dataset.value;
+        }
+
+        function toggleCheckbox(el) {
+            el.classList.toggle('checked');
+            const checkbox = el.querySelector('input');
+            checkbox.checked = !checkbox.checked;
+        }
+
+        function calcFleischner() {
+            if (!fleischnerState.size) {
+                showToast('Please select nodule size', 'error');
+                return;
+            }
+            if (!fleischnerState.count) {
+                showToast('Please select nodule count', 'error');
+                return;
+            }
+
+            // Get risk factors
+            const riskChecks = document.querySelectorAll('#fleischnerRisk .checkbox-item.checked');
+            const isHighRisk = riskChecks.length > 0;
+
+            let recommendation = '';
+            const size = fleischnerState.size;
+            const count = fleischnerState.count;
+
+            // Fleischner 2017 guidelines (simplified)
+            if (count === 'single') {
+                if (size === '<6') {
+                    recommendation = isHighRisk ?
+                        'Optional CT at 12 months' :
+                        'No routine follow-up';
+                } else if (size === '6-8') {
+                    recommendation = isHighRisk ?
+                        'CT at 6-12 months, then consider CT at 18-24 months' :
+                        'CT at 6-12 months, then consider CT at 18-24 months';
+                } else {
+                    recommendation = 'Consider CT at 3 months, PET/CT, or tissue sampling';
+                }
+            } else {
+                if (size === '<6') {
+                    recommendation = isHighRisk ?
+                        'Optional CT at 12 months' :
+                        'No routine follow-up';
+                } else if (size === '6-8') {
+                    recommendation = isHighRisk ?
+                        'CT at 3-6 months, then consider CT at 18-24 months' :
+                        'CT at 3-6 months, then consider CT at 18-24 months';
+                } else {
+                    recommendation = 'CT at 3-6 months, then consider CT at 18-24 months';
+                }
+            }
+
+            const riskText = isHighRisk ? 'High-risk patient' : 'Low-risk patient';
+
+            document.getElementById('fleischnerResultValue').textContent = recommendation;
+            document.getElementById('fleischnerInterpretation').textContent =
+                `${count === 'single' ? 'Solitary' : 'Multiple'} nodule(s), ${size} mm, ${riskText}. Per Fleischner Society 2017 guidelines.`;
+            showResult('fleischnerResult');
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // ICH VOLUME (ABC/2) CALCULATOR
+        // ─────────────────────────────────────────────────────────────
+        function calcICH() {
+            const a = parseFloat(document.getElementById('ichA').value);
+            const b = parseFloat(document.getElementById('ichB').value);
+            const c = parseFloat(document.getElementById('ichC').value);
+
+            if (isNaN(a) || isNaN(b) || isNaN(c) || a <= 0 || b <= 0 || c <= 0) {
+                showToast('Please enter all ABC dimensions', 'error');
+                return;
+            }
+
+            // ABC/2 formula: A × B × C / 2
+            // C = number of slices × slice thickness (typically in cm)
+            const cInCm = c * 0.5; // Assuming 5mm slices
+            const volume = (a * b * cInCm / 2).toFixed(1);
+
+            let interpretation = '';
+            let resultClass = '';
+
+            if (volume >= 30) {
+                interpretation = 'Volume ≥30 cc associated with poor prognosis. Consider neurosurgical consultation.';
+                resultClass = 'warning';
+            } else if (volume >= 20) {
+                interpretation = 'Volume 20-30 cc. Close monitoring recommended.';
+                resultClass = '';
+            } else {
+                interpretation = 'Volume <20 cc. Monitor clinically.';
+                resultClass = '';
+            }
+
+            document.getElementById('ichResultValue').textContent = `${volume} cc`;
+            document.getElementById('ichInterpretation').textContent =
+                `ABC/2 method: ${a} × ${b} × ${cInCm.toFixed(1)} / 2 = ${volume} cc. ${interpretation}`;
+            showResult('ichResult', resultClass);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // GENERAL STENOSIS CALCULATOR
+        // ─────────────────────────────────────────────────────────────
+        function calcStenosis() {
+            const normal = parseFloat(document.getElementById('stenosisNormal').value);
+            const stenosis = parseFloat(document.getElementById('stenosisStenosis').value);
+
+            if (isNaN(normal) || isNaN(stenosis) || normal <= 0 || stenosis < 0) {
+                showToast('Please enter valid measurements', 'error');
+                return;
+            }
+
+            const percent = ((normal - stenosis) / normal * 100).toFixed(0);
+            let interpretation = '';
+            let resultClass = '';
+
+            if (percent >= 70) {
+                interpretation = 'Severe stenosis (≥70%)';
+                resultClass = 'warning';
+            } else if (percent >= 50) {
+                interpretation = 'Moderate stenosis (50-69%)';
+                resultClass = '';
+            } else {
+                interpretation = 'Mild stenosis (<50%)';
+                resultClass = '';
+            }
+
+            document.getElementById('stenosisResultValue').textContent = `${percent}% stenosis`;
+            document.getElementById('stenosisInterpretation').textContent = interpretation;
+            showResult('stenosisResult', resultClass);
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // FOLLOW-UP DATE CALCULATOR
+        // ─────────────────────────────────────────────────────────────
+        function calcDate() {
+            const baseDate = document.getElementById('baseDate').valueAsDate;
+            const interval = parseInt(document.getElementById('dateInterval').value);
+            const unit = document.getElementById('dateUnit').value;
+
+            if (!baseDate || isNaN(interval) || interval <= 0) {
+                showToast('Please enter a valid date and interval', 'error');
+                return;
+            }
+
+            const resultDate = new Date(baseDate);
+
+            switch (unit) {
+                case 'months':
+                    resultDate.setMonth(resultDate.getMonth() + interval);
+                    break;
+                case 'weeks':
+                    resultDate.setDate(resultDate.getDate() + (interval * 7));
+                    break;
+                case 'years':
+                    resultDate.setFullYear(resultDate.getFullYear() + interval);
+                    break;
+            }
+
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            const formattedDate = resultDate.toLocaleDateString('en-US', options);
+
+            document.getElementById('dateResultValue').textContent = formattedDate;
+            document.getElementById('dateResultDetail').textContent =
+                `${interval} ${unit} from ${baseDate.toLocaleDateString('en-US', options)}`;
+            showResult('dateResult');
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // QUICK PARSE (AUTO-DETECT)
+        // ─────────────────────────────────────────────────────────────
+        function quickParse() {
+            const input = document.getElementById('quickParseInput').value.trim();
+            const type = document.getElementById('quickParseType').value;
+
+            if (!input) {
+                showToast('Please enter text to parse', 'error');
+                return;
+            }
+
+            let result = null;
+            let detail = '';
+
+            // Auto-detect or use selected type
+            if (type === 'auto' || type === 'volume') {
+                // Try to parse dimensions (e.g., "4.2 x 3.1 x 3.5 cm")
+                const dimRegex = /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(cm|mm)?/i;
+                const match = input.match(dimRegex);
+
+                if (match) {
+                    let [_, d1, d2, d3, units] = match;
+                    d1 = parseFloat(d1);
+                    d2 = parseFloat(d2);
+                    d3 = parseFloat(d3);
+                    units = units || 'cm';
+
+                    if (units.toLowerCase() === 'mm') {
+                        d1 /= 10; d2 /= 10; d3 /= 10;
+                    }
+
+                    const volume = (0.5236 * d1 * d2 * d3).toFixed(1);
+                    result = `Volume: ${volume} cc`;
+                    detail = `Parsed: ${match[1]} × ${match[2]} × ${match[3]} ${units}`;
+                }
+            }
+
+            if (!result && (type === 'auto' || type === 'rvlv')) {
+                // Try RV/LV pattern
+                const rvlvRegex = /rv[:\s]*(\d+\.?\d*)\s*(?:mm|cm)?.*?lv[:\s]*(\d+\.?\d*)/i;
+                const match = input.match(rvlvRegex);
+
+                if (match) {
+                    const rv = parseFloat(match[1]);
+                    const lv = parseFloat(match[2]);
+                    const ratio = (rv / lv).toFixed(2);
+                    result = `RV/LV Ratio: ${ratio}`;
+                    detail = `RV ${rv} / LV ${lv}${ratio >= 1.0 ? ' - Right heart strain present' : ''}`;
+                }
+            }
+
+            if (!result && (type === 'auto' || type === 'adrenal')) {
+                // Try HU values
+                const huRegex = /(\d+)\s*(?:hu|HU)/g;
+                const matches = [...input.matchAll(huRegex)];
+
+                if (matches.length >= 2) {
+                    const values = matches.map(m => parseInt(m[1]));
+                    if (values.length >= 3) {
+                        const [pre, post, delayed] = values;
+                        const absWashout = ((post - delayed) / (post - pre) * 100).toFixed(1);
+                        const relWashout = ((post - delayed) / post * 100).toFixed(1);
+                        result = `Absolute: ${absWashout}% | Relative: ${relWashout}%`;
+                        detail = `Pre: ${pre} HU, Post: ${post} HU, Delayed: ${delayed} HU`;
+                    }
+                }
+            }
+
+            if (result) {
+                document.getElementById('quickParseResultValue').textContent = result;
+                document.getElementById('quickParseResultDetail').textContent = detail;
+                showResult('quickParseResult');
+            } else {
+                showToast('Could not parse input. Try entering dimensions like "4.2 x 3.1 x 3.5 cm"', 'error');
+            }
+        }
+
+        // Handle Enter key in quick parse input
+        document.getElementById('quickParseInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') quickParse();
+        });
+
+        /* ═══════════════════════════════════════════════════════════════
+           UI UTILITIES
+        ═══════════════════════════════════════════════════════════════ */
+
+        function showResult(elementId, extraClass = '') {
+            const el = document.getElementById(elementId);
+            el.className = 'result-container visible ' + extraClass;
+        }
+
+        function copyResult(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Copied to clipboard', 'success');
+            }).catch(() => {
+                showToast('Failed to copy', 'error');
+            });
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    ${type === 'success' ?
+                        '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>' :
+                        '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>'
+                    }
+                </svg>
+                <span class="toast-message">${message}</span>
+            `;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'toastOut 0.3s ease forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function showSection(section) {
+            // Update nav
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+                if (link.onclick && link.onclick.toString().includes(`'${section}'`)) {
+                    link.classList.add('active');
+                }
+            });
+
+            // First nav item is "all"
+            if (section === 'all') {
+                document.querySelector('.nav-link').classList.add('active');
+            }
+
+            // Show/hide cards
+            document.querySelectorAll('.calculator-card').forEach(card => {
+                if (section === 'all' || card.dataset.section === section) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+
+            // Close mobile sidebar
+            closeSidebar();
+        }
+
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('open');
+            document.querySelector('.sidebar-overlay').classList.toggle('open');
+        }
+
+        function closeSidebar() {
+            document.querySelector('.sidebar').classList.remove('open');
+            document.querySelector('.sidebar-overlay').classList.remove('open');
+        }
+
+        function showSettings() {
+            showToast('Settings panel coming soon', 'success');
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Escape closes mobile sidebar
+            if (e.key === 'Escape') {
+                closeSidebar();
+            }
+        });
+    </script>
+</body>
+</html>
