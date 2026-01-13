@@ -61,6 +61,122 @@ global ShowStenosisTools := true
 global ShowICHTools := true
 global ShowDateCalculator := true
 
+; =========================================
+; UI THEME CONFIGURATION
+; ARCHITECTURE: Centralized theming for consistent, modern UI across all dialogs
+; WHY: Dark mode reduces eye strain in dim reading rooms; modern styling improves UX
+; =========================================
+
+; Theme Colors (Dark Mode - optimized for radiology reading rooms)
+global UI_BG_DARK := "1a1a1e"           ; Main background - near black
+global UI_BG_CARD := "252529"           ; Card/section background
+global UI_BG_INPUT := "2d2d33"          ; Input field background
+global UI_ACCENT := "d4a855"            ; Amber accent (warm, readable)
+global UI_ACCENT_DIM := "a68942"        ; Dimmed accent for borders
+global UI_TEXT := "f0f0f2"              ; Primary text - off-white
+global UI_TEXT_DIM := "9090a0"          ; Secondary text - gray
+global UI_SUCCESS := "4ade80"           ; Success/normal - green
+global UI_WARNING := "fbbf24"           ; Warning - amber
+global UI_ERROR := "f87171"             ; Error/severe - red
+global UI_BORDER := "3a3a42"            ; Border color
+
+; Typography
+global UI_FONT := "Segoe UI"            ; Modern Windows font
+global UI_FONT_SIZE := 10               ; Base font size
+global UI_FONT_TITLE := 12              ; Title font size
+global UI_FONT_MONO := "Consolas"       ; Monospace for results
+
+; Spacing (in pixels)
+global UI_PAD := 12                     ; Standard padding
+global UI_PAD_SM := 8                   ; Small padding
+global UI_GAP := 10                     ; Gap between elements
+
+; -----------------------------------------
+; UI Helper: Apply dark theme to a GUI
+; WHY: Centralized theming reduces code duplication
+; -----------------------------------------
+ApplyDarkTheme(guiObj) {
+    global UI_BG_DARK, UI_TEXT, UI_FONT, UI_FONT_SIZE
+    guiObj.BackColor := UI_BG_DARK
+    guiObj.SetFont("c" UI_TEXT " s" UI_FONT_SIZE, UI_FONT)
+}
+
+; -----------------------------------------
+; UI Helper: Create styled title text
+; -----------------------------------------
+AddTitle(guiObj, text, x, y, w := 280) {
+    global UI_ACCENT, UI_FONT, UI_FONT_TITLE
+    ctrl := guiObj.Add("Text", "x" x " y" y " w" w " c" UI_ACCENT, text)
+    ctrl.SetFont("s" UI_FONT_TITLE " bold", UI_FONT)
+    return ctrl
+}
+
+; -----------------------------------------
+; UI Helper: Create styled label
+; -----------------------------------------
+AddLabel(guiObj, text, x, y, w := 120) {
+    global UI_TEXT_DIM
+    return guiObj.Add("Text", "x" x " y" y " w" w " c" UI_TEXT_DIM, text)
+}
+
+; -----------------------------------------
+; UI Helper: Create styled input field
+; -----------------------------------------
+AddInput(guiObj, x, y, w, vName, placeholder := "") {
+    global UI_BG_INPUT, UI_TEXT, UI_BORDER
+    ctrl := guiObj.Add("Edit", "x" x " y" y " w" w " v" vName " Background" UI_BG_INPUT, placeholder)
+    return ctrl
+}
+
+; -----------------------------------------
+; UI Helper: Create styled dropdown
+; -----------------------------------------
+AddDropdown(guiObj, x, y, w, vName, items, selected := 1) {
+    global UI_BG_INPUT, UI_TEXT
+    return guiObj.Add("DropDownList", "x" x " y" y " w" w " v" vName " Background" UI_BG_INPUT " Choose" selected, items)
+}
+
+; -----------------------------------------
+; UI Helper: Create primary (accent) button
+; -----------------------------------------
+AddPrimaryButton(guiObj, text, x, y, w := 100, callback := "") {
+    global UI_ACCENT
+    btn := guiObj.Add("Button", "x" x " y" y " w" w, text)
+    if (callback != "")
+        btn.OnEvent("Click", callback)
+    return btn
+}
+
+; -----------------------------------------
+; UI Helper: Create secondary button
+; -----------------------------------------
+AddSecondaryButton(guiObj, text, x, y, w := 80, callback := "") {
+    btn := guiObj.Add("Button", "x" x " y" y " w" w, text)
+    if (callback != "")
+        btn.OnEvent("Click", callback)
+    return btn
+}
+
+; -----------------------------------------
+; UI Helper: Create result preview panel
+; WHY: Shows live calculation results before insertion
+; -----------------------------------------
+AddResultPreview(guiObj, x, y, w, h, vName) {
+    global UI_BG_CARD, UI_TEXT, UI_FONT_MONO
+    guiObj.Add("GroupBox", "x" (x-5) " y" (y-15) " w" (w+10) " h" (h+20) " c" UI_TEXT_DIM, "Result Preview")
+    ctrl := guiObj.Add("Edit", "x" x " y" y " w" w " h" h " v" vName " ReadOnly Background" UI_BG_CARD " c" UI_SUCCESS)
+    ctrl.SetFont("s9", UI_FONT_MONO)
+    return ctrl
+}
+
+; -----------------------------------------
+; UI Helper: Create severity indicator text
+; -----------------------------------------
+AddSeverityText(guiObj, x, y, w, vName) {
+    global UI_BG_CARD, UI_TEXT
+    return guiObj.Add("Text", "x" x " y" y " w" w " v" vName " c" UI_TEXT " Center")
+}
+
 ; -----------------------------------------
 ; Exit Cleanup Handler
 ; WHY: Clear clipboard on exit to prevent PHI exposure
@@ -363,25 +479,85 @@ MenuSettings(ItemName, ItemPos, MyMenu) {
 global EllipsoidGuiObj := ""
 
 ShowEllipsoidVolumeGui() {
-    global EllipsoidGuiObj
-    ; Position near mouse
+    global EllipsoidGuiObj, UI_BG_DARK, UI_BG_CARD, UI_ACCENT, UI_TEXT, UI_TEXT_DIM
+    global UI_SUCCESS, UI_FONT, UI_FONT_MONO
+
     GetGuiPosition(&xPos, &yPos)
 
-    EllipsoidGuiObj := Gui("+AlwaysOnTop")
+    EllipsoidGuiObj := Gui("+AlwaysOnTop -DPIScale")
     EllipsoidGuiObj.Title := "Ellipsoid Volume"
-    EllipsoidGuiObj.Add("Text", "x10 y10 w280", "Ellipsoid Volume Calculator")
-    EllipsoidGuiObj.Add("Text", "x10 y35", "AP (L):")
-    EllipsoidGuiObj.Add("Edit", "x80 y32 w50 vEllipDim1")
-    EllipsoidGuiObj.Add("Text", "x135 y35", "x   T (W):")
-    EllipsoidGuiObj.Add("Edit", "x185 y32 w50 vEllipDim2")
-    EllipsoidGuiObj.Add("Text", "x10 y60", "CC (H):")
-    EllipsoidGuiObj.Add("Edit", "x80 y57 w50 vEllipDim3")
-    EllipsoidGuiObj.Add("Text", "x135 y60", "Units:")
-    EllipsoidGuiObj.Add("DropDownList", "x185 y57 w50 vEllipUnits Choose1", ["mm", "cm"])
-    EllipsoidGuiObj.Add("Button", "x10 y95 w100", "Calculate").OnEvent("Click", CalcEllipsoid)
-    EllipsoidGuiObj.Add("Button", "x120 y95 w80", "Cancel").OnEvent("Click", EllipsoidGuiClose)
+    EllipsoidGuiObj.BackColor := UI_BG_DARK
+    EllipsoidGuiObj.SetFont("s10 c" UI_TEXT, UI_FONT)
+
+    ; Title with accent color
+    titleCtrl := EllipsoidGuiObj.Add("Text", "x15 y12 w270 c" UI_ACCENT, "Ellipsoid Volume Calculator")
+    titleCtrl.SetFont("s12 bold")
+
+    ; Subtitle
+    EllipsoidGuiObj.Add("Text", "x15 y36 w270 c" UI_TEXT_DIM, "Calculate organ/mass volume from dimensions")
+
+    ; Dimensions section with GroupBox
+    EllipsoidGuiObj.Add("GroupBox", "x10 y55 w280 h75 c" UI_TEXT_DIM, "Dimensions")
+
+    ; Input row: AP x TR x CC
+    EllipsoidGuiObj.Add("Text", "x20 y78 w35 c" UI_TEXT, "AP:")
+    dim1 := EllipsoidGuiObj.Add("Edit", "x55 y75 w55 vEllipDim1 Number Center")
+    dim1.OnEvent("Change", EllipsoidLiveCalc)
+
+    EllipsoidGuiObj.Add("Text", "x115 y78 w15 c" UI_TEXT_DIM " Center", "×")
+
+    EllipsoidGuiObj.Add("Text", "x130 y78 w30 c" UI_TEXT, "TR:")
+    dim2 := EllipsoidGuiObj.Add("Edit", "x160 y75 w55 vEllipDim2 Number Center")
+    dim2.OnEvent("Change", EllipsoidLiveCalc)
+
+    EllipsoidGuiObj.Add("Text", "x220 y78 w15 c" UI_TEXT_DIM " Center", "×")
+
+    EllipsoidGuiObj.Add("Text", "x20 y103 w35 c" UI_TEXT, "CC:")
+    dim3 := EllipsoidGuiObj.Add("Edit", "x55 y100 w55 vEllipDim3 Number Center")
+    dim3.OnEvent("Change", EllipsoidLiveCalc)
+
+    EllipsoidGuiObj.Add("Text", "x130 y103 w40 c" UI_TEXT, "Units:")
+    EllipsoidGuiObj.Add("DropDownList", "x175 y100 w60 vEllipUnits Choose2", ["mm", "cm"])
+
+    ; Result preview section
+    EllipsoidGuiObj.Add("GroupBox", "x10 y135 w280 h60 c" UI_TEXT_DIM, "Result Preview")
+    previewCtrl := EllipsoidGuiObj.Add("Text", "x20 y158 w260 h25 c" UI_SUCCESS " vEllipPreview Center", "Enter dimensions above...")
+    previewCtrl.SetFont("s11 bold", UI_FONT)
+
+    ; Action buttons
+    EllipsoidGuiObj.Add("Button", "x15 y205 w130 h32 Default", "Calculate && Insert").OnEvent("Click", CalcEllipsoid)
+    EllipsoidGuiObj.Add("Button", "x155 y205 w130 h32", "Cancel").OnEvent("Click", EllipsoidGuiClose)
+
     EllipsoidGuiObj.OnEvent("Close", EllipsoidGuiClose)
-    EllipsoidGuiObj.Show("x" xPos " y" yPos " w250 h135")
+    EllipsoidGuiObj.OnEvent("Escape", EllipsoidGuiClose)
+    EllipsoidGuiObj.Show("x" xPos " y" yPos " w300 h250")
+}
+
+; Live calculation preview for Ellipsoid Volume
+EllipsoidLiveCalc(*) {
+    global EllipsoidGuiObj, UI_SUCCESS, UI_TEXT_DIM
+
+    try {
+        saved := EllipsoidGuiObj.Submit(false)
+        d1 := saved.EllipDim1 + 0
+        d2 := saved.EllipDim2 + 0
+        d3 := saved.EllipDim3 + 0
+
+        if (d1 > 0 && d2 > 0 && d3 > 0) {
+            ; Convert to cm if needed
+            if (saved.EllipUnits = "mm") {
+                d1 := d1 / 10
+                d2 := d2 / 10
+                d3 := d3 / 10
+            }
+            volume := Round(0.5236 * d1 * d2 * d3, 1)
+            EllipsoidGuiObj["EllipPreview"].Text := "Volume: " volume " cc"
+            EllipsoidGuiObj["EllipPreview"].SetFont("c" UI_SUCCESS)
+        } else {
+            EllipsoidGuiObj["EllipPreview"].Text := "Enter dimensions above..."
+            EllipsoidGuiObj["EllipPreview"].SetFont("c" UI_TEXT_DIM)
+        }
+    }
 }
 
 EllipsoidGuiClose(*) {
@@ -728,23 +904,93 @@ CalcStenosis(*) {
 global RVLVGuiObj := ""
 
 ShowRVLVGui() {
-    global RVLVGuiObj
-    CoordMode("Mouse", "Screen")
-    MouseGetPos(&mouseX, &mouseY)
-    xPos := mouseX + 10
-    yPos := mouseY + 10
+    global RVLVGuiObj, UI_BG_DARK, UI_ACCENT, UI_TEXT, UI_TEXT_DIM
+    global UI_SUCCESS, UI_WARNING, UI_ERROR, UI_FONT
 
-    RVLVGuiObj := Gui("+AlwaysOnTop")
+    GetGuiPosition(&xPos, &yPos)
+
+    RVLVGuiObj := Gui("+AlwaysOnTop -DPIScale")
     RVLVGuiObj.Title := "RV/LV Ratio"
-    RVLVGuiObj.Add("Text", "x10 y10 w280", "RV/LV Ratio Calculator (4-chamber axial)")
-    RVLVGuiObj.Add("Text", "x10 y40", "RV diameter (mm):")
-    RVLVGuiObj.Add("Edit", "x130 y37 w60 vRVDiam")
-    RVLVGuiObj.Add("Text", "x10 y70", "LV diameter (mm):")
-    RVLVGuiObj.Add("Edit", "x130 y67 w60 vLVDiam")
-    RVLVGuiObj.Add("Button", "x10 y105 w90", "Calculate").OnEvent("Click", CalcRVLV)
-    RVLVGuiObj.Add("Button", "x110 y105 w80", "Cancel").OnEvent("Click", RVLVGuiClose)
+    RVLVGuiObj.BackColor := UI_BG_DARK
+    RVLVGuiObj.SetFont("s10 c" UI_TEXT, UI_FONT)
+
+    ; Title
+    titleCtrl := RVLVGuiObj.Add("Text", "x15 y12 w270 c" UI_ACCENT, "RV/LV Ratio Calculator")
+    titleCtrl.SetFont("s12 bold")
+
+    ; Subtitle
+    RVLVGuiObj.Add("Text", "x15 y36 w270 c" UI_TEXT_DIM, "PE evaluation • 4-chamber axial view")
+
+    ; Measurements section
+    RVLVGuiObj.Add("GroupBox", "x10 y55 w280 h70 c" UI_TEXT_DIM, "Measurements (mm)")
+
+    RVLVGuiObj.Add("Text", "x20 y78 w100 c" UI_TEXT, "RV diameter:")
+    rvEdit := RVLVGuiObj.Add("Edit", "x130 y75 w70 vRVDiam Number Center")
+    rvEdit.OnEvent("Change", RVLVLiveCalc)
+
+    RVLVGuiObj.Add("Text", "x20 y103 w100 c" UI_TEXT, "LV diameter:")
+    lvEdit := RVLVGuiObj.Add("Edit", "x130 y100 w70 vLVDiam Number Center")
+    lvEdit.OnEvent("Change", RVLVLiveCalc)
+
+    ; Result preview with severity indicator
+    RVLVGuiObj.Add("GroupBox", "x10 y130 w280 h75 c" UI_TEXT_DIM, "Result Preview")
+
+    ratioCtrl := RVLVGuiObj.Add("Text", "x20 y152 w120 h25 vRVLVRatioPreview c" UI_TEXT_DIM, "Ratio: --")
+    ratioCtrl.SetFont("s14 bold")
+
+    statusCtrl := RVLVGuiObj.Add("Text", "x145 y155 w135 vRVLVStatusPreview c" UI_TEXT_DIM " Right", "Enter values")
+    statusCtrl.SetFont("s9")
+
+    ; Severity bar indicator
+    RVLVGuiObj.Add("Text", "x20 y180 w260 h3 vRVLVSeverityBar Background" UI_TEXT_DIM)
+
+    ; Buttons
+    RVLVGuiObj.Add("Button", "x15 y215 w130 h32 Default", "Calculate && Insert").OnEvent("Click", CalcRVLV)
+    RVLVGuiObj.Add("Button", "x155 y215 w130 h32", "Cancel").OnEvent("Click", RVLVGuiClose)
+
     RVLVGuiObj.OnEvent("Close", RVLVGuiClose)
-    RVLVGuiObj.Show("x" xPos " y" yPos " w220 h145")
+    RVLVGuiObj.OnEvent("Escape", RVLVGuiClose)
+    RVLVGuiObj.Show("x" xPos " y" yPos " w300 h260")
+}
+
+; Live calculation for RV/LV with severity indicator
+RVLVLiveCalc(*) {
+    global RVLVGuiObj, UI_SUCCESS, UI_WARNING, UI_ERROR, UI_TEXT_DIM
+
+    try {
+        saved := RVLVGuiObj.Submit(false)
+        rv := saved.RVDiam + 0
+        lv := saved.LVDiam + 0
+
+        if (rv > 0 && lv > 0) {
+            ratio := Round(rv / lv, 2)
+            RVLVGuiObj["RVLVRatioPreview"].Text := "Ratio: " ratio
+
+            ; Color-coded severity
+            if (ratio >= 1.0) {
+                RVLVGuiObj["RVLVRatioPreview"].SetFont("c" UI_ERROR)
+                RVLVGuiObj["RVLVStatusPreview"].Text := "RIGHT HEART STRAIN"
+                RVLVGuiObj["RVLVStatusPreview"].SetFont("c" UI_ERROR)
+                RVLVGuiObj["RVLVSeverityBar"].Opt("Background" UI_ERROR)
+            } else if (ratio >= 0.9) {
+                RVLVGuiObj["RVLVRatioPreview"].SetFont("c" UI_WARNING)
+                RVLVGuiObj["RVLVStatusPreview"].Text := "Borderline"
+                RVLVGuiObj["RVLVStatusPreview"].SetFont("c" UI_WARNING)
+                RVLVGuiObj["RVLVSeverityBar"].Opt("Background" UI_WARNING)
+            } else {
+                RVLVGuiObj["RVLVRatioPreview"].SetFont("c" UI_SUCCESS)
+                RVLVGuiObj["RVLVStatusPreview"].Text := "Normal"
+                RVLVGuiObj["RVLVStatusPreview"].SetFont("c" UI_SUCCESS)
+                RVLVGuiObj["RVLVSeverityBar"].Opt("Background" UI_SUCCESS)
+            }
+        } else {
+            RVLVGuiObj["RVLVRatioPreview"].Text := "Ratio: --"
+            RVLVGuiObj["RVLVRatioPreview"].SetFont("c" UI_TEXT_DIM)
+            RVLVGuiObj["RVLVStatusPreview"].Text := "Enter values"
+            RVLVGuiObj["RVLVStatusPreview"].SetFont("c" UI_TEXT_DIM)
+            RVLVGuiObj["RVLVSeverityBar"].Opt("Background" UI_TEXT_DIM)
+        }
+    }
 }
 
 RVLVGuiClose(*) {
@@ -2762,12 +3008,9 @@ ShowSettings() {
     global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
     global ShowICHTools, ShowDateCalculator
-    global SettingsGuiObj
+    global SettingsGuiObj, UI_BG_DARK, UI_BG_CARD, UI_ACCENT, UI_TEXT, UI_TEXT_DIM, UI_FONT
 
-    CoordMode("Mouse", "Screen")
-    MouseGetPos(&mouseX, &mouseY)
-    xPos := mouseX + 10
-    yPos := mouseY + 10
+    GetGuiPosition(&xPos, &yPos)
 
     dmChecked := IncludeDatamining ? "Checked" : ""
     citChecked := ShowCitations ? "Checked" : ""
@@ -2785,7 +3028,7 @@ ShowSettings() {
     ichChecked := ShowICHTools ? "Checked" : ""
     dateChecked := ShowDateCalculator ? "Checked" : ""
 
-    ; Determine which item to select in dropdown (1-based index)
+    ; Dropdown selections
     smartParseSelect := 1
     if (DefaultSmartParse = "RVLV")
         smartParseSelect := 2
@@ -2796,52 +3039,62 @@ ShowSettings() {
     else if (DefaultSmartParse = "Fleischner")
         smartParseSelect := 5
 
-    ; Unit selection
     unitSelect := (DefaultMeasurementUnit = "mm") ? 2 : 1
-
-    ; RV/LV format selection
     rvlvSelect := (RVLVOutputFormat = "Inline") ? 2 : 1
 
-    SettingsGuiObj := Gui("+AlwaysOnTop")
+    SettingsGuiObj := Gui("+AlwaysOnTop -DPIScale")
+    SettingsGuiObj.Title := "RadAssist Settings"
+    SettingsGuiObj.BackColor := UI_BG_DARK
+    SettingsGuiObj.SetFont("s10 c" UI_TEXT, UI_FONT)
     SettingsGuiObj.OnEvent("Close", SettingsGuiClose)
     SettingsGuiObj.OnEvent("Escape", SettingsGuiClose)
-    SettingsGuiObj.Add("Text", "x10 y10 w280", "RadAssist v2.3 Settings")
-    SettingsGuiObj.Add("Text", "x10 y40", "Default Quick Parse:")
-    SettingsGuiObj.Add("DropDownList", "x130 y37 w120 vSetDefaultParse Choose" smartParseSelect, ["Volume", "RVLV", "NASCET", "Adrenal", "Fleischner"])
 
-    ; Tool Visibility section (flat checkbox list per user preference)
-    SettingsGuiObj.Add("GroupBox", "x10 y65 w270 h125", "Tool Visibility (uncheck to hide)")
-    SettingsGuiObj.Add("Checkbox", "x20 y85 w120 vSetShowVolume " volChecked, "Volume")
-    SettingsGuiObj.Add("Checkbox", "x150 y85 w120 vSetShowRVLV " rvlvChecked, "RV/LV Ratio")
-    SettingsGuiObj.Add("Checkbox", "x20 y108 w120 vSetShowNASCET " nascetChecked, "NASCET")
-    SettingsGuiObj.Add("Checkbox", "x150 y108 w120 vSetShowAdrenal " adrenalChecked, "Adrenal")
-    SettingsGuiObj.Add("Checkbox", "x20 y131 w120 vSetShowFleischner " fleischnerChecked, "Fleischner")
-    SettingsGuiObj.Add("Checkbox", "x150 y131 w120 vSetShowStenosis " stenosisChecked, "Stenosis")
-    SettingsGuiObj.Add("Checkbox", "x20 y154 w120 vSetShowICH " ichChecked, "ICH Volume")
-    SettingsGuiObj.Add("Checkbox", "x150 y154 w120 vSetShowDate " dateChecked, "Date Calculator")
+    ; Header
+    titleCtrl := SettingsGuiObj.Add("Text", "x15 y12 w280 c" UI_ACCENT, "RadAssist v2.5 Settings")
+    titleCtrl.SetFont("s13 bold")
+    SettingsGuiObj.Add("Text", "x15 y38 w280 c" UI_TEXT_DIM, "Customize calculators and output options")
 
-    SettingsGuiObj.Add("GroupBox", "x10 y195 w270 h105", "Smart Parse Options")
-    SettingsGuiObj.Add("Checkbox", "x20 y215 w250 vSetConfirmation " confirmChecked, "Show confirmation dialog before insert")
-    SettingsGuiObj.Add("Checkbox", "x20 y240 w250 vSetFallbackGUI " fallbackChecked, "Fall back to GUI when confidence low")
-    SettingsGuiObj.Add("Text", "x20 y268", "Default units (no units in text):")
-    SettingsGuiObj.Add("DropDownList", "x190 y265 w70 vSetDefaultUnit Choose" unitSelect, ["cm", "mm"])
+    ; Quick Parse default
+    SettingsGuiObj.Add("Text", "x15 y65 w120 c" UI_TEXT, "Default Quick Parse:")
+    SettingsGuiObj.Add("DropDownList", "x145 y62 w140 vSetDefaultParse Choose" smartParseSelect, ["Volume", "RVLV", "NASCET", "Adrenal", "Fleischner"])
 
-    SettingsGuiObj.Add("GroupBox", "x10 y305 w270 h80", "RV/LV & Fleischner Output")
-    SettingsGuiObj.Add("Text", "x20 y325", "RV/LV format:")
-    SettingsGuiObj.Add("DropDownList", "x100 y322 w80 vSetRVLVFormat Choose" rvlvSelect, ["Macro", "Inline"])
-    SettingsGuiObj.Add("Text", "x185 y325 w90", "(Macro = cm)")
-    SettingsGuiObj.Add("Checkbox", "x20 y350 w250 vSetFleischnerImpression " fleischnerImprChecked, "Insert Fleischner after IMPRESSION:")
+    ; Tool Visibility section
+    SettingsGuiObj.Add("GroupBox", "x10 y95 w290 h125 c" UI_TEXT_DIM, "Tool Visibility")
+    SettingsGuiObj.Add("Checkbox", "x20 y115 w130 vSetShowVolume c" UI_TEXT " " volChecked, "Volume")
+    SettingsGuiObj.Add("Checkbox", "x155 y115 w130 vSetShowRVLV c" UI_TEXT " " rvlvChecked, "RV/LV Ratio")
+    SettingsGuiObj.Add("Checkbox", "x20 y138 w130 vSetShowNASCET c" UI_TEXT " " nascetChecked, "NASCET")
+    SettingsGuiObj.Add("Checkbox", "x155 y138 w130 vSetShowAdrenal c" UI_TEXT " " adrenalChecked, "Adrenal")
+    SettingsGuiObj.Add("Checkbox", "x20 y161 w130 vSetShowFleischner c" UI_TEXT " " fleischnerChecked, "Fleischner")
+    SettingsGuiObj.Add("Checkbox", "x155 y161 w130 vSetShowStenosis c" UI_TEXT " " stenosisChecked, "Stenosis")
+    SettingsGuiObj.Add("Checkbox", "x20 y184 w130 vSetShowICH c" UI_TEXT " " ichChecked, "ICH Volume")
+    SettingsGuiObj.Add("Checkbox", "x155 y184 w130 vSetShowDate c" UI_TEXT " " dateChecked, "Date Calculator")
 
-    SettingsGuiObj.Add("GroupBox", "x10 y390 w270 h105", "Output Options")
-    SettingsGuiObj.Add("Checkbox", "x20 y410 w250 vSetDatamine " dmChecked, "Include datamining phrase by default")
-    SettingsGuiObj.Add("Checkbox", "x20 y435 w250 vSetCitations " citChecked, "Show citations in output")
-    SettingsGuiObj.Add("Text", "x20 y460", "Datamining phrase:")
-    SettingsGuiObj.Add("Edit", "x110 y457 w160 vSetDMPhrase", DataminingPhrase)
+    ; Smart Parse Options
+    SettingsGuiObj.Add("GroupBox", "x10 y225 w290 h100 c" UI_TEXT_DIM, "Smart Parse Behavior")
+    SettingsGuiObj.Add("Checkbox", "x20 y245 w270 vSetConfirmation c" UI_TEXT " " confirmChecked, "Show confirmation before insert")
+    SettingsGuiObj.Add("Checkbox", "x20 y268 w270 vSetFallbackGUI c" UI_TEXT " " fallbackChecked, "Fall back to GUI when confidence low")
+    SettingsGuiObj.Add("Text", "x20 y295 w140 c" UI_TEXT, "Default units:")
+    SettingsGuiObj.Add("DropDownList", "x165 y292 w70 vSetDefaultUnit Choose" unitSelect, ["cm", "mm"])
 
-    SettingsGuiObj.Add("Button", "x70 y505 w80", "Save").OnEvent("Click", SaveSettings)
-    SettingsGuiObj.Add("Button", "x160 y505 w80", "Cancel").OnEvent("Click", SettingsGuiClose)
-    SettingsGuiObj.Show("x" xPos " y" yPos " w295 h545")
-    SettingsGuiObj.Title := "Settings"
+    ; Output Format Options
+    SettingsGuiObj.Add("GroupBox", "x10 y330 w290 h75 c" UI_TEXT_DIM, "Output Format")
+    SettingsGuiObj.Add("Text", "x20 y350 w80 c" UI_TEXT, "RV/LV format:")
+    SettingsGuiObj.Add("DropDownList", "x105 y347 w80 vSetRVLVFormat Choose" rvlvSelect, ["Macro", "Inline"])
+    SettingsGuiObj.Add("Text", "x190 y350 w100 c" UI_TEXT_DIM, "(Macro = cm)")
+    SettingsGuiObj.Add("Checkbox", "x20 y377 w270 vSetFleischnerImpression c" UI_TEXT " " fleischnerImprChecked, "Insert Fleischner after IMPRESSION:")
+
+    ; Datamining Options
+    SettingsGuiObj.Add("GroupBox", "x10 y410 w290 h100 c" UI_TEXT_DIM, "Datamining && Citations")
+    SettingsGuiObj.Add("Checkbox", "x20 y430 w270 vSetDatamine c" UI_TEXT " " dmChecked, "Include datamining phrase by default")
+    SettingsGuiObj.Add("Checkbox", "x20 y453 w270 vSetCitations c" UI_TEXT " " citChecked, "Show citations in output")
+    SettingsGuiObj.Add("Text", "x20 y480 w80 c" UI_TEXT, "DM phrase:")
+    SettingsGuiObj.Add("Edit", "x105 y477 w185 vSetDMPhrase Background" UI_BG_CARD, DataminingPhrase)
+
+    ; Buttons
+    SettingsGuiObj.Add("Button", "x80 y520 w100 h32 Default", "Save").OnEvent("Click", SaveSettings)
+    SettingsGuiObj.Add("Button", "x190 y520 w100 h32", "Cancel").OnEvent("Click", SettingsGuiClose)
+
+    SettingsGuiObj.Show("x" xPos " y" yPos " w310 h565")
 }
 
 SettingsGuiClose(*) {
@@ -2935,25 +3188,39 @@ IniWriteWithRetry(key, value, maxRetries := 3) {
 global ResultGuiObj := ""
 
 ShowResult(text) {
-    global ResultGuiObj
-    ; Copy to clipboard and show message
+    global ResultGuiObj, UI_BG_DARK, UI_BG_CARD, UI_ACCENT, UI_TEXT, UI_TEXT_DIM
+    global UI_SUCCESS, UI_FONT, UI_FONT_MONO
+
+    ; Copy to clipboard
     A_Clipboard := text
 
-    ; Create result window
-    CoordMode("Mouse", "Screen")
-    MouseGetPos(&mouseX, &mouseY)
-    xPos := mouseX + 10
-    yPos := mouseY + 10
+    GetGuiPosition(&xPos, &yPos)
 
-    ResultGuiObj := Gui("+AlwaysOnTop")
+    ResultGuiObj := Gui("+AlwaysOnTop -DPIScale")
+    ResultGuiObj.Title := "Calculation Result"
+    ResultGuiObj.BackColor := UI_BG_DARK
+    ResultGuiObj.SetFont("s10 c" UI_TEXT, UI_FONT)
+
+    ; Title with success indicator
+    titleCtrl := ResultGuiObj.Add("Text", "x15 y12 w370 c" UI_SUCCESS, "✓ Calculation Complete")
+    titleCtrl.SetFont("s12 bold")
+
+    ; Subtitle
+    ResultGuiObj.Add("Text", "x15 y36 w370 c" UI_TEXT_DIM, "Result copied to clipboard • Ready to insert")
+
+    ; Result content area
+    ResultGuiObj.Add("GroupBox", "x10 y55 w380 h145 c" UI_TEXT_DIM, "Result Text")
+    resultEdit := ResultGuiObj.Add("Edit", "x20 y75 w360 h115 ReadOnly Background" UI_BG_CARD, text)
+    resultEdit.SetFont("s10", UI_FONT_MONO)
+
+    ; Action buttons with clearer hierarchy
+    ResultGuiObj.Add("Button", "x15 y210 w180 h35 Default", "Insert into Report").OnEvent("Click", InsertResult)
+    ResultGuiObj.Add("Button", "x205 y210 w90 h35", "Copy").OnEvent("Click", CopyResult)
+    ResultGuiObj.Add("Button", "x305 y210 w80 h35", "Close").OnEvent("Click", ResultGuiClose)
+
     ResultGuiObj.OnEvent("Close", ResultGuiClose)
     ResultGuiObj.OnEvent("Escape", ResultGuiClose)
-    ResultGuiObj.Add("Edit", "x10 y10 w380 h200 ReadOnly", text)
-    ResultGuiObj.Add("Button", "x10 y220 w120", "Insert into Report").OnEvent("Click", InsertResult)
-    ResultGuiObj.Add("Button", "x140 y220 w120", "Copy to Clipboard").OnEvent("Click", CopyResult)
-    ResultGuiObj.Add("Button", "x270 y220 w120", "Close").OnEvent("Click", ResultGuiClose)
     ResultGuiObj.Show("x" xPos " y" yPos " w400 h260")
-    ResultGuiObj.Title := "Result"
 }
 
 ResultGuiClose(*) {
