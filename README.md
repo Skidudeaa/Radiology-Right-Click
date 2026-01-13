@@ -2,7 +2,17 @@
 
 A lightweight radiology assistant tool with right-click calculators and smart text parsing. Available as both a Windows desktop app (AutoHotkey) and a modern web interface.
 
-## Web Interface (New!)
+## Choose Your Interface
+
+| Feature | Desktop (AHK) | Web Interface |
+|---------|---------------|---------------|
+| **Best for** | PowerScribe integration, clipboard workflow | Standalone use, any device |
+| **Theme** | Dark "Clinical Noir" with amber accents | Dark theme with animations |
+| **Live Preview** | Yes - results update as you type | Yes - instant calculations |
+| **Platform** | Windows only (requires AHK v2) | Any browser, any OS |
+| **Insert to Report** | Direct clipboard insertion | Copy to clipboard |
+
+## Web Interface
 
 Open `index.html` in any browser for a modern, responsive calculator suite featuring:
 
@@ -11,8 +21,6 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 - **All 8 calculators** with real-time results and clinical interpretations
 - **Copy to clipboard** - One-click result copying
 - **Mobile responsive** - Works on tablets and phones
-
-![RadAssist Web UI](https://via.placeholder.com/800x450?text=RadAssist+Web+UI)
 
 ### Calculators
 
@@ -32,7 +40,10 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 ### What's New in v2.5
 
 - **AutoHotkey v2 conversion** - Full rewrite to AHK v2 syntax for modern compatibility
-- **Web interface** - New browser-based calculator suite
+- **Dark theme UI** - "Clinical Noir" aesthetic with amber accents across all dialogs
+- **Live preview** - See calculation results update in real-time as you type
+- **Color-coded severity** - RV/LV ratio displays green/yellow/red based on clinical thresholds
+- **Web interface** - New browser-based calculator suite for cross-platform use
 
 ### What's New in v2.4
 
