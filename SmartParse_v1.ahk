@@ -33,6 +33,53 @@ SP_Init() {
     SP_Pid := DllCall("GetCurrentProcessId")
 }
 
+; ================= dark theme helpers (used by the host for its own windows too) =================
+; Dark context menus: Windows 10 1903+/11 draw the app's popup menus dark with
+; light text once the app opts in (uxtheme ordinals 135/136). Menu, Color alone
+; only changes the background and leaves black text.
+SP_SetDarkMenus(on) {
+    static last := ""
+    if (last = on)
+        return
+    last := on
+    hMod := DllCall("GetModuleHandle", "Str", "uxtheme", "Ptr")
+    if (!hMod)
+        hMod := DllCall("LoadLibrary", "Str", "uxtheme", "Ptr")
+    setMode := DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 135, "Ptr")     ; SetPreferredAppMode
+    flush := DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 136, "Ptr")       ; FlushMenuThemes
+    if (setMode)
+        DllCall(setMode, "Int", on ? 2 : 3)      ; 2 = force dark, 3 = force light
+    if (flush)
+        DllCall(flush)
+}
+
+; Make a GUI readable in dark mode: themed checkboxes, radio buttons and group
+; boxes ignore the text color (black on dark), so turn theming off for those;
+; buttons and edits get the system dark style; dark title bar.
+SP_DarkenGui(hwnd) {
+    dhw := A_DetectHiddenWindows
+    DetectHiddenWindows, On
+    WinGet, list, ControlListHwnd, ahk_id %hwnd%
+    Loop, Parse, list, `n
+    {
+        h := A_LoopField
+        WinGetClass, cls, ahk_id %h%
+        if (cls = "Button") {
+            WinGet, st, Style, ahk_id %h%
+            t := st & 0xF
+            if (t = 2 || t = 3 || t = 4 || t = 5 || t = 6 || t = 7 || t = 9)
+                DllCall("uxtheme\SetWindowTheme", "Ptr", h, "Str", "", "Str", "")
+            else
+                DllCall("uxtheme\SetWindowTheme", "Ptr", h, "Str", "DarkMode_Explorer", "Ptr", 0)
+        } else if (cls = "Edit" || cls = "ComboBox" || cls = "ListBox" || cls = "SysListView32") {
+            DllCall("uxtheme\SetWindowTheme", "Ptr", h, "Str", "DarkMode_Explorer", "Ptr", 0)
+        }
+    }
+    DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "Int", 20, "Int*", 1, "Int", 4)
+    DllCall("RedrawWindow", "Ptr", hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0185)
+    DetectHiddenWindows, %dhw%
+}
+
 ; ================= small helpers (v1 equivalents of v2 built-ins) =================
 PE_N() {
     return "(?<![\d.])(\d+(?:\.\d+)?|\.\d+)"
@@ -1194,7 +1241,7 @@ SP_ShowConfirm(r) {
     Gui, SPConf:Show, x%mx% y%my% AutoSize
     SendMessage, 0x115, 6, 0, , ahk_id %hPrev%        ; preview scrolled to the top
     if (dark)
-        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hC, "Int", 20, "Int*", 1, "Int", 4)
+        SP_DarkenGui(hC)
     SP_Front(hC)
     GuiControl, SPConf:Focus, %hIns%
     fn := Func("SP_FrontIfNotActive").Bind(hC)
@@ -1425,7 +1472,7 @@ SP_ShowBoneAgeGui(prefill := "") {
     mx += 10, my += 10
     Gui, SPBone:Show, x%mx% y%my% AutoSize
     if (dark)
-        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hB, "Int", 20, "Int*", 1, "Int", 4)
+        SP_DarkenGui(hB)
     SP_Front(hB)
     GuiControl, SPBone:Focus, SPB_Bone
     SPB_Update()

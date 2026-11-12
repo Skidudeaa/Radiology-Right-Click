@@ -113,7 +113,7 @@ CleanupOnExit(ExitReason, ExitCode) {
 +RButton:: {
     global g_SelectedText, TargetApps, ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools, ShowICHTools
-    global ShowDateCalculator, DefaultSmartParse, ShowTIRADS, ShowORADS, ShowBoneAge
+    global ShowDateCalculator, DefaultSmartParse, ShowTIRADS, ShowORADS, ShowBoneAge, DarkTheme
 
     ; Check if we're in a target application
     inTargetApp := RA_IsTargetApp()
@@ -248,6 +248,7 @@ CleanupOnExit(ExitReason, ExitCode) {
     RadAssistMenu.Add()
     RadAssistMenu.Add("Settings", MenuSettings)
 
+    RA_SetDarkMenus(DarkTheme)
     RadAssistMenu.Show()
 }
 
@@ -1408,6 +1409,22 @@ RA_FitOnMouseMonitor(hwnd) {
     }
 }
 
+; Dark context menus (Shift+Right-click menu): Windows 10 1903+/11 draw an app's
+; popup menus dark with light text once it opts in (uxtheme ordinals 135/136).
+RA_SetDarkMenus(on) {
+    static last := ""
+    if (last = on)
+        return
+    last := on
+    hMod := DllCall("GetModuleHandle", "Str", "uxtheme", "Ptr") || DllCall("LoadLibrary", "Str", "uxtheme", "Ptr")
+    setMode := DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 135, "Ptr")     ; SetPreferredAppMode
+    flush := DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 136, "Ptr")       ; FlushMenuThemes
+    if setMode
+        DllCall(setMode, "Int", on ? 2 : 3)      ; 2 = force dark, 3 = force light
+    if flush
+        DllCall(flush)
+}
+
 ; Dark theme for a RadAssist window (Settings > Appearance > Dark theme)
 RA_ApplyTheme(hwnd) {
     global DarkTheme, RA_ThemeKeep
@@ -1428,9 +1445,18 @@ RA_ApplyTheme(hwnd) {
                     ctrl.SetFont("cE6E6E6")
                 case "Button":
                     DllCall("uxtheme\SetWindowTheme", "Ptr", ctrl.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
-                case "CheckBox", "Radio", "GroupBox":
+                case "CheckBox", "Radio":
                     ctrl.Opt("-Theme")            ; themed checkboxes ignore text color
                     ctrl.SetFont("cE6E6E6")
+                case "GroupBox":
+                    ; Group box titles stay black even unthemed: draw the title as a Text label
+                    if (ctrl.Text != "") {
+                        title := ctrl.Text
+                        ctrl.GetPos(&gx, &gy)
+                        ctrl.Text := ""
+                        g.SetFont("cE6E6E6")
+                        g.Add("Text", "x" (gx + 8) " y" (gy - 1) " Background1E1E1E", " " title " ")
+                    }
                 case "Text", "Link":
                     if !RA_ThemeKeep.Has(ctrl.Hwnd)
                         ctrl.SetFont("cE6E6E6")

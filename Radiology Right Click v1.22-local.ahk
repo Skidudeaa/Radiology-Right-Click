@@ -120,7 +120,7 @@ LoadPreferencesFromFile() {
 
         ; --- [Menu] or [Sorting] section ---
         IniRead, MenuSortingMethod, %preferencesFile%, Menu, SortingMethod, none
-        IniRead, CustomMenuOrder, %preferencesFile%, Menu, CustomMenuOrder,
+        IniRead, CustomMenuOrder, %preferencesFile%, Menu, CustomMenuOrder, %A_Space%
 		
 		; --- [References] section ---
 		IniRead, referencesList, %preferencesFile%, References, SavedReferences, %A_Space%
@@ -295,11 +295,9 @@ CreateCustomMenu() {
     Menu, CustomMenu, DeleteAll
 
     ; Set menu colors based on Dark Mode
-    if (DarkMode) {
-        Menu, CustomMenu, Color, 0xA9A9A9
-    } else {
-        Menu, CustomMenu, Color, Default
-    }
+    ; Dark Mode: real dark menus with white text (the old grey background kept black text)
+    SP_SetDarkMenus(DarkMode)
+    Menu, CustomMenu, Color, Default
 
     ; Standard editing items (always at the top)
     Menu, CustomMenu, Add, Cut, MenuCut
@@ -805,7 +803,7 @@ ShowPreferences() {
     else
         currentPauseDuration := PauseDuration . " ms"
 
-    Gui, Preferences:New, +AlwaysOnTop
+    Gui, Preferences:New, +AlwaysOnTop +HwndprefHwnd
     Gui, Preferences:Color, %bgColor%, %bgColor%
     Gui, Preferences:Font, s10 %textColor%, Segoe UI
 
@@ -856,7 +854,9 @@ ShowPreferences() {
     Gui, Add, Text, x450 y125 w230, Custom menu order (comma list):
     Gui, Add, Edit, x450 y145 w230 h50 vCustomMenuOrderBox, % CustomMenuOrder
 
-    Gui, Add, GroupBox, x445 y205 w240 h130, Smart Parse (highlight + right-click)
+    Gui, Add, GroupBox, x445 y205 w240 h130
+    ; title as a Text label: themed group box titles stay black in Dark Mode
+    Gui, Add, Text, x455 y198, % " Smart Parse (highlight + right-click) "
     Gui, Add, Checkbox, x455 y225 w225 vSP_ShowParse Checked%SP_ShowParse%, Smart Parse menu (auto-detect)
     Gui, Add, Checkbox, x455 y250 w225 vSP_ShowTIRADS Checked%SP_ShowTIRADS%, Thyroid ACR TI-RADS
     Gui, Add, Checkbox, x455 y275 w225 vSP_ShowORADS Checked%SP_ShowORADS%, Ovarian cyst (O-RADS / SRU)
@@ -867,6 +867,8 @@ ShowPreferences() {
     Gui, Add, Button, x305 y390 w135 gRestoreDefaults %buttonOptions%, Restore Defaults
     Gui, Add, Button, x450 y390 w135 gSavePreferences %buttonOptions%, Save
 
+    if (DarkMode)
+        SP_DarkenGui(prefHwnd)      ; checkbox/group text readable on dark
     Gui, Show, x%xPos% y%yPos% w%guiW% h%guiH%, Preferences
 }
 
@@ -4319,6 +4321,53 @@ SP_Init() {
     SP_Pid := DllCall("GetCurrentProcessId")
 }
 
+; ================= dark theme helpers (used by the host for its own windows too) =================
+; Dark context menus: Windows 10 1903+/11 draw the app's popup menus dark with
+; light text once the app opts in (uxtheme ordinals 135/136). Menu, Color alone
+; only changes the background and leaves black text.
+SP_SetDarkMenus(on) {
+    static last := ""
+    if (last = on)
+        return
+    last := on
+    hMod := DllCall("GetModuleHandle", "Str", "uxtheme", "Ptr")
+    if (!hMod)
+        hMod := DllCall("LoadLibrary", "Str", "uxtheme", "Ptr")
+    setMode := DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 135, "Ptr")     ; SetPreferredAppMode
+    flush := DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 136, "Ptr")       ; FlushMenuThemes
+    if (setMode)
+        DllCall(setMode, "Int", on ? 2 : 3)      ; 2 = force dark, 3 = force light
+    if (flush)
+        DllCall(flush)
+}
+
+; Make a GUI readable in dark mode: themed checkboxes, radio buttons and group
+; boxes ignore the text color (black on dark), so turn theming off for those;
+; buttons and edits get the system dark style; dark title bar.
+SP_DarkenGui(hwnd) {
+    dhw := A_DetectHiddenWindows
+    DetectHiddenWindows, On
+    WinGet, list, ControlListHwnd, ahk_id %hwnd%
+    Loop, Parse, list, `n
+    {
+        h := A_LoopField
+        WinGetClass, cls, ahk_id %h%
+        if (cls = "Button") {
+            WinGet, st, Style, ahk_id %h%
+            t := st & 0xF
+            if (t = 2 || t = 3 || t = 4 || t = 5 || t = 6 || t = 7 || t = 9)
+                DllCall("uxtheme\SetWindowTheme", "Ptr", h, "Str", "", "Str", "")
+            else
+                DllCall("uxtheme\SetWindowTheme", "Ptr", h, "Str", "DarkMode_Explorer", "Ptr", 0)
+        } else if (cls = "Edit" || cls = "ComboBox" || cls = "ListBox" || cls = "SysListView32") {
+            DllCall("uxtheme\SetWindowTheme", "Ptr", h, "Str", "DarkMode_Explorer", "Ptr", 0)
+        }
+    }
+    DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "Int", 20, "Int*", 1, "Int", 4)
+    DllCall("RedrawWindow", "Ptr", hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0185)
+    DetectHiddenWindows, %dhw%
+}
+
 ; ================= small helpers (v1 equivalents of v2 built-ins) =================
 PE_N() {
     return "(?<![\d.])(\d+(?:\.\d+)?|\.\d+)"
@@ -5480,7 +5529,7 @@ SP_ShowConfirm(r) {
     Gui, SPConf:Show, x%mx% y%my% AutoSize
     SendMessage, 0x115, 6, 0, , ahk_id %hPrev%        ; preview scrolled to the top
     if (dark)
-        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hC, "Int", 20, "Int*", 1, "Int", 4)
+        SP_DarkenGui(hC)
     SP_Front(hC)
     GuiControl, SPConf:Focus, %hIns%
     fn := Func("SP_FrontIfNotActive").Bind(hC)
@@ -5711,7 +5760,7 @@ SP_ShowBoneAgeGui(prefill := "") {
     mx += 10, my += 10
     Gui, SPBone:Show, x%mx% y%my% AutoSize
     if (dark)
-        DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hB, "Int", 20, "Int*", 1, "Int", 4)
+        SP_DarkenGui(hB)
     SP_Front(hB)
     GuiControl, SPBone:Focus, SPB_Bone
     SPB_Update()
