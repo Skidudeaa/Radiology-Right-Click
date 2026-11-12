@@ -76,15 +76,23 @@ Auto-detect recognizes normal dictation, for example:
 
 | Dictation | Calculation |
 |-----------|-------------|
-| The prostate gland measures 4.5 x 3.2 x 4.1 cm. | Ellipsoid volume (+ prostate size interpretation) |
+| The prostate gland measures 4.5 x 3.2 x 4.1 cm. | Prostate volume + grade (<30 normal, 30-49 mild, 50-79 moderate, 80+ severe prostatomegaly; prostate only) |
 | Right ovarian cyst measuring 32 x 24 x 28 mm. | Ellipsoid volume |
-| Intraparenchymal hemorrhage measuring 4.2 x 2.8 x 3.5 cm. | ICH volume (ABC/2) |
-| The right ventricle measures 4.2 cm and the left ventricle measures 3.8 cm. | RV/LV ratio |
+| Intraparenchymal hemorrhage measuring 4.2 x 2.8 x 3.5 cm. | ICH volume (ABC/2), no severity wording |
+| The right ventricle measures 4.2 cm and the left ventricle measures 3.8 cm. | RV/LV ratio (normal <0.9, borderline 0.9-0.99, elevated >=1.0 - never "severe") |
 | The proximal ICA residual lumen measures 1.2 mm and the normal distal cervical ICA measures 4.5 mm. | NASCET |
 | The SMA has a focal narrowing measuring 2 mm with a normal distal caliber of 6 mm. | Vessel stenosis % |
 | 45 HU on noncontrast, 85 HU on portal venous phase, and 50 HU on 15-minute delayed phase. | Adrenal washout |
 | 7 mm solid noncalcified pulmonary nodule in the right upper lobe. | Fleischner 2017 (repeat mentions in the impression are not double-counted) |
 | Recommend follow-up ultrasound in 6 months. | Follow-up due date |
+
+**Inserting:** the confirmation dialog stays in front of PowerScribe/Sectra, does not block
+Shift+Right-click, and Insert pastes back into the window you Shift+Right-clicked in. Fleischner
+blocks go at the end of the report (after the IMPRESSION) unless that setting is turned off.
+
+**Target apps:** PowerScribe 360, any program whose name contains "PowerScribe" (ready for the planned
+move to **PowerScribe One** - if PowerScribe One runs inside a web browser, its window will need to be
+added to `TargetApps`), and Notepad for testing.
 
 **Units:** each number keeps its own unit, so cm and mm can be mixed freely ("4.5 cm x 32 mm x 41 mm",
 "distal ICA 0.5 cm, stenosis 3 mm"). Numbers without units are guessed (large values = mm) and flagged

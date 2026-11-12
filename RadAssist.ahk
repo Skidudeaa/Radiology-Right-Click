@@ -33,6 +33,9 @@ InitPreferencesPath()
 ; Global Configuration
 ; -----------------------------------------
 global TargetApps := ["ahk_exe Nuance.PowerScribe360.exe", "ahk_exe notepad.exe", "ahk_class Notepad"]
+; NOTE: Any program whose .exe name contains "PowerScribe" also counts (e.g. the
+;       planned move to PowerScribe One). See RA_IsTargetApp().
+global TargetAppPattern := "i)powerscribe|^notepad\.exe$"
 global SectraWindowTitle := "Sectra"
 global DataminingPhrase := "SSM lung nodule"
 global IncludeDatamining := true
@@ -108,13 +111,7 @@ CleanupOnExit(ExitReason, ExitCode) {
     global ShowDateCalculator, DefaultSmartParse
 
     ; Check if we're in a target application
-    inTargetApp := false
-    for app in TargetApps {
-        if (WinActive(app)) {
-            inTargetApp := true
-            break
-        }
-    }
+    inTargetApp := RA_IsTargetApp()
 
     if (!inTargetApp) {
         ; Not in target app - send normal shift+right-click
@@ -127,14 +124,7 @@ CleanupOnExit(ExitReason, ExitCode) {
     ; Store any selected text
     ; WHY: Extended timeout (0.5s → 1s) for slower applications like PowerScribe
     ; TRADEOFF: Slightly slower menu appearance vs better reliability
-    g_SelectedText := ""
-    ClipSaved := ClipboardAll()
-    A_Clipboard := ""
-    Send("^c")
-    if ClipWait(1) {
-        g_SelectedText := A_Clipboard
-    }
-    A_Clipboard := ClipSaved
+    g_SelectedText := RA_CopySelection()
 
     ; Build and show menu
     ; WHY: Conditionally build menu based on tool visibility preferences
@@ -240,6 +230,44 @@ CleanupOnExit(ExitReason, ExitCode) {
     RadAssistMenu.Add("Settings", MenuSettings)
 
     RadAssistMenu.Show()
+}
+
+; -----------------------------------------
+; Is the active window PowerScribe (360 or One) or Notepad?
+; -----------------------------------------
+RA_IsTargetApp() {
+    global TargetApps, TargetAppPattern
+    for app in TargetApps {
+        if WinActive(app)
+            return true
+    }
+    try return RegExMatch(WinGetProcessName("A"), TargetAppPattern) > 0
+    return false
+}
+
+; -----------------------------------------
+; Copy the highlighted text without disturbing the user's clipboard
+; WHY: Ctrl+C sent while Shift is still held (from Shift+Right-click) can be read
+;      as Ctrl+Shift+C and copy nothing. Retry once after Shift is released.
+; -----------------------------------------
+RA_CopySelection() {
+    saved := ClipboardAll()
+    txt := ""
+    Loop 2 {
+        A_Clipboard := ""
+        if (A_Index = 2) {
+            KeyWait("Shift", "T1")
+            KeyWait("Control", "T0.5")
+            Sleep(50)
+        }
+        Send("{Shift up}^c")
+        if ClipWait(A_Index = 1 ? 0.6 : 1.2) {
+            txt := A_Clipboard
+            break
+        }
+    }
+    A_Clipboard := saved
+    return txt
 }
 
 ; -----------------------------------------
@@ -819,16 +847,8 @@ CalcRVLV(*) {
     rvRound := Round(rv, 1)
     lvRound := Round(lv, 1)
 
-    ; Build interpretation
-    if (ratio >= 1.0)
-        interpretation := "significant right heart strain"
-    else if (ratio >= 0.9)
-        interpretation := "suggestive of right heart strain"
-    else
-        interpretation := "within normal limits"
-
-    ; Sentence format: " RV/LV ratio: X (RV Ymm, LV Zmm), interpretation."
-    result := " RV/LV ratio: " ratio " (RV " rvRound "mm, LV " lvRound "mm), " interpretation "."
+    ; Same objective wording as the smart parser (see PE_RVLVInterp)
+    result := " RV/LV ratio: " PE_Fmt(ratio, 2) " (RV " rvRound "mm, LV " lvRound "mm). " PE_RVLVInterp(ratio)
 
     if (ShowCitations)
         result .= " (Meinel et al. Radiology 2015)"
@@ -860,7 +880,7 @@ ShowFleischnerGui() {
     FleischnerGuiObj.Add("Text", "x10 y100", "Number:")
     FleischnerGuiObj.Add("DropDownList", "x130 y97 w120 vFleischNumber Choose1", ["Single", "Multiple"])
     FleischnerGuiObj.Add("Text", "x10 y130", "Risk:")
-    FleischnerGuiObj.Add("DropDownList", "x130 y127 w120 vFleischRisk Choose1", ["Low risk", "High risk"])
+    FleischnerGuiObj.Add("DropDownList", "x130 y127 w120 vFleischRisk Choose1", ["Low and High risk", "Low risk", "High risk"])
     dmChecked := IncludeDatamining ? "Checked" : ""
     FleischnerGuiObj.Add("Checkbox", "x10 y160 w250 vFleischDatamine " dmChecked, "Include datamining phrase (SSM lung nodule)")
     FleischnerGuiObj.Add("Button", "x10 y190 w100", "Get Recommendation").OnEvent("Click", CalcFleischner)
@@ -887,12 +907,20 @@ CalcFleischner(*) {
     }
 
     size := saved.FleischSize + 0
+    risk := saved.FleischRisk
     result := "Fleischner 2017 Recommendation:`n"
-    result .= "Size: " size " mm | " saved.FleischType " | " saved.FleischNumber " | " saved.FleischRisk "`n`n"
+    result .= "Size: " size " mm | " saved.FleischType " | " saved.FleischNumber "`n`n"
 
-    ; Determine recommendation based on 2017 Fleischner guidelines
-    recommendation := GetFleischnerRecommendation(size, saved.FleischType, saved.FleischNumber, saved.FleischRisk)
-    result .= recommendation
+    ; WHY: Risk is usually not known at reading time - give both by default
+    if (risk = "Low risk" || risk = "High risk") {
+        result .= StrUpper(risk) " recommendation:`n"
+        result .= GetFleischnerRecommendation(size, saved.FleischType, saved.FleischNumber, risk)
+    } else {
+        result .= "LOW RISK recommendation:`n"
+        result .= GetFleischnerRecommendation(size, saved.FleischType, saved.FleischNumber, "Low risk")
+        result .= "`n`nHIGH RISK recommendation:`n"
+        result .= GetFleischnerRecommendation(size, saved.FleischType, saved.FleischNumber, "High risk")
+    }
 
     if (saved.FleischDatamine) {
         result .= "`n`n[" DataminingPhrase "]"
@@ -1097,7 +1125,7 @@ ShowFleischnerGuiPrefilled(size, nodeType, number) {
     FleischnerGuiObj.Add("Text", "x10 y100", "Number:")
     FleischnerGuiObj.Add("DropDownList", "x130 y97 w120 vFleischNumber Choose" numberSelect, ["Single", "Multiple"])
     FleischnerGuiObj.Add("Text", "x10 y130", "Risk:")
-    FleischnerGuiObj.Add("DropDownList", "x130 y127 w120 vFleischRisk Choose1", ["Low risk", "High risk"])
+    FleischnerGuiObj.Add("DropDownList", "x130 y127 w120 vFleischRisk Choose1", ["Low and High risk", "Low risk", "High risk"])
     dmChecked := IncludeDatamining ? "Checked" : ""
     FleischnerGuiObj.Add("Checkbox", "x10 y160 w250 vFleischDatamine " dmChecked, "Include datamining phrase")
     FleischnerGuiObj.Add("Button", "x10 y190 w100", "Get Recommendation").OnEvent("Click", CalcFleischner)
@@ -1129,11 +1157,15 @@ GetGuiPosition(&xPos, &yPos, offset := 10) {
 ; WHY: Reduces duplication and ensures clipboard is always restored
 ; TRADEOFF: Slight overhead for save/restore, but safer
 ; -----------------------------------------
-PasteTextPreserveClipboard(text, waitMs := 100) {
+; WHY waitMs = 700: Windows 11 Notepad and PowerScribe read the clipboard
+;      asynchronously; restoring it after only 100 ms made them paste the OLD
+;      clipboard (or nothing).
+PasteTextPreserveClipboard(text, waitMs := 700) {
     ClipSaved := ClipboardAll()
+    A_Clipboard := ""
     A_Clipboard := text
-    ClipWait(0.5)
-    Send("^v")
+    ClipWait(1)
+    Send("{Shift up}{Ctrl up}^v")
     Sleep(waitMs)
     A_Clipboard := ClipSaved
 }
@@ -1155,99 +1187,21 @@ InsertAfterSelection(textToInsert) {
 }
 
 ; -----------------------------------------
-; Utility: Insert text after IMPRESSION: field in document
-; WHY: User wants Fleischner recommendations after the impression section
-; ARCHITECTURE: Uses Find dialog to locate IMPRESSION:, then inserts below
-; TRADEOFF: May not work in all applications; check settings to disable
-; NOTE: If IMPRESSION: not found, falls back to inserting after selection
+; Utility: Insert text at the end of the report (end of the IMPRESSION)
+; WHY: Fleischner recommendations belong after the impression
+; NOTE: Turn off in Settings to insert right after the highlighted text instead
 ; -----------------------------------------
 InsertAtImpression(textToInsert) {
-    ; Save current clipboard and cursor position marker
-    ClipSaved := ClipboardAll()
-
-    ; Copy document to check for IMPRESSION: existence
-    ; NOTE: This briefly exposes full document on clipboard; cleared immediately after check
-    ; TRADEOFF: Faster than incremental search, clipboard cleared right after copy
-    A_Clipboard := ""
-    Send("^a")  ; Select all
-    Sleep(20)
-    Send("^c")  ; Copy
-    ClipWait(0.5)
-    docText := A_Clipboard
-    A_Clipboard := ""  ; Clear clipboard immediately to minimize PHI exposure
-
-    ; CRITICAL: Deselect document text before any further operations
-    ; WHY: Prevents accidental replacement if Find dialog is slow to open
-    Send("{Escape}")
-    Sleep(30)
-    Send("{Right}")
-    Sleep(30)
-
-    ; WHY: Match variations of IMPRESSION header used in different templates
-    ; TRADEOFF: Multiple checks vs comprehensive coverage
-    searchTerm := ""
-    if (InStr(docText, "CLINICAL IMPRESSION:"))
-        searchTerm := "CLINICAL IMPRESSION:"
-    else if (InStr(docText, "IMPRESSIONS:"))
-        searchTerm := "IMPRESSIONS:"
-    else if (InStr(docText, "IMPRESSION:"))
-        searchTerm := "IMPRESSION:"
-    else if (InStr(docText, "IMPRESSION"))
-        searchTerm := "IMPRESSION"  ; Match without colon as fallback
-
-    if (searchTerm = "") {
-        ; IMPRESSION not found - fall back to insert after selection
-        A_Clipboard := ClipSaved  ; Restore clipboard first
-        InsertAfterSelection(textToInsert)
-        ToolTip("IMPRESSION: not found - inserted at cursor")
-        SetTimer(RemoveToolTip, -2000)
-        return
-    }
-
-    ; Go to start of document
-    Send("^{Home}")
-    Sleep(50)
-
-    ; Open Find dialog (Ctrl+F)
-    Send("^f")
-    Sleep(500)  ; WHY: PowerScribe Find dialog can be very slow to open
-
-    ; Clear any previous search and type new search text
-    ; NOTE: ^a here targets the Find dialog's text field, not the document
-    Send("^a")
-    Sleep(50)
-    Send("{Raw}" searchTerm)
-    Sleep(200)
-
-    ; Press Enter to find (or F3/Find Next depending on app)
-    Send("{Enter}")
-    Sleep(150)
-
-    ; Close Find dialog (Escape) - press twice to ensure closed
-    Send("{Escape}")
-    Sleep(100)
-    Send("{Escape}")
-    Sleep(100)
-
-    ; Go to end of line where IMPRESSION: was found
-    Send("{End}")
-    Sleep(50)
-
-    ; Add blank line (Enter twice for spacing)
-    Send("{Enter}{Enter}")
-    Sleep(30)
-
-    ; Set clipboard to text and paste
-    A_Clipboard := textToInsert
-    ClipWait(0.5)
-    Send("^v")
-    Sleep(100)
-
-    ; Restore clipboard
-    A_Clipboard := ClipSaved
-
-    ToolTip("Inserted after IMPRESSION:")
-    SetTimer(RemoveToolTip, -1500)
+    ; WHY: The old version selected/copied the whole report and drove the editor's
+    ;      Find dialog (Ctrl+F), which differs between PowerScribe and Notepad and
+    ;      often pasted nowhere. The IMPRESSION is the last section of the report,
+    ;      so the end of the document is the end of the impression.
+    ; BONUS: The full report is never copied to the clipboard (PHI).
+    Send("^{End}")
+    Sleep(80)
+    PasteTextPreserveClipboard(textToInsert)
+    ToolTip("Inserted at end of report (after IMPRESSION)")
+    SetTimer(RemoveToolTip, -2000)
 }
 
 ; -----------------------------------------
@@ -1288,6 +1242,7 @@ global ConfirmGuiObj := ""
 
 ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     global SmartParseFallbackToGUI, g_ParsedResultText, ConfirmGuiObj
+    Critical()      ; build and show the dialog before any button click can run
 
     g_ParsedResultText := calculatedResult
 
@@ -1337,29 +1292,28 @@ ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     ConfirmGuiObj.Add("Button", "x+10 yp w130", "Cancel").OnEvent("Click", ConfirmCancel)
 
     ConfirmGuiObj.Show("x" (mouseX + 10) " y" (mouseY + 10) " AutoSize")
-    ; keep it on screen
-    WinGetPos(&gx, &gy, &gw, &gh, ConfirmGuiObj.Hwnd)
-    MonitorGetWorkArea(MonitorGetPrimary(), , , &waR, &waB)
-    Loop MonitorGetCount() {
-        MonitorGetWorkArea(A_Index, &l, &tp, &r, &b)
-        if (mouseX >= l && mouseX < r && mouseY >= tp && mouseY < b)
-            waR := r, waB := b
-    }
-    if (gx + gw > waR || gy + gh > waB)
-        ConfirmGuiObj.Move(Min(gx, waR - gw), Min(gy, waB - gh))
 
     ; WHY: PowerScribe/Sectra windows can sit above normal always-on-top windows.
     ;      Force the dialog to the front now and keep it there while it is open.
     ; NOTE: Non-blocking - the buttons do the work, so Shift+Right-click keeps working.
-    RA_Front(ConfirmGuiObj.Hwnd)
-    (lowConf ? btnEdit : btnIns).Focus()      ; Enter = default action, preview text not selected
+    hConfirm := ConfirmGuiObj.Hwnd
+    RA_Front(hConfirm)
+    try (lowConf ? btnEdit : btnIns).Focus()  ; Enter = default action, preview text not selected
+    ; Windows sometimes refuses the first activation; try again shortly after
+    SetTimer(RA_FrontIfNotActive.Bind(hConfirm), -150)
+    SetTimer(RA_FrontIfNotActive.Bind(hConfirm), -600)
     SetTimer(RA_KeepConfirmFront, 300)
+    Critical("Off")
 }
 
 ; Keep the confirmation dialog above other apps' windows while it is open
 RA_KeepConfirmFront() {
     global ConfirmGuiObj
     try {
+        if !IsObject(ConfirmGuiObj) {
+            SetTimer(RA_KeepConfirmFront, 0)
+            return
+        }
         h := ConfirmGuiObj.Hwnd
         if !WinExist("ahk_id " h) {
             SetTimer(RA_KeepConfirmFront, 0)
@@ -1375,7 +1329,35 @@ RA_KeepConfirmFront() {
 ; Bring one of our windows to the very front and give it the keyboard focus.
 ; WHY: Windows blocks focus stealing; briefly attaching to the foreground
 ;      window's input thread is the standard way to be allowed to activate.
+RA_FrontIfNotActive(hwnd) {
+    try {
+        if (WinExist("ahk_id " hwnd) && !WinActive("ahk_id " hwnd))
+            RA_Front(hwnd)
+    }
+}
+
+; Move a window so it is completely visible on the monitor under the mouse
+; WHY: Popups open at the mouse; on multi-monitor / scaled displays they could
+;      land partly or fully off-screen ("can't see it even after Alt+Tab").
+RA_FitOnMouseMonitor(hwnd) {
+    try {
+        CoordMode("Mouse", "Screen")
+        MouseGetPos(&mx, &my)
+        WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
+        l := 0, t := 0, r := A_ScreenWidth, b := A_ScreenHeight
+        Loop MonitorGetCount() {
+            MonitorGetWorkArea(A_Index, &ml, &mt, &mr, &mb)
+            if (mx >= ml && mx < mr && my >= mt && my < mb)
+                l := ml, t := mt, r := mr, b := mb
+        }
+        nx := Max(l, Min(x, r - w)), ny := Max(t, Min(y, b - h))
+        if (nx != x || ny != y)
+            WinMove(nx, ny, , , "ahk_id " hwnd)
+    }
+}
+
 RA_Front(hwnd) {
+    RA_FitOnMouseMonitor(hwnd)
     try {
         DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", -2, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
         DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", -1, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
@@ -1394,11 +1376,26 @@ RA_Front(hwnd) {
 ; Re-activate the report window the user Shift+Right-clicked in, before pasting
 RA_ActivateTarget() {
     global g_TargetHwnd
-    if (g_TargetHwnd && WinExist("ahk_id " g_TargetHwnd)) {
-        WinActivate("ahk_id " g_TargetHwnd)
-        WinWaitActive("ahk_id " g_TargetHwnd, , 1)
-        Sleep(50)
+    t := g_TargetHwnd
+    if (!t || !WinExist("ahk_id " t))
+        return
+    if WinActive("ahk_id " t)          ; usually already active once our dialog closes
+        return
+    ; Fast path: hand focus straight back (allowed because we own the foreground)
+    try {
+        fg := DllCall("GetForegroundWindow", "Ptr")
+        fgThread := fg ? DllCall("GetWindowThreadProcessId", "Ptr", fg, "Ptr", 0, "UInt") : 0
+        myThread := DllCall("GetCurrentThreadId", "UInt")
+        attached := (fgThread && fgThread != myThread) ? DllCall("AttachThreadInput", "UInt", myThread, "UInt", fgThread, "Int", 1) : 0
+        DllCall("SetForegroundWindow", "Ptr", t)
+        if attached
+            DllCall("AttachThreadInput", "UInt", myThread, "UInt", fgThread, "Int", 0)
     }
+    if !WinWaitActive("ahk_id " t, , 0.4) {
+        WinActivate("ahk_id " t)
+        WinWaitActive("ahk_id " t, , 0.6)
+    }
+    Sleep(50)
 }
 
 RA_CloseConfirm() {
@@ -1410,19 +1407,28 @@ RA_CloseConfirm() {
 
 ConfirmInsert(*) {
     global g_SPResult
+    Critical()      ; finish the paste before another Shift+Right-click can start
     r := g_SPResult
-    RA_CloseConfirm()
-    if !IsObject(r)
+    SetTimer(RA_KeepConfirmFront, 0)
+    if !IsObject(r) {
+        RA_CloseConfirm()
         return
+    }
+    ; WHY: Hand focus back to the report window BEFORE closing the dialog. If the
+    ;      dialog closes first, Windows activates the next window in line - often
+    ;      the always-on-top Quick Call panel - and the paste goes nowhere.
     RA_ActivateTarget()
+    try ConfirmGuiObj.Hide()
     if r.atImpression
         InsertAtImpression(r.text)
     else
         InsertAfterSelection(r.text)
+    RA_CloseConfirm()
 }
 
 ConfirmEdit(*) {
     global g_SPResult
+    Critical()
     r := g_SPResult
     RA_CloseConfirm()
     if (IsObject(r) && r.edit)
@@ -1582,20 +1588,29 @@ PE_Volume(text) {
         conf -= 30
 
     res := " This corresponds to a volume of " PE_Fmt(vol) " cc (mL)"
+    ; Size grading ONLY for the prostate (no descriptors for ICH, cysts, other organs)
     if (organ = "prostate") {
-        if (vol < 30)
-            res .= ", within normal limits."
-        else if (vol < 50)
-            res .= ", compatible with an enlarged prostate."
-        else if (vol < 70)
-            res .= ", compatible with a moderately enlarged prostate."
-        else
-            res .= ", compatible with a massively enlarged prostate."
+        g := PE_ProstateGrade(vol)
+        res .= ", " g "."
+        grade := g
     } else {
         res .= "."
     }
     vals := [["Structure", organ != "" ? organ : "(not detected)"], ["Dimensions", PE_DimsText(d) (d.guessed ? "  (units assumed)" : "")], ["Volume", PE_Fmt(vol) " cc"]]
-    return PE_Ok("Ellipsoid Volume", vals, res, conf, ShowEllipsoidVolumeGuiPrefilled.Bind(cm[1], cm[2], cm[3]))
+    if (organ = "prostate")
+        vals.Push(["Grade", "<30 normal, 30-49 mild, 50-79 moderate, 80+ severe"])
+    return PE_Ok(organ = "prostate" ? "Prostate Volume" : "Ellipsoid Volume", vals, res, conf, ShowEllipsoidVolumeGuiPrefilled.Bind(cm[1], cm[2], cm[3]))
+}
+
+; Prostate volume grading (cc): <30 normal, 30-49 mild, 50-79 moderate, >=80 severe
+PE_ProstateGrade(vol) {
+    if (vol < 30)
+        return "normal in size"
+    if (vol < 50)
+        return "compatible with mild prostatomegaly"
+    if (vol < 80)
+        return "compatible with moderate prostatomegaly"
+    return "compatible with severe prostatomegaly"
 }
 
 PE_Organ(s) {
@@ -1639,7 +1654,7 @@ PE_RVLV(text) {
     ; "RV/LV ratio of 1.2" (ratio only)
     else if RegExMatch(t, "i)\bRV\s*(?:/|:|to)\s*LV\b(?:\s*(?:diameter\s*)?ratio)?[^\d]{0,20}" PE_N "(?!\s*[/:]\s*\d)", &m) && (m[1] + 0) < 4 {
         ratio := PE_Fmt(m[1] + 0, 2)
-        res := " RV/LV ratio: " ratio ", " PE_LcFirst(PE_RVLVInterp(ratio))
+        res := " RV/LV ratio: " ratio ". " PE_RVLVInterp(ratio)
         return PE_Ok("RV/LV Ratio", [["Ratio", ratio]], res, 80)
     }
     else {
@@ -1662,23 +1677,26 @@ PE_RVLV(text) {
     if (rvMm < 10 || rvMm > 100 || lvMm < 10 || lvMm > 100)
         conf -= 30
     ratio := PE_Fmt(rvMm / lvMm, 2)
-    interp := PE_LcFirst(PE_RVLVInterp(ratio))
     if (RVLVOutputFormat = "Macro")
-        res := " RV/LV ratio: " ratio " (RV " PE_Fmt(rvMm / 10) "cm, LV " PE_Fmt(lvMm / 10) "cm), " interp
+        res := " RV/LV ratio: " ratio " (RV " PE_Fmt(rvMm / 10) "cm, LV " PE_Fmt(lvMm / 10) "cm). " PE_RVLVInterp(ratio)
     else
-        res := " RV/LV ratio: " ratio " (RV " PE_Fmt(rvMm) "mm, LV " PE_Fmt(lvMm) "mm), " interp
+        res := " RV/LV ratio: " ratio " (RV " PE_Fmt(rvMm) "mm, LV " PE_Fmt(lvMm) "mm). " PE_RVLVInterp(ratio)
     vals := [["RV", PE_Fmt(rv.val, 2) " " rvU], ["LV", PE_Fmt(lv.val, 2) " " lvU], ["Ratio", ratio]]
     return PE_Ok("RV/LV Ratio", vals, res, conf, ShowRVLVGuiPrefilled.Bind(rvMm, lvMm))
 }
 
 PE_LcFirst(s) => StrLower(SubStr(s, 1, 1)) SubStr(s, 2)
 
+; WHY: The RV/LV ratio has no validated mild/moderate/severe grading on CT, so
+;      the text only states what the number shows. It never says "severe" or
+;      diagnoses strain/PE severity - that would prompt calls on stable patients.
+;      Thresholds: <0.9 normal, 0.9-0.99 borderline, >=1.0 elevated.
 PE_RVLVInterp(ratio) {
     if (ratio >= 1.0)
-        return "Significant right heart strain, suggestive of severe PE."
+        return "Elevated (1.0 or greater), compatible with right ventricular dilatation. Correlate clinically and with echocardiography for right heart strain."
     if (ratio >= 0.9)
-        return "Suggestive of right heart strain."
-    return "Within normal limits."
+        return "Borderline (0.9-0.99)."
+    return "Normal (less than 0.9)."
 }
 
 ; ---------------- STENOSIS (NASCET for ICA, % diameter for any vessel) ----------------
@@ -2516,7 +2534,7 @@ ShowSettings() {
     SettingsGuiObj.Add("Text", "x20 y325", "RV/LV format:")
     SettingsGuiObj.Add("DropDownList", "x100 y322 w80 vSetRVLVFormat Choose" rvlvSelect, ["Macro", "Inline"])
     SettingsGuiObj.Add("Text", "x185 y325 w90", "(Macro = cm)")
-    SettingsGuiObj.Add("Checkbox", "x20 y350 w250 vSetFleischnerImpression " fleischnerImprChecked, "Insert Fleischner after IMPRESSION:")
+    SettingsGuiObj.Add("Checkbox", "x20 y350 w250 vSetFleischnerImpression " fleischnerImprChecked, "Insert Fleischner at end of report")
 
     SettingsGuiObj.Add("GroupBox", "x10 y390 w270 h105", "Output Options")
     SettingsGuiObj.Add("Checkbox", "x20 y410 w250 vSetDatamine " dmChecked, "Include datamining phrase by default")
@@ -3684,7 +3702,7 @@ if (QuickCallEnabled)
     QC_Enable()
 
 TrayAbout(*) {
-    MsgBox("RadAssist v2.4`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (``)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk (Macro or Inline format)`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)", "RadAssist", 0x40040)
+    MsgBox("RadAssist v2.4`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (``)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: ratio with normal/borderline/elevated wording`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)", "RadAssist", 0x40040)
 }
 
 TrayReload(*) {

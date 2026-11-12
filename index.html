@@ -1246,7 +1246,7 @@
                         </div>
                         <div class="card-title-group">
                             <h3 class="card-title">RV/LV Ratio</h3>
-                            <p class="card-description">Evaluate right heart strain in pulmonary embolism</p>
+                            <p class="card-description">RV/LV diameter ratio on CT (normal / borderline / elevated)</p>
                         </div>
                     </div>
 
@@ -1633,7 +1633,7 @@
             let resultClass = '';
 
             if (ratio >= 1.0) {
-                interpretation = 'RV/LV ≥ 1.0 indicates right heart strain, concerning for hemodynamically significant PE.';
+                interpretation = 'RV/LV ≥ 1.0 is elevated, compatible with right ventricular dilatation. Correlate clinically and with echocardiography for right heart strain.';
                 resultClass = 'warning';
             } else if (ratio >= 0.9) {
                 interpretation = 'RV/LV 0.9-1.0 is borderline. Clinical correlation recommended.';

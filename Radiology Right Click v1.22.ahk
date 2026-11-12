@@ -2153,7 +2153,7 @@ return
 ; -------------------------------------------------------------
 ; 15) CalculateRVLV - RV/LV Ratio Calculator for CTPA/PE
 ; WHY: RV/LV ratio is a key prognostic marker for pulmonary embolism severity.
-;      Ratio >= 1.0 indicates significant right heart strain.
+;      Ratio >= 1.0 is elevated (RV dilatation); 0.9-0.99 borderline.
 ; ARCHITECTURE: GUI-based input for direct measurement entry with clinical interpretation.
 ; -------------------------------------------------------------
 CalculateRVLV() {
@@ -2239,18 +2239,15 @@ CalculateRVLVRatio:
     result .= "RV/LV Ratio: " . ratio . "`n`n"
 
     ; Clinical interpretation based on user-provided thresholds
+    ; WHY: No validated mild/moderate/severe grading exists for the CT RV/LV ratio;
+    ;      state only what the number shows (no "severe" / strain diagnosis).
     if (ratio >= 1.0) {
-        result .= "Interpretation: Significant right heart strain`n"
-        result .= "- Suggestive of severe pulmonary embolism or chronic pulmonary hypertension.`n"
-        result .= "- Consider ICU admission and advanced therapies."
+        result .= "Interpretation: Elevated (1.0 or greater), compatible with right ventricular dilatation.`n"
+        result .= "- Correlate clinically and with echocardiography for right heart strain."
     } else if (ratio >= 0.9) {
-        result .= "Interpretation: Suggestive of right heart strain`n"
-        result .= "- Ratio 0.9-0.99 is associated with increased risk of adverse events in acute PE.`n"
-        result .= "- Close monitoring recommended."
+        result .= "Interpretation: Borderline (0.9-0.99)."
     } else {
-        result .= "Interpretation: Normal`n"
-        result .= "- RV size normal relative to LV.`n"
-        result .= "- Low risk for RV dysfunction in setting of PE."
+        result .= "Interpretation: Normal (less than 0.9)."
     }
 
     if (ShowCitations = 1) {
