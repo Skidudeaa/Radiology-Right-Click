@@ -41,6 +41,12 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 `Radiology Right Click v1.22.ahk` (and `-local`) run on **AutoHotkey v1.1** (plain right-click menu, Quick Call built in).
 Both are single files that run from OneDrive or a USB stick.
 
+**Feature parity:** the v1.22 scripts include the same Smart Parse engine as RadAssist (ported to
+AutoHotkey v1 in `SmartParse_v1.ahk` and embedded): right-click > **Smart Parse (Auto-detect)** /
+**Smart Parse as...** (volume with prostate grading, ICH, RV/LV, NASCET/stenosis, adrenal, Fleischner,
+follow-up date, TI-RADS, O-RADS) and **Bone Age** (enable in Preferences). The v1 port produces the
+same output as RadAssist on the whole test-phrase set. Preferences now use a two-column layout.
+
 ### What's New in v2.5
 
 - **AutoHotkey v2 conversion** - Full rewrite to AHK v2 syntax for modern compatibility
