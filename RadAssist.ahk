@@ -62,6 +62,12 @@ global ShowICHTools := true
 global ShowDateCalculator := true
 
 ; -----------------------------------------
+; Quick Call (floating always-on-top call panel, see QuickCall.ahk)
+; WHY: Optional module - toggled from Settings, saved to INI
+; -----------------------------------------
+global QuickCallEnabled := true
+
+; -----------------------------------------
 ; Exit Cleanup Handler
 ; WHY: Clear clipboard on exit to prevent PHI exposure
 ; -----------------------------------------
@@ -211,6 +217,8 @@ CleanupOnExit(ExitReason, ExitCode) {
         RadAssistMenu.Add()
 
     RadAssistMenu.Add("Copy Sectra History (Ctrl+Shift+H)", MenuSectraHistory)
+    if (QuickCallEnabled)
+        RadAssistMenu.Add("Quick Call Panel (Ctrl+Alt+P)", MenuQuickCall)
     RadAssistMenu.Add()
     RadAssistMenu.Add("Settings", MenuSettings)
 
@@ -350,6 +358,10 @@ MenuDateCalc(ItemName, ItemPos, MyMenu) {
 
 MenuSectraHistory(ItemName, ItemPos, MyMenu) {
     CopySectraHistory()
+}
+
+MenuQuickCall(ItemName, ItemPos, MyMenu) {
+    QC_ShowPanel()
 }
 
 MenuSettings(ItemName, ItemPos, MyMenu) {
@@ -2761,7 +2773,7 @@ ShowSettings() {
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
     global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
-    global ShowICHTools, ShowDateCalculator
+    global ShowICHTools, ShowDateCalculator, QuickCallEnabled
     global SettingsGuiObj
 
     CoordMode("Mouse", "Screen")
@@ -2784,6 +2796,7 @@ ShowSettings() {
     stenosisChecked := ShowStenosisTools ? "Checked" : ""
     ichChecked := ShowICHTools ? "Checked" : ""
     dateChecked := ShowDateCalculator ? "Checked" : ""
+    qcChecked := QuickCallEnabled ? "Checked" : ""
 
     ; Determine which item to select in dropdown (1-based index)
     smartParseSelect := 1
@@ -2838,9 +2851,12 @@ ShowSettings() {
     SettingsGuiObj.Add("Text", "x20 y460", "Datamining phrase:")
     SettingsGuiObj.Add("Edit", "x110 y457 w160 vSetDMPhrase", DataminingPhrase)
 
-    SettingsGuiObj.Add("Button", "x70 y505 w80", "Save").OnEvent("Click", SaveSettings)
-    SettingsGuiObj.Add("Button", "x160 y505 w80", "Cancel").OnEvent("Click", SettingsGuiClose)
-    SettingsGuiObj.Show("x" xPos " y" yPos " w295 h545")
+    SettingsGuiObj.Add("GroupBox", "x10 y500 w270 h50", "Quick Call")
+    SettingsGuiObj.Add("Checkbox", "x20 y520 w250 vSetQuickCall " qcChecked, "Enable Quick Call panel (Ctrl+Alt+P)")
+
+    SettingsGuiObj.Add("Button", "x70 y560 w80", "Save").OnEvent("Click", SaveSettings)
+    SettingsGuiObj.Add("Button", "x160 y560 w80", "Cancel").OnEvent("Click", SettingsGuiClose)
+    SettingsGuiObj.Show("x" xPos " y" yPos " w295 h600")
     SettingsGuiObj.Title := "Settings"
 }
 
@@ -2855,7 +2871,7 @@ SaveSettings(*) {
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
     global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
-    global ShowICHTools, ShowDateCalculator
+    global ShowICHTools, ShowDateCalculator, QuickCallEnabled
     global PreferencesPath
     global SettingsGuiObj
 
@@ -2882,6 +2898,14 @@ SaveSettings(*) {
     ShowICHTools := saved.SetShowICH
     ShowDateCalculator := saved.SetShowDate
 
+    ; Quick Call - apply immediately (open the panel when newly enabled)
+    wasQuickCall := QuickCallEnabled
+    QuickCallEnabled := saved.SetQuickCall
+    if (QuickCallEnabled && !wasQuickCall)
+        QC_Enable(1)
+    else if (!QuickCallEnabled && wasQuickCall)
+        QC_Disable()
+
     ; Batch all writes together (reduces file operations)
     writeSuccess := true
     writeSuccess := writeSuccess && IniWriteWithRetry("IncludeDatamining", IncludeDatamining)
@@ -2903,6 +2927,7 @@ SaveSettings(*) {
     writeSuccess := writeSuccess && IniWriteWithRetry("ShowStenosisTools", ShowStenosisTools)
     writeSuccess := writeSuccess && IniWriteWithRetry("ShowICHTools", ShowICHTools)
     writeSuccess := writeSuccess && IniWriteWithRetry("ShowDateCalculator", ShowDateCalculator)
+    writeSuccess := writeSuccess && IniWriteWithRetry("QuickCallEnabled", QuickCallEnabled)
 
     if (!writeSuccess)
         MsgBox("Some settings may not have saved. Check file permissions or OneDrive sync status.", "Warning", 48)
@@ -3021,7 +3046,7 @@ LoadPreferences() {
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
     global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
-    global ShowICHTools, ShowDateCalculator
+    global ShowICHTools, ShowDateCalculator, QuickCallEnabled
     global PreferencesPath
 
     ; Use PreferencesPath set by InitPreferencesPath() for OneDrive compatibility
@@ -3045,6 +3070,7 @@ LoadPreferences() {
         ShowStenosisTools := IniRead(PreferencesPath, "Settings", "ShowStenosisTools", "1")
         ShowICHTools := IniRead(PreferencesPath, "Settings", "ShowICHTools", "1")
         ShowDateCalculator := IniRead(PreferencesPath, "Settings", "ShowDateCalculator", "1")
+        QuickCallEnabled := IniRead(PreferencesPath, "Settings", "QuickCallEnabled", "1")
 
         IncludeDatamining := (IncludeDatamining = "1")
         ShowCitations := (ShowCitations = "1")
@@ -3061,6 +3087,7 @@ LoadPreferences() {
         ShowStenosisTools := (ShowStenosisTools = "1")
         ShowICHTools := (ShowICHTools = "1")
         ShowDateCalculator := (ShowDateCalculator = "1")
+        QuickCallEnabled := (QuickCallEnabled = "1")
     }
 
     ; Validate loaded preferences
@@ -3088,6 +3115,15 @@ A_TrayMenu.Add("Settings", MenuSettings)
 A_TrayMenu.Add("Reload", TrayReload)
 A_TrayMenu.Add("Exit", TrayExit)
 A_IconTip := "RadAssist v2.4 - Smart Radiology Tools"
+
+; =========================================
+; Quick Call module (floating always-on-top call panel)
+; NOTE: Included here (after the tray menu is built) so its globals are set
+;       before QC_Enable() runs. Toggle in Settings > Quick Call.
+; =========================================
+#Include %A_ScriptDir%\QuickCall.ahk
+if (QuickCallEnabled)
+    QC_Enable()
 
 TrayAbout(*) {
     MsgBox("RadAssist v2.4`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (``)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk (Macro or Inline format)`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)", "RadAssist", 64)

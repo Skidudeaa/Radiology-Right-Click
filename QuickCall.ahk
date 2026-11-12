@@ -2,9 +2,13 @@
 ; QuickCall v2  (module for Radiology Right Click)
 ; Persistent always-on-top call panel using Google Voice
 ;
-; Use inside RadiologyOCR:  #Include QuickCall.ahk  (bottom of file)
-;                           QC_AddPhoneMenu(m)      (in ShowOCRMenu)
+; Used by RadAssist.ahk:  #Include QuickCall.ahk, then QC_Enable() / QC_Disable()
+;                          (toggled by Settings > "Enable Quick Call panel")
 ; Or double-click this file to run it on its own.
+;
+; The panel is a floating tool window (no taskbar button) that is kept
+; above Sectra / PowerScribe: if another app's window covers it, it is
+; pushed back to the top of the always-on-top band without taking focus.
 ; ============================================================
 #Requires AutoHotkey v2.0
 
@@ -65,29 +69,93 @@ global QC_Entries := [], QC_Gui := "", QC_BtnMap := Map(), QC_Editor := ""
 global QC_Expanded := false, QC_LastCall := "", QC_DialogOpen := 0
 global QC_X := "", QC_Y := "", QC_LastExtWin := 0
 global QC_Pid := DllCall("GetCurrentProcessId")
+global QC_Initialized := false, QC_Enabled := false
+global QC_TickMs := 500     ; how often the panel checks it is still on top
 
-; ================= STARTUP =================
-QC_LoadBook()
-try QC_X := IniRead(QC_IniFile, "Panel", "X", "")
-try QC_Y := IniRead(QC_IniFile, "Panel", "Y", "")
-try QC_Expanded := (IniRead(QC_IniFile, "Panel", "Expanded", "0") = "1")
+; Standalone: double-clicking QuickCall.ahk runs it on its own
+if (A_LineFile = A_ScriptFullPath) {
+    Persistent()
+    QC_Enable()
+}
 
-Hotkey(QC_PopupHotkey, QC_TogglePanel)
-Hotkey(QC_DialSelHotkey, QC_DialSelection)
-Hotkey(QC_LogHotkey, QC_LogCall)
+; ================= ENABLE / DISABLE =================
+QC_Init() {
+    global QC_Initialized, QC_X, QC_Y, QC_Expanded
+    if QC_Initialized
+        return
+    QC_Initialized := true
+    QC_LoadBook()
+    try QC_X := IniRead(QC_IniFile, "Panel", "X", "")
+    try QC_Y := IniRead(QC_IniFile, "Panel", "Y", "")
+    try QC_Expanded := (IniRead(QC_IniFile, "Panel", "Expanded", "0") = "1")
 
-HotIf QC_PanelActive
-Loop 9
-    Hotkey(String(A_Index), QC_MainKey)
-HotIf
+    Hotkey(QC_PopupHotkey, QC_TogglePanel, "Off")
+    Hotkey(QC_DialSelHotkey, QC_DialSelection, "Off")
+    Hotkey(QC_LogHotkey, QC_LogCall, "Off")
+    HotIf(QC_PanelActive)
+    Loop 9
+        Hotkey(String(A_Index), QC_MainKey, "Off")
+    HotIf()
+    OnExit(QC_OnExit)
+}
 
-A_TrayMenu.Add()
-A_TrayMenu.Add("Quick Call panel", QC_ShowPanel)
-A_TrayMenu.Add("Edit phone numbers", QC_ShowEditor)
-OnExit(QC_OnExit)
-SetTimer(QC_Tick, 750)
-if QC_OpenAtStart
-    QC_BuildPanel()
+; showPanel: -1 = follow QC_OpenAtStart, 0 = don't open, 1 = open now
+QC_Enable(showPanel := -1) {
+    global QC_Enabled
+    QC_Init()
+    if !QC_Enabled {
+        QC_Enabled := true
+        QC_SetHotkeys("On")
+        QC_SetTray(true)
+        SetTimer(QC_Tick, QC_TickMs)
+    }
+    if (showPanel = 1 || (showPanel = -1 && QC_OpenAtStart))
+        QC_ShowPanel()
+}
+
+QC_Disable() {
+    global QC_Enabled, QC_Gui
+    if !QC_Enabled
+        return
+    QC_Enabled := false
+    SetTimer(QC_Tick, 0)
+    QC_SetHotkeys("Off")
+    QC_SetTray(false)
+    if IsObject(QC_Editor)
+        try QC_Editor.Destroy()
+    QC_SetEditor("")
+    if IsObject(QC_Gui) {
+        QC_SavePos()
+        try QC_Gui.Destroy()
+        QC_Gui := ""
+    }
+}
+
+QC_SetHotkeys(state) {
+    Hotkey(QC_PopupHotkey, state)
+    Hotkey(QC_DialSelHotkey, state)
+    Hotkey(QC_LogHotkey, state)
+    HotIf(QC_PanelActive)
+    Loop 9
+        Hotkey(String(A_Index), state)
+    HotIf()
+}
+
+QC_SetTray(add) {
+    for name in ["Quick Call panel", "Edit phone numbers"] {
+        try A_TrayMenu.Delete(name)
+    }
+    if !add
+        return
+    try {
+        ; RadAssist tray: put the items just above Reload
+        A_TrayMenu.Insert("Reload", "Quick Call panel", QC_ShowPanel)
+        A_TrayMenu.Insert("Reload", "Edit phone numbers", QC_ShowEditor)
+    } catch {
+        A_TrayMenu.Add("Quick Call panel", QC_ShowPanel)
+        A_TrayMenu.Add("Edit phone numbers", QC_ShowEditor)
+    }
+}
 
 ; ================= RIGHT-CLICK MENU HOOK =================
 QC_AddPhoneMenu(parentMenu) {
@@ -171,12 +239,14 @@ QC_BuildPanel() {
     QC_BtnMap := Map()
     grps := QC_Groups()
 
-    g := Gui("+AlwaysOnTop -MaximizeBox", "Quick Call")
+    ; +ToolWindow = floating panel with no taskbar button; it is hidden (not
+    ; minimized) by Esc / X and comes back with Ctrl+Alt+P, the menu, or tray.
+    g := Gui("+AlwaysOnTop +ToolWindow -MaximizeBox -MinimizeBox", "Quick Call")
     g.BackColor := "202020"
     g.MarginX := 10, g.MarginY := 10
     g.SetFont("s11", "Segoe UI")
     g.OnEvent("Close", QC_OnPanelClose)
-    g.OnEvent("Escape", (*) => QC_Gui.Minimize())
+    g.OnEvent("Escape", (*) => (QC_SavePos(), QC_Gui.Hide()))
     g.OnEvent("ContextMenu", QC_PanelContext)
 
     BtnW := 150, BtnH := 42, Gap := 8
@@ -230,6 +300,7 @@ QC_BuildPanel() {
 
     QC_Gui := g
     g.Show(QC_ValidPos(QC_X, QC_Y) ? "x" QC_X " y" QC_Y : "")
+    QC_RaiseTop(g.Hwnd)
 }
 
 QC_ShowPanel(*) {
@@ -242,6 +313,7 @@ QC_ShowPanel(*) {
         QC_Gui.Restore()
     else
         QC_Gui.Show()
+    QC_RaiseTop(h)
 }
 
 QC_TogglePanel(*) {
@@ -250,12 +322,12 @@ QC_TogglePanel(*) {
         return
     }
     h := QC_Gui.Hwnd
-    if !DllCall("IsWindowVisible", "Ptr", h)
-        QC_Gui.Show()
-    else if (WinGetMinMax(h) = -1)
-        QC_Gui.Restore()
-    else
-        QC_Gui.Minimize()
+    if (!DllCall("IsWindowVisible", "Ptr", h) || WinGetMinMax(h) = -1) {
+        QC_ShowPanel()
+    } else {
+        QC_SavePos()
+        QC_Gui.Hide()
+    }
 }
 
 QC_ToggleTechs(*) {
@@ -329,8 +401,54 @@ QC_Tick() {
             return
         if (WinGetPID("A") = QC_Pid)   ; one of our own windows or menus is active
             return
+        ; Re-assert topmost every tick (cheap, no flicker)
+        DllCall("SetWindowPos", "Ptr", h, "Ptr", -1, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+        ; Sectra / PowerScribe windows that are themselves topmost can still sit
+        ; above us; if anything covers the panel, bump it to the top of the band.
+        if QC_IsObscured(h)
+            QC_RaiseTop(h)
+    }
+}
+
+; Move the panel to the very top of the always-on-top band without activating it.
+; Toggling NOTOPMOST -> TOPMOST is what lifts it above other topmost windows.
+QC_RaiseTop(h) {
+    ; 0x13 = SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
+    try {
+        DllCall("SetWindowPos", "Ptr", h, "Ptr", -2, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
         DllCall("SetWindowPos", "Ptr", h, "Ptr", -1, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
     }
+}
+
+; True if another application's window is drawn over part of the panel.
+; Shell UI (taskbar, Start, Alt+Tab, menus, tooltips) and our own windows are ignored.
+QC_IsObscured(h) {
+    static shellCls := "i)^(Shell_TrayWnd|Shell_SecondaryTrayWnd|#32768|tooltips_class32|NotifyIconOverflowWindow"
+        . "|TopLevelWindowForOverflowXamlIsland|Windows\.UI\.Core\.CoreWindow|ForegroundStaging"
+        . "|MultitaskingViewFrame|XamlExplorerHostIslandWindow|TaskListThumbnailWnd|Progman|WorkerW)$"
+    try WinGetPos(&x, &y, &w, &hh, h)
+    catch
+        return false
+    pts := [[x + w // 2, y + hh // 2], [x + 12, y + 12], [x + w - 12, y + 12]
+          , [x + 12, y + hh - 12], [x + w - 12, y + hh - 12]]
+    for p in pts {
+        hit := DllCall("WindowFromPoint", "Int64", (p[2] << 32) | (p[1] & 0xFFFFFFFF), "Ptr")
+        if !hit
+            continue
+        root := DllCall("GetAncestor", "Ptr", hit, "UInt", 2, "Ptr")   ; GA_ROOT
+        if (!root || root = h)
+            continue
+        try {
+            if (WinGetPID("ahk_id " root) = QC_Pid)
+                continue
+            if RegExMatch(WinGetClass("ahk_id " root), shellCls)
+                continue
+        } catch {
+            continue
+        }
+        return true
+    }
+    return false
 }
 
 QC_OwnIfVisible() {

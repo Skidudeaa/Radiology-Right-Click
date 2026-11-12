@@ -61,7 +61,7 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 
 ### Desktop App (Windows)
 1. **Install AutoHotkey v2** from [autohotkey.com](https://www.autohotkey.com/)
-2. **Download** `RadAssist.ahk` to any folder
+2. **Download** `RadAssist.ahk` and `QuickCall.ahk` to the same folder
 3. **Double-click** to run - look for the green "H" icon in your system tray
 4. **Use it**: In PowerScribe or Notepad, highlight text with measurements, then **Shift + Right-click**
 
@@ -78,6 +78,18 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 | `` ` `` (backtick) | Pause/Resume script |
 | `Ctrl+Shift+H` | Copy Sectra history |
 | `Shift+Right-click` | Open RadAssist menu |
+| `Ctrl+Alt+P` | Show / hide the Quick Call panel |
+| `Ctrl+Alt+D` | Dial the highlighted phone number |
+| `Ctrl+Alt+L` | Paste a critical-result call statement for the last call |
+
+### Quick Call Panel
+A floating, always-on-top call panel (Google Voice) built in from `QuickCall.ahk`.
+- Stays **in front of Sectra and PowerScribe**: it is a tool window that re-raises itself
+  (without stealing focus) whenever another app's window covers it
+- Big buttons for the main numbers (keys `1`-`9` while the panel is focused), **+ Techs** for per-site tech numbers
+- **Dial #...**, **Log call** (critical-result statement), **Edit #s** (phone book in `QuickCall_PhoneBook.txt`)
+- `Esc` or the X hides it; bring it back with `Ctrl+Alt+P`, the Shift+Right-click menu, or the tray menu
+- Turn it on/off in **Settings → Quick Call → Enable Quick Call panel**
 
 ## Settings (Desktop)
 
@@ -87,6 +99,7 @@ Right-click the tray icon → **Settings** to customize:
 - RV/LV output format (Inline vs Macro)
 - Default measurement units (cm/mm)
 - Tool visibility (show/hide individual calculators)
+- Quick Call panel on/off
 
 ## Troubleshooting
 
