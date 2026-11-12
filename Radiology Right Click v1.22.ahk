@@ -4498,6 +4498,8 @@ QC_Init() {
     QC_Collapsed := (col = "1")
     QC_CW := 0, QC_CH := 0
     OnExit("QC_OnExit")
+    OnMessage(0xA3, "QC_OnDblClick")      ; double-click title bar
+    OnMessage(0x203, "QC_OnDblClick")     ; double-click header strip
 }
 
 ; showPanel: -1 = follow QC_OpenAtStart, 0 = don't open, 1 = open now
@@ -4678,7 +4680,7 @@ QC_BuildPanel(activate := true) {
     Gui, QCPanel:Add, Button, x8 y6 w30 h26 gQC_BtnCollapse HwndhT, % (QC_Collapsed ? "+" : "-")
     QC_CToggle := hT
     Gui, QCPanel:Font, s9 norm c9FC5E8
-    Gui, QCPanel:Add, Text, x46 y12 w220 h18 BackgroundTrans HwndhH, % (QC_Collapsed ? "Quick Call (click + to expand)" : "Click a name to call   Ctrl+Alt+P hide")
+    Gui, QCPanel:Add, Text, x46 y12 w220 h18 BackgroundTrans gQC_HintClick HwndhH, % (QC_Collapsed ? "Quick Call" : "Click a name to call   Ctrl+Alt+P hide")
     QC_CHint := hH
 
     Gui, QCPanel:Font, s11 norm cDefault
@@ -4720,7 +4722,8 @@ QC_BuildPanel(activate := true) {
     h := (QC_IsNum(QC_H) && QC_H >= nat * 0.55) ? QC_H : nat
     if (QC_Collapsed) {
         QC_SetBodyVisible(false)
-        h := QC_CollapsedH()
+        w := QC_CollapsedW(), h := QC_CollapsedH()
+        QC_MoveCtl(QC_CHint, 46, 12, w - 52, 18)
     } else {
         QC_Layout(w, h)
     }
@@ -4765,6 +4768,30 @@ QC_DefaultW() {
 
 QC_CollapsedH() {
     return 38
+}
+
+QC_CollapsedW() {      ; collapsed = small rectangle: [+] and "Quick Call"
+    return 175
+}
+
+; Double-click on the panel's title bar (or its empty header strip) collapses/expands it
+QC_OnDblClick(wParam, lParam, msg, hwnd) {
+    if (!QC_PanelHwnd || hwnd != QC_PanelHwnd)
+        return
+    if (msg = 0xA3 && wParam = 2) {            ; WM_NCLBUTTONDBLCLK on HTCAPTION
+        QC_ToggleCollapse()
+        return 0
+    }
+    if (msg = 0x203 && ((lParam >> 16) & 0xFFFF) < 38) {   ; WM_LBUTTONDBLCLK in the top strip
+        QC_ToggleCollapse()
+        return 0
+    }
+}
+
+; Double-click on the header text
+QC_HintClick(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    if (GuiEvent = "DoubleClick")
+        QC_ToggleCollapse()
 }
 
 ; Height when nothing is stretched (fixed gaps + natural button heights)
@@ -4860,7 +4887,7 @@ QC_Panel_Size(GuiHwnd := 0, EventInfo := 0, Width := 0, Height := 0) {
     QC_Layout(Width, Height)
 }
 
-; The [+/-] button: collapse the panel to a thin bar, or expand it again
+; The [+/-] button or a double-click on the header: collapse to a small rectangle, or expand
 QC_ToggleCollapse() {
     cw := QC_CW, ch := QC_CH
     if (!QC_Collapsed)
@@ -4868,16 +4895,18 @@ QC_ToggleCollapse() {
     QC_Collapsed := !QC_Collapsed
     IniWrite, % (QC_Collapsed ? 1 : 0), %QC_IniFile%, Panel, Collapsed
     GuiControl, QCPanel:, %QC_CToggle%, % (QC_Collapsed ? "+" : "-")
-    GuiControl, QCPanel:, %QC_CHint%, % (QC_Collapsed ? "Quick Call (click + to expand)" : "Click a name to call   Ctrl+Alt+P hide")
+    GuiControl, QCPanel:, %QC_CHint%, % (QC_Collapsed ? "Quick Call" : "Click a name to call   Ctrl+Alt+P hide")
     if (QC_Collapsed) {
         QC_SetBodyVisible(false)
-        h := QC_CollapsedH()
-        Gui, QCPanel:Show, NoActivate w%cw% h%h%
+        w := QC_CollapsedW(), h := QC_CollapsedH()
+        QC_MoveCtl(QC_CHint, 46, 12, w - 52, 18)
+        Gui, QCPanel:Show, NoActivate w%w% h%h%
     } else {
+        w := (QC_IsNum(QC_W) && QC_W >= 150) ? QC_W : QC_DefaultW()
         h := (QC_IsNum(QC_H) && QC_H > QC_CollapsedH() + 20) ? QC_H : QC_NaturalH()
-        QC_Layout(cw, h)
+        QC_Layout(w, h)
         QC_SetBodyVisible(true)
-        Gui, QCPanel:Show, NoActivate w%cw% h%h%
+        Gui, QCPanel:Show, NoActivate w%w% h%h%
         QC_FitOnScreen()
     }
     QC_SavePos()
