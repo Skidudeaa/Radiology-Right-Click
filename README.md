@@ -61,7 +61,7 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 
 ### Desktop App (Windows)
 1. **Install AutoHotkey v2** from [autohotkey.com](https://www.autohotkey.com/)
-2. **Download** `RadAssist.ahk` and `QuickCall.ahk` to the same folder
+2. **Download** `RadAssist.ahk` to any folder (Quick Call is built in; extract the ZIP first)
 3. **Double-click** to run - look for the green "H" icon in your system tray
 4. **Use it**: In PowerScribe or Notepad, highlight text with measurements, then **Shift + Right-click**
 
@@ -83,7 +83,7 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 | `Ctrl+Alt+L` | Paste a critical-result call statement for the last call |
 
 ### Quick Call Panel
-A floating, always-on-top call panel (Google Voice) built in from `QuickCall.ahk`.
+A floating, always-on-top call panel (Google Voice), built into `RadAssist.ahk` (`QuickCall.ahk` is the same code as a standalone script).
 - Stays **in front of Sectra and PowerScribe**: it is a tool window that re-raises itself
   (without stealing focus) whenever another app's window covers it
 - Big buttons for the main numbers (keys `1`-`9` while the panel is focused), **+ Techs** for per-site tech numbers
