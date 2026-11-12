@@ -34,6 +34,7 @@ global ShowArterialAge := true
 global ShowContrastPremedication := true
 global ShowFleischnerCriteria := true
 global ShowNASCETCalculator := true
+global QuickCallEnabled := false   ; Quick Call floating phone panel (QuickCall_v1.ahk) - opens Google Voice links, off by default in -local
 
 ; -------------- NEW/CHANGED CODE --------------
 ; Menu-sorting-related Globals
@@ -109,6 +110,7 @@ LoadPreferencesFromFile() {
         IniRead, ShowContrastPremedication, %preferencesFile%, Calculations, ShowContrastPremedication, 1
         IniRead, ShowFleischnerCriteria, %preferencesFile%, Calculations, ShowFleischnerCriteria, 1
         IniRead, ShowNASCETCalculator, %preferencesFile%, Calculations, ShowNASCETCalculator, 1
+        IniRead, QuickCallEnabled, %preferencesFile%, QuickCall, Enabled, 0
 
         ; --- [Script] section ---
         IniRead, PauseDuration, %preferencesFile%, Script, PauseDuration, 180000
@@ -149,6 +151,7 @@ LoadPreferencesFromFile() {
         ShowContrastPremedication := (ShowContrastPremedication = "1")
         ShowFleischnerCriteria := (ShowFleischnerCriteria = "1")
         ShowNASCETCalculator := (ShowNASCETCalculator = "1")
+        QuickCallEnabled := (QuickCallEnabled = "1")
         PauseDuration += 0
 
         ; Load frequency data
@@ -159,6 +162,10 @@ LoadPreferencesFromFile() {
 }
 LoadPreferencesFromFile()
 InitializeRecommendations()  ; For Fleischner
+
+; Quick Call floating phone panel (functions live in QuickCall_v1.ahk, #Included at end)
+if (QuickCallEnabled)
+    QC_Enable()
 
 ; -------------------------------------------------------------------------
 ; Load stored frequency data from .ini
@@ -305,6 +312,8 @@ CreateCustomMenu() {
 
     ; Final items (always at bottom)
     Menu, CustomMenu, Add
+    if (QuickCallEnabled)
+        Menu, CustomMenu, Add, Quick Call Panel (Ctrl+Alt+P), QC_MenuShow
     Menu, CustomMenu, Add, Pause Script, PauseScript
     Menu, CustomMenu, Add, Preferences, ShowPreferences
 }
@@ -728,7 +737,7 @@ ShowPreferences() {
 
     ; Increased height to accommodate new elements
     guiW := 300
-    guiH := 860
+    guiH := 890
     xPos := px + 10
     yPos := py + 10
     if (xPos + guiW > workAreaRight)
@@ -802,6 +811,8 @@ ShowPreferences() {
     Gui, Add, Checkbox, x10 y%y% w200 vShowFleischnerCriteria Checked%ShowFleischnerCriteria%, Fleischner Criteria
     y += 30
     Gui, Add, Checkbox, x10 y%y% w200 vShowNASCETCalculator Checked%ShowNASCETCalculator%, NASCET Calculator
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w260 vQuickCallEnabled Checked%QuickCallEnabled%, Quick Call Panel (Ctrl+Alt+P)
 
     ; Pause duration
     y += 40
@@ -875,6 +886,7 @@ SavePreferences:
 
     SavePreferencesToFile()
     Gui, Destroy
+    QC_ApplyEnabled(QuickCallEnabled)   ; turn the Quick Call panel on/off now
 return
 
 PreferencesGuiClose:
@@ -935,6 +947,7 @@ SavePreferencesToFile() {
     IniWrite, %ShowContrastPremedication%, %tempFile%, Calculations, ShowContrastPremedication
     IniWrite, %ShowFleischnerCriteria%, %tempFile%, Calculations, ShowFleischnerCriteria
     IniWrite, %ShowNASCETCalculator%, %tempFile%, Calculations, ShowNASCETCalculator
+    IniWrite, %QuickCallEnabled%, %tempFile%, QuickCall, Enabled
     IniWrite, %ShowSpellCheck%, %tempFile%, Calculations, ShowSpellCheck
 
     ; Write script settings
@@ -3306,5 +3319,8 @@ return
 ; End of Script
 ; ------------------------------------------
 ExitApp
+
+; Quick Call floating phone panel (AHK v1 module). Must stay after ExitApp.
+#Include %A_ScriptDir%\QuickCall_v1.ahk
 
 

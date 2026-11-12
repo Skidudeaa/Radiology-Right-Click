@@ -36,6 +36,7 @@ global ShowFleischnerCriteria := true
 global ShowNASCETCalculator := true
 global ShowRVLVCalculator := true
 global ShowSpellCheck := true
+global QuickCallEnabled := true   ; Quick Call floating phone panel (QuickCall_v1.ahk)
 
 ; -------------- NEW/CHANGED CODE --------------
 ; Menu-sorting-related Globals
@@ -176,6 +177,7 @@ LoadPreferencesFromFile() {
 		
 		; [Spell Check]
 		IniRead, ShowSpellCheck, %preferencesFile%, Calculations, ShowSpellCheck, 1
+		IniRead, QuickCallEnabled, %preferencesFile%, QuickCall, Enabled, 1
 		
 
         ; Convert string "1" to boolean true, etc.
@@ -202,6 +204,7 @@ LoadPreferencesFromFile() {
         ShowRVLVCalculator := (ShowRVLVCalculator = "1")
         PauseDuration += 0
 		ShowSpellCheck := (ShowSpellCheck = "1")
+		QuickCallEnabled := (QuickCallEnabled = "1")
 
         ; Load frequency data
         LoadMenuFrequencies()
@@ -211,6 +214,10 @@ LoadPreferencesFromFile() {
 }
 LoadPreferencesFromFile()
 InitializeRecommendations()  ; For Fleischner
+
+; Quick Call floating phone panel (functions live in QuickCall_v1.ahk, #Included at end)
+if (QuickCallEnabled)
+    QC_Enable()
 
 ; -------------------------------------------------------------------------
 ; Load stored frequency data from .ini
@@ -360,6 +367,8 @@ CreateCustomMenu() {
 
     ; Final items (always at bottom)
     Menu, CustomMenu, Add
+    if (QuickCallEnabled)
+        Menu, CustomMenu, Add, Quick Call Panel (Ctrl+Alt+P), QC_MenuShow
     Menu, CustomMenu, Add, Pause Script, PauseScript
     Menu, CustomMenu, Add, Preferences, ShowPreferences
 }
@@ -824,7 +833,7 @@ ShowPreferences() {
 
     ; Increased height to accommodate new elements
     guiW := 300
-    guiH := 860
+    guiH := 890
     xPos := px + 10
     yPos := py + 10
     if (xPos + guiW > workAreaRight)
@@ -902,6 +911,8 @@ ShowPreferences() {
     Gui, Add, Checkbox, x10 y%y% w200 vShowRVLVCalculator Checked%ShowRVLVCalculator%, RV/LV Ratio Calculator
 	y += 30
 	Gui, Add, Checkbox, x10 y%y% w200 vShowSpellCheck Checked%ShowSpellCheck%, Spell Check
+    y += 30
+    Gui, Add, Checkbox, x10 y%y% w260 vQuickCallEnabled Checked%QuickCallEnabled%, Quick Call Panel (Ctrl+Alt+P)
 
     ; Pause duration
     y += 40
@@ -975,6 +986,7 @@ SavePreferences:
 
     SavePreferencesToFile()
     Gui, Destroy
+    QC_ApplyEnabled(QuickCallEnabled)   ; turn the Quick Call panel on/off now
 return
 
 PreferencesGuiClose:
@@ -1053,6 +1065,7 @@ SavePreferencesToFile() {
     IniWrite, %ShowNASCETCalculator%, %tempFile%, Calculations, ShowNASCETCalculator
     IniWrite, %ShowRVLVCalculator%, %tempFile%, Calculations, ShowRVLVCalculator
     IniWrite, %ShowSpellCheck%, %tempFile%, Calculations, ShowSpellCheck
+    IniWrite, %QuickCallEnabled%, %tempFile%, QuickCall, Enabled
 
     ; Write script settings
     IniWrite, %PauseDuration%, %tempFile%, Script, PauseDuration
@@ -4406,5 +4419,8 @@ return
 ; End of Script
 ; ------------------------------------------
 ExitApp
+
+; Quick Call floating phone panel (AHK v1 module). Must stay after ExitApp.
+#Include %A_ScriptDir%\QuickCall_v1.ahk
 
 
