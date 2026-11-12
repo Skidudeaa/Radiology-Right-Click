@@ -68,9 +68,27 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 ## How to Use (Desktop)
 
 ### Smart Parsing (Fastest Method)
-1. Highlight text containing measurements (e.g., "prostate measures 4.2 x 3.1 x 3.5 cm")
-2. **Shift + Right-click** → Choose "Quick Parse" or a specific smart parser
-3. Review the parsed result → Click "Insert" to add it to your report
+1. Highlight the dictated sentence(s) (e.g., "The prostate gland measures 4.5 x 3.2 x 4.1 cm.")
+2. **Shift + Right-click** → **Smart Parse (Auto-detect)** (or **Smart Parse as...** to force a calculator)
+3. Review the parsed values and the text to be inserted → Click "Insert"
+
+Auto-detect recognizes normal dictation, for example:
+
+| Dictation | Calculation |
+|-----------|-------------|
+| The prostate gland measures 4.5 x 3.2 x 4.1 cm. | Ellipsoid volume (+ prostate size interpretation) |
+| Right ovarian cyst measuring 32 x 24 x 28 mm. | Ellipsoid volume |
+| Intraparenchymal hemorrhage measuring 4.2 x 2.8 x 3.5 cm. | ICH volume (ABC/2) |
+| The right ventricle measures 4.2 cm and the left ventricle measures 3.8 cm. | RV/LV ratio |
+| The proximal ICA residual lumen measures 1.2 mm and the normal distal cervical ICA measures 4.5 mm. | NASCET |
+| The SMA has a focal narrowing measuring 2 mm with a normal distal caliber of 6 mm. | Vessel stenosis % |
+| 45 HU on noncontrast, 85 HU on portal venous phase, and 50 HU on 15-minute delayed phase. | Adrenal washout |
+| 7 mm solid noncalcified pulmonary nodule in the right upper lobe. | Fleischner 2017 (repeat mentions in the impression are not double-counted) |
+| Recommend follow-up ultrasound in 6 months. | Follow-up due date |
+
+**Units:** each number keeps its own unit, so cm and mm can be mixed freely ("4.5 cm x 32 mm x 41 mm",
+"distal ICA 0.5 cm, stenosis 3 mm"). Numbers without units are guessed (large values = mm) and flagged
+as low confidence; the default can be set in Settings.
 
 ### Keyboard Shortcuts
 | Key | Action |
@@ -86,6 +104,8 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 A floating, always-on-top call panel (Google Voice), built into `RadAssist.ahk` (`QuickCall.ahk` is the same code as a standalone script).
 - Stays **in front of Sectra and PowerScribe**: it is a tool window that re-raises itself
   (without stealing focus) whenever another app's window covers it
+- **Resizable**: drag any edge; buttons stretch to fit. The **[-] / [+]** button at the top collapses the
+  panel to a thin bar and expands it again (size and state are remembered)
 - Big buttons for the main numbers (keys `1`-`9` while the panel is focused), **+ Techs** for per-site tech numbers
 - **Dial #...**, **Log call** (critical-result statement), **Edit #s** (phone book in `QuickCall_PhoneBook.txt`)
 - `Esc` or the X hides it; bring it back with `Ctrl+Alt+P`, the Shift+Right-click menu, or the tray menu

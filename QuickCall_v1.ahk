@@ -11,7 +11,7 @@
 ; Sectra / PowerScribe: if another app's window covers it, it is pushed back to
 ; the top of the always-on-top band without taking focus.
 ;
-; Requires AutoHotkey v1.1.25 or newer (portable AutoHotkey.exe on OneDrive is fine).
+; Requires AutoHotkey v1.1.27 or newer (portable AutoHotkey.exe on OneDrive is fine).
 ; This file is plain ASCII on purpose so AHK v1 reads it correctly with no BOM.
 ;
 ; NOTE: This file has no auto-execute code when #Included (it sits after the
@@ -28,6 +28,8 @@ global QC_Entries, QC_BtnMap, QC_Expanded, QC_LastCall, QC_DialogOpen
 global QC_X, QC_Y, QC_LastExtWin, QC_Pid, QC_PanelHwnd, QC_EditorHwnd
 global QC_CtxEntry, QC_Work
 global QC_EdLV, QC_EdSec, QC_EdLab, QC_EdNum      ; editor GUI control variables
+global QC_Collapsed, QC_W, QC_H, QC_CW, QC_CH       ; panel size / collapse state
+global QC_CMain, QC_CHeads, QC_CCols, QC_CBottom, QC_CTechs, QC_CToggle, QC_CHint, QC_NMain, QC_MaxRows
 
 ; ================= STANDALONE =================
 ; Only reached when this file is run directly (when #Included it is after ExitApp)
@@ -81,6 +83,11 @@ QC_Init() {
     IniRead, QC_Y, %QC_IniFile%, Panel, Y, %A_Space%
     IniRead, exp, %QC_IniFile%, Panel, Expanded, 0
     QC_Expanded := (exp = "1")
+    IniRead, QC_W, %QC_IniFile%, Panel, W, %A_Space%
+    IniRead, QC_H, %QC_IniFile%, Panel, H, %A_Space%
+    IniRead, col, %QC_IniFile%, Panel, Collapsed, 0
+    QC_Collapsed := (col = "1")
+    QC_CW := 0, QC_CH := 0
     OnExit("QC_OnExit")
 }
 
@@ -240,6 +247,9 @@ QC_IsValidNum(v) {
 }
 
 ; ================= PANEL =================
+; Layout: [+/-] collapse button on top, main numbers (2 columns), "+ Techs" toggle,
+; optional tech columns, then Dial / Log / Edit. The window can be resized:
+; buttons stretch to the new width and button heights scale to the new height.
 QC_BuildPanel(activate := true) {
     prevGui := A_DefaultGui
     if (QC_PanelHwnd) {
@@ -247,70 +257,225 @@ QC_BuildPanel(activate := true) {
         Gui, QCPanel:Destroy
         QC_PanelHwnd := 0
     }
-    QC_BtnMap := {}
+    QC_BtnMap := {}, QC_CMain := [], QC_CHeads := [], QC_CCols := [], QC_CBottom := []
     grps := QC_Groups()
+    QC_NMain := grps.main.Length(), QC_MaxRows := 0
 
     ; +ToolWindow = floating panel with no taskbar button; Esc / X hide it and it
     ; comes back with Ctrl+Alt+P, the right-click menu, or the tray menu.
-    Gui, QCPanel:New, +AlwaysOnTop +ToolWindow -MaximizeBox -MinimizeBox +HwndhPanel +LabelQC_Panel_, Quick Call
+    Gui, QCPanel:New, +AlwaysOnTop +ToolWindow +Resize -MaximizeBox -MinimizeBox +MinSize150x40 +HwndhPanel +LabelQC_Panel_, Quick Call
     Gui, QCPanel:Color, 202020
-    Gui, QCPanel:Margin, 10, 10
-    Gui, QCPanel:Font, s11, Segoe UI
+    Gui, QCPanel:Font, s12 bold, Segoe UI
+    Gui, QCPanel:Add, Button, x8 y6 w30 h26 gQC_BtnCollapse HwndhT, % (QC_Collapsed ? "+" : "-")
+    QC_CToggle := hT
+    Gui, QCPanel:Font, s9 norm c9FC5E8
+    Gui, QCPanel:Add, Text, x46 y12 w220 h18 BackgroundTrans HwndhH, % (QC_Collapsed ? "Quick Call (click + to expand)" : "1-9 to dial   Ctrl+Alt+P hide")
+    QC_CHint := hH
 
-    BtnW := 150, BtnH := 42, Gap := 8
+    Gui, QCPanel:Font, s11 norm cDefault
     for i, e in grps.main {
-        if (i = 1)
-            opt := "xm ym"
-        else if (Mod(i, 2) = 1)
-            opt := "xm y+" Gap
-        else
-            opt := "x+" Gap " yp"
         txt := (i <= 9 ? i "   " : "") e.label (e.num = "" ? " (add #)" : "")
-        Gui, QCPanel:Add, Button, %opt% w%BtnW% h%BtnH% gQC_BtnClick HwndhB, % txt
+        Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnClick HwndhB, % txt
         QC_BtnMap[hB + 0] := e
+        QC_CMain.Push(hB)
     }
-
-    fullW := BtnW * 2 + Gap
     Gui, QCPanel:Font, s10
-    opt := grps.main.Length() ? "xm y+12" : "xm ym"
-    Gui, QCPanel:Add, Button, %opt% w%fullW% h30 gQC_BtnTechs HwndhTechs, % (QC_Expanded ? "-   Techs" : "+   Techs")
-    GuiControlGet, tb, QCPanel:Pos, %hTechs%
-    bottom := tbY + tbH
-
+    Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnTechs HwndhTechs, % (QC_Expanded ? "-   Techs" : "+   Techs")
+    QC_CTechs := hTechs
     if (QC_Expanded) {
-        ColW := 150, RowH := 32
         for k, sec in grps.secs {
-            cx := 10 + (k - 1) * (ColW + Gap)
-            cy := tbY + tbH + 10
             Gui, QCPanel:Font, s10 bold c9FC5E8
-            Gui, QCPanel:Add, Text, x%cx% y%cy% w%ColW%, % sec
+            Gui, QCPanel:Add, Text, x0 y0 w10 h10 BackgroundTrans HwndhHd, % sec
+            QC_CHeads.Push(hHd)
             Gui, QCPanel:Font, s9 norm cDefault
-            cy += 22
+            col := []
             for j, e in grps.grp[sec] {
                 txt := e.label (e.num = "" ? " (add #)" : "")
-                Gui, QCPanel:Add, Button, x%cx% y%cy% w%ColW% h28 gQC_BtnClick HwndhB, % txt
+                Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnClick HwndhB, % txt
                 QC_BtnMap[hB + 0] := e
-                cy += RowH
+                col.Push(hB)
             }
-            if (cy > bottom)
-                bottom := cy
+            QC_CCols.Push(col)
+            QC_MaxRows := Max(QC_MaxRows, col.Length())
         }
     }
-
     Gui, QCPanel:Font, s9 norm cDefault
-    w3 := Floor((fullW - 2 * Gap) / 3)
-    by := bottom + 10
-    Gui, QCPanel:Add, Button, x10 y%by% w%w3% h28 gQC_BtnManual, Dial #...
-    Gui, QCPanel:Add, Button, x+%Gap% yp w%w3% h28 gQC_BtnLog, Log call
-    Gui, QCPanel:Add, Button, x+%Gap% yp w%w3% h28 gQC_BtnEdit, Edit #s
+    Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnManual HwndhB1, Dial #...
+    Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnLog HwndhB2, Log call
+    Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnEdit HwndhB3, Edit #s
+    QC_CBottom := [hB1, hB2, hB3]
 
     QC_PanelHwnd := hPanel
-    showOpt := activate ? "" : "NoActivate"
+    w := (QC_IsNum(QC_W) && QC_W >= 150) ? QC_W : QC_DefaultW()
+    nat := QC_NaturalH()
+    h := (QC_IsNum(QC_H) && QC_H >= nat * 0.55) ? QC_H : nat
+    if (QC_Collapsed) {
+        QC_SetBodyVisible(false)
+        h := QC_CollapsedH()
+    } else {
+        QC_Layout(w, h)
+    }
+    QC_CW := w, QC_CH := h
+    showOpt := (activate ? "" : "NoActivate ") "w" w " h" h
     if QC_ValidPos(QC_X, QC_Y)
         showOpt .= " x" QC_X " y" QC_Y
     Gui, QCPanel:Show, %showOpt%
+    QC_FitOnScreen()
     QC_RaiseTop(hPanel)
     Gui, %prevGui%:Default
+}
+
+QC_IsNum(v) {
+    if v is number
+        return true
+    return false
+}
+
+; Keep the whole panel on its monitor: move it up, or shrink it if taller than the screen
+QC_FitOnScreen() {
+    WinGetPos, x, y, w, ht, ahk_id %QC_PanelHwnd%
+    if (x = "")
+        return
+    cx := x + w // 2, cy := y + 10
+    l := 0, t := 0, r := A_ScreenWidth, b := A_ScreenHeight
+    SysGet, cnt, MonitorCount
+    Loop, %cnt% {
+        SysGet, m, MonitorWorkArea, %A_Index%
+        if (cx >= mLeft && cx < mRight && cy >= mTop && cy < mBottom)
+            l := mLeft, t := mTop, r := mRight, b := mBottom
+    }
+    nh := Min(ht, b - t), ny := Max(t, Min(y, b - nh)), nx := Max(l, Min(x, r - w))
+    if (nh != ht || ny != y || nx != x)
+        WinMove, ahk_id %QC_PanelHwnd%, , %nx%, %ny%, , %nh%
+}
+
+QC_DefaultW() {
+    n := QC_Expanded ? QC_CCols.Length() : 0
+    return Max(2 * 150 + 8 + 20, n * 158 - 8 + 20)
+}
+
+QC_CollapsedH() {
+    return 38
+}
+
+; Height when nothing is stretched (fixed gaps + natural button heights)
+QC_NaturalH() {
+    f := QC_HeightParts()
+    return Round(f.fixed + f.scalable)
+}
+
+QC_HeightParts() {
+    rows := Ceil(QC_NMain / 2)
+    fixed := 40 + (rows > 0 ? (rows - 1) * 8 + 12 : 0) + 10 + 10
+    scalable := rows * 42 + 30 + 28
+    if (QC_Expanded && QC_CCols.Length()) {
+        fixed += 10 + 22 + (QC_MaxRows - 1) * 4
+        scalable += QC_MaxRows * 28
+    }
+    return {fixed: fixed, scalable: scalable}
+}
+
+QC_MoveCtl(hwnd, x, y, w, h) {
+    GuiControl, QCPanel:Move, %hwnd%, % "x" Round(x) " y" Round(y) " w" Round(w) " h" Round(h)
+}
+
+QC_Layout(w, h) {
+    if (!QC_PanelHwnd || !IsObject(QC_CMain))
+        return
+    M := 10, G := 8
+    f := QC_HeightParts()
+    s := (h - f.fixed) / f.scalable
+    s := Max(0.55, Min(3, s))
+    inner := Max(60, w - 2 * M)
+    QC_MoveCtl(QC_CHint, 46, 12, Max(10, w - 52), 18)
+
+    y := 40
+    bw := Floor((inner - G) / 2), mh := Round(42 * s)
+    for i, hb in QC_CMain {
+        col := Mod(i - 1, 2), row := (i - 1) // 2
+        QC_MoveCtl(hb, M + col * (bw + G), y + row * (mh + G), bw, mh)
+    }
+    rows := Ceil(QC_NMain / 2)
+    if (rows)
+        y += rows * mh + (rows - 1) * G + 12
+    th := Round(30 * s)
+    QC_MoveCtl(QC_CTechs, M, y, inner, th)
+    y += th
+    if (QC_Expanded && QC_CCols.Length()) {
+        n := QC_CCols.Length()
+        cw := Floor((inner - (n - 1) * G) / n)
+        rh := Round(28 * s)
+        y += 10
+        for k, col in QC_CCols {
+            x := M + (k - 1) * (cw + G)
+            QC_MoveCtl(QC_CHeads[k], x, y, cw, 20)
+            for j, hb in col
+                QC_MoveCtl(hb, x, y + 22 + (j - 1) * (rh + 4), cw, rh)
+        }
+        y += 22 + QC_MaxRows * rh + (QC_MaxRows - 1) * 4
+    }
+    y += 10
+    w3 := Floor((inner - 2 * G) / 3), bh := Round(28 * s)
+    for i, hb in QC_CBottom
+        QC_MoveCtl(hb, M + (i - 1) * (w3 + G), y, w3, bh)
+    DllCall("RedrawWindow", "Ptr", QC_PanelHwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0185)
+}
+
+QC_SetBodyVisible(v) {
+    cmd := v ? "Show" : "Hide"
+    all := []
+    for i, hb in QC_CMain
+        all.Push(hb)
+    all.Push(QC_CTechs)
+    for i, hb in QC_CHeads
+        all.Push(hb)
+    for i, col in QC_CCols
+        for j, hb in col
+            all.Push(hb)
+    for i, hb in QC_CBottom
+        all.Push(hb)
+    for i, hb in all
+        GuiControl, QCPanel:%cmd%, %hb%
+}
+
+; Size event (named by +LabelQC_Panel_)
+QC_Panel_Size(GuiHwnd := 0, EventInfo := 0, Width := 0, Height := 0) {
+    if (EventInfo = 1 || !QC_PanelHwnd)    ; minimized
+        return
+    QC_CW := Width, QC_CH := Height
+    if (QC_Collapsed) {
+        QC_MoveCtl(QC_CHint, 46, 12, Max(10, Width - 52), 18)
+        return
+    }
+    QC_W := Width, QC_H := Height
+    QC_Layout(Width, Height)
+}
+
+; The [+/-] button: collapse the panel to a thin bar, or expand it again
+QC_ToggleCollapse() {
+    cw := QC_CW, ch := QC_CH
+    if (!QC_Collapsed)
+        QC_W := cw, QC_H := ch
+    QC_Collapsed := !QC_Collapsed
+    IniWrite, % (QC_Collapsed ? 1 : 0), %QC_IniFile%, Panel, Collapsed
+    GuiControl, QCPanel:, %QC_CToggle%, % (QC_Collapsed ? "+" : "-")
+    GuiControl, QCPanel:, %QC_CHint%, % (QC_Collapsed ? "Quick Call (click + to expand)" : "1-9 to dial   Ctrl+Alt+P hide")
+    if (QC_Collapsed) {
+        QC_SetBodyVisible(false)
+        h := QC_CollapsedH()
+        Gui, QCPanel:Show, NoActivate w%cw% h%h%
+    } else {
+        h := (QC_IsNum(QC_H) && QC_H > QC_CollapsedH() + 20) ? QC_H : QC_NaturalH()
+        QC_Layout(cw, h)
+        QC_SetBodyVisible(true)
+        Gui, QCPanel:Show, NoActivate w%cw% h%h%
+        QC_FitOnScreen()
+    }
+    QC_SavePos()
+}
+
+QC_BtnCollapse(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_ToggleCollapse()
 }
 
 QC_ShowPanel(activate := true) {
@@ -339,9 +504,14 @@ QC_TogglePanel() {
 }
 
 QC_ToggleTechs() {
+    QC_SavePos()
     QC_Expanded := !QC_Expanded
     IniWrite, % (QC_Expanded ? 1 : 0), %QC_IniFile%, Panel, Expanded
+    QC_H := ""                                   ; height follows the new content
+    if (QC_Expanded && QC_IsNum(QC_W))           ; widen enough for the tech columns
+        QC_W := Max(QC_W, QC_Groups().secs.Length() * 120 + 20)
     QC_BuildPanel(true)
+    QC_SavePos()
 }
 
 ; GUI event functions (named by +LabelQC_Panel_)
@@ -387,6 +557,10 @@ QC_SavePos() {
     QC_X := x, QC_Y := y
     IniWrite, %x%, %QC_IniFile%, Panel, X
     IniWrite, %y%, %QC_IniFile%, Panel, Y
+    if (!QC_Collapsed && QC_CW > 0) {
+        IniWrite, %QC_CW%, %QC_IniFile%, Panel, W
+        IniWrite, %QC_CH%, %QC_IniFile%, Panel, H
+    }
 }
 
 QC_ValidPos(x, y) {
