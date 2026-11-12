@@ -4448,16 +4448,6 @@ global QC_CMain, QC_CHeads, QC_CCols, QC_CBottom, QC_CTechs, QC_CToggle, QC_CHin
 ^!p::QC_TogglePanel()       ; Ctrl+Alt+P  show / hide panel
 ^!d::QC_DialSelection()     ; Ctrl+Alt+D  dial highlighted number
 ^!l::QC_LogCall()           ; Ctrl+Alt+L  paste critical-result statement
-#If QC_Enabled && QC_PanelActive()
-1::QC_MainKey(1)
-2::QC_MainKey(2)
-3::QC_MainKey(3)
-4::QC_MainKey(4)
-5::QC_MainKey(5)
-6::QC_MainKey(6)
-7::QC_MainKey(7)
-8::QC_MainKey(8)
-9::QC_MainKey(9)
 #If
 
 ; ================= ENABLE / DISABLE =================
@@ -4673,12 +4663,12 @@ QC_BuildPanel(activate := true) {
     Gui, QCPanel:Add, Button, x8 y6 w30 h26 gQC_BtnCollapse HwndhT, % (QC_Collapsed ? "+" : "-")
     QC_CToggle := hT
     Gui, QCPanel:Font, s9 norm c9FC5E8
-    Gui, QCPanel:Add, Text, x46 y12 w220 h18 BackgroundTrans HwndhH, % (QC_Collapsed ? "Quick Call (click + to expand)" : "1-9 to dial   Ctrl+Alt+P hide")
+    Gui, QCPanel:Add, Text, x46 y12 w220 h18 BackgroundTrans HwndhH, % (QC_Collapsed ? "Quick Call (click + to expand)" : "Click a name to call   Ctrl+Alt+P hide")
     QC_CHint := hH
 
     Gui, QCPanel:Font, s11 norm cDefault
     for i, e in grps.main {
-        txt := (i <= 9 ? i "   " : "") e.label (e.num = "" ? " (add #)" : "")
+        txt := i "   " e.label (e.num = "" ? " (add #)" : "")
         Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnClick HwndhB, % txt
         QC_BtnMap[hB + 0] := e
         QC_CMain.Push(hB)
@@ -4863,7 +4853,7 @@ QC_ToggleCollapse() {
     QC_Collapsed := !QC_Collapsed
     IniWrite, % (QC_Collapsed ? 1 : 0), %QC_IniFile%, Panel, Collapsed
     GuiControl, QCPanel:, %QC_CToggle%, % (QC_Collapsed ? "+" : "-")
-    GuiControl, QCPanel:, %QC_CHint%, % (QC_Collapsed ? "Quick Call (click + to expand)" : "1-9 to dial   Ctrl+Alt+P hide")
+    GuiControl, QCPanel:, %QC_CHint%, % (QC_Collapsed ? "Quick Call (click + to expand)" : "Click a name to call   Ctrl+Alt+P hide")
     if (QC_Collapsed) {
         QC_SetBodyVisible(false)
         h := QC_CollapsedH()
@@ -4982,16 +4972,6 @@ QC_ValidPos(x, y) {
 QC_OnExit(ExitReason := "", ExitCode := "") {
     QC_SavePos()
     return 0    ; allow exit
-}
-
-QC_PanelActive() {
-    return QC_PanelHwnd && WinActive("ahk_id " QC_PanelHwnd)
-}
-
-QC_MainKey(i) {
-    grps := QC_Groups()
-    if (i <= grps.main.Length())
-        QC_DialEntry(grps.main[i])
 }
 
 ; Keeps the panel above Sectra/PowerScribe and remembers the last non-browser window

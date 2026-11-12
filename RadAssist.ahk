@@ -44,7 +44,8 @@ global DefaultMeasurementUnit := "cm"  ; Options: cm, mm - used when no units in
 global RVLVOutputFormat := "Macro"     ; Options: Inline, Macro - output format for RV/LV
 global UseASCIICharacters := true      ; Use ASCII <=/>= instead of Unicode
 global FleischnerInsertAfterImpression := true  ; Find IMPRESSION: and insert below
-global g_ConfirmAction := ""  ; Used by confirmation dialog
+global g_SPResult := ""      ; Smart Parse result waiting in the confirmation dialog
+global g_TargetHwnd := 0     ; report window (PowerScribe/Notepad) to paste back into
 global g_ParsedResultText := ""  ; Stores parsed result for insertion
 
 ; -----------------------------------------
@@ -120,6 +121,8 @@ CleanupOnExit(ExitReason, ExitCode) {
         Send("+{RButton}")
         return
     }
+    global g_TargetHwnd
+    g_TargetHwnd := WinExist("A")   ; paste results back into this window later
 
     ; Store any selected text
     ; WHY: Extended timeout (0.5s → 1s) for slower applications like PowerScribe
@@ -245,7 +248,7 @@ CleanupOnExit(ExitReason, ExitCode) {
 ShowNoSelectionError(parseType) {
     messages := Map("Volume", "dimensions", "RVLV", "RV/LV measurements", "NASCET", "stenosis values", "Adrenal", "HU values", "Fleischner", "nodule measurements")
     msg := messages.Has(parseType) ? messages[parseType] : "text"
-    MsgBox("Please select text containing " msg " first.`n`nHighlight the relevant text and try again.", "No Selection", 48)
+    MsgBox("Please select text containing " msg " first.`n`nHighlight the relevant text and try again.", "No Selection", 0x40030)
 }
 
 ; -----------------------------------------
@@ -265,7 +268,7 @@ MenuSmartVolume(ItemName, ItemPos, MyMenu) {
 MenuSmartRVLV(ItemName, ItemPos, MyMenu) {
     global g_SelectedText
     if (g_SelectedText = "") {
-        MsgBox('Please select text containing RV/LV measurements (e.g., "RV 42mm / LV 35mm")', "No Selection", 48)
+        MsgBox('Please select text containing RV/LV measurements (e.g., "RV 42mm / LV 35mm")', "No Selection", 0x40030)
         return
     }
     ParseAndInsertRVLV(g_SelectedText)
@@ -274,7 +277,7 @@ MenuSmartRVLV(ItemName, ItemPos, MyMenu) {
 MenuSmartNASCET(ItemName, ItemPos, MyMenu) {
     global g_SelectedText
     if (g_SelectedText = "") {
-        MsgBox('Please select text containing stenosis measurements (e.g., "distal 5.2mm, stenosis 2.1mm")', "No Selection", 48)
+        MsgBox('Please select text containing stenosis measurements (e.g., "distal 5.2mm, stenosis 2.1mm")', "No Selection", 0x40030)
         return
     }
     ParseAndInsertNASCET(g_SelectedText)
@@ -283,7 +286,7 @@ MenuSmartNASCET(ItemName, ItemPos, MyMenu) {
 MenuSmartAdrenal(ItemName, ItemPos, MyMenu) {
     global g_SelectedText
     if (g_SelectedText = "") {
-        MsgBox('Please select text containing HU values (e.g., "pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU")', "No Selection", 48)
+        MsgBox('Please select text containing HU values (e.g., "pre-contrast 10 HU, enhanced 80 HU, delayed 40 HU")', "No Selection", 0x40030)
         return
     }
     ParseAndInsertAdrenalWashout(g_SelectedText)
@@ -292,7 +295,7 @@ MenuSmartAdrenal(ItemName, ItemPos, MyMenu) {
 MenuSmartFleischner(ItemName, ItemPos, MyMenu) {
     global g_SelectedText
     if (g_SelectedText = "") {
-        MsgBox("Please select the findings section containing nodule descriptions.", "No Selection", 48)
+        MsgBox("Please select the findings section containing nodule descriptions.", "No Selection", 0x40030)
         return
     }
     ParseAndInsertFleischner(g_SelectedText)
@@ -301,7 +304,7 @@ MenuSmartFleischner(ItemName, ItemPos, MyMenu) {
 MenuQuickSmartParse(ItemName, ItemPos, MyMenu) {
     global g_SelectedText, DefaultSmartParse
     if (g_SelectedText = "") {
-        MsgBox("Please select text to parse.", "No Selection", 48)
+        MsgBox("Please select text to parse.", "No Selection", 0x40030)
         return
     }
     SP_Run(PE_ByName(DefaultSmartParse, g_SelectedText))
@@ -310,7 +313,7 @@ MenuQuickSmartParse(ItemName, ItemPos, MyMenu) {
 MenuAutoParse(ItemName, ItemPos, MyMenu) {
     global g_SelectedText
     if (g_SelectedText = "") {
-        MsgBox("Highlight the dictated sentence(s) first, then Shift+Right-click > Smart Parse.", "No Selection", 48)
+        MsgBox("Highlight the dictated sentence(s) first, then Shift+Right-click > Smart Parse.", "No Selection", 0x40030)
         return
     }
     ParseAndInsertAuto(g_SelectedText)
@@ -441,6 +444,7 @@ ShowEllipsoidVolumeGui() {
     EllipsoidGuiObj.Add("Button", "x120 y95 w80", "Cancel").OnEvent("Click", EllipsoidGuiClose)
     EllipsoidGuiObj.OnEvent("Close", EllipsoidGuiClose)
     EllipsoidGuiObj.Show("x" xPos " y" yPos " w250 h135")
+    RA_Front(EllipsoidGuiObj.Hwnd)
 }
 
 EllipsoidGuiClose(*) {
@@ -455,7 +459,7 @@ CalcEllipsoid(*) {
     saved := EllipsoidGuiObj.Submit(false)
 
     if (saved.EllipDim1 = "" || saved.EllipDim2 = "" || saved.EllipDim3 = "") {
-        MsgBox("Please enter all three dimensions.", "Error", 16)
+        MsgBox("Please enter all three dimensions.", "Error", 0x40010)
         return
     }
 
@@ -464,7 +468,7 @@ CalcEllipsoid(*) {
     d3 := saved.EllipDim3 + 0
 
     if (d1 <= 0 || d2 <= 0 || d3 <= 0) {
-        MsgBox("All dimensions must be greater than 0.", "Error", 16)
+        MsgBox("All dimensions must be greater than 0.", "Error", 0x40010)
         return
     }
 
@@ -515,6 +519,7 @@ ShowAdrenalWashoutGui() {
     AdrenalGuiObj.Add("Button", "x110 y135 w80", "Cancel").OnEvent("Click", AdrenalGuiClose)
     AdrenalGuiObj.OnEvent("Close", AdrenalGuiClose)
     AdrenalGuiObj.Show("x" xPos " y" yPos " w230 h175")
+    RA_Front(AdrenalGuiObj.Hwnd)
 }
 
 AdrenalGuiClose(*) {
@@ -529,7 +534,7 @@ CalcAdrenal(*) {
     saved := AdrenalGuiObj.Submit(false)
 
     if (saved.AdrenalPre = "" || saved.AdrenalPost = "" || saved.AdrenalDelayed = "") {
-        MsgBox("Please enter all three HU values.", "Error", 16)
+        MsgBox("Please enter all three HU values.", "Error", 0x40010)
         return
     }
 
@@ -631,6 +636,7 @@ ShowNASCETGui() {
     NASCETGuiObj.Add("Button", "x110 y105 w80", "Cancel").OnEvent("Click", NASCETGuiClose)
     NASCETGuiObj.OnEvent("Close", NASCETGuiClose)
     NASCETGuiObj.Show("x" xPos " y" yPos " w240 h145")
+    RA_Front(NASCETGuiObj.Hwnd)
 }
 
 NASCETGuiClose(*) {
@@ -645,7 +651,7 @@ CalcNASCETGui(*) {
     saved := NASCETGuiObj.Submit(false)
 
     if (saved.NASCETDistal = "" || saved.NASCETStenosis = "") {
-        MsgBox("Please enter both measurements.", "Error", 16)
+        MsgBox("Please enter both measurements.", "Error", 0x40010)
         return
     }
 
@@ -653,12 +659,12 @@ CalcNASCETGui(*) {
     stenosis := saved.NASCETStenosis + 0
 
     if (distal <= 0) {
-        MsgBox("Distal ICA must be greater than 0.", "Error", 16)
+        MsgBox("Distal ICA must be greater than 0.", "Error", 0x40010)
         return
     }
 
     if (stenosis >= distal) {
-        MsgBox("Stenosis should be less than distal ICA.", "Error", 16)
+        MsgBox("Stenosis should be less than distal ICA.", "Error", 0x40010)
         return
     }
 
@@ -696,6 +702,7 @@ ShowStenosisGui() {
     StenosisGuiObj.Add("Button", "x110 y130 w80", "Cancel").OnEvent("Click", StenosisGuiClose)
     StenosisGuiObj.OnEvent("Close", StenosisGuiClose)
     StenosisGuiObj.Show("x" xPos " y" yPos " w270 h170")
+    RA_Front(StenosisGuiObj.Hwnd)
 }
 
 StenosisGuiClose(*) {
@@ -710,7 +717,7 @@ CalcStenosis(*) {
     saved := StenosisGuiObj.Submit(false)
 
     if (saved.StenosisNormal = "" || saved.StenosisMeasure = "") {
-        MsgBox("Please enter both diameter measurements.", "Error", 16)
+        MsgBox("Please enter both diameter measurements.", "Error", 0x40010)
         return
     }
 
@@ -718,12 +725,12 @@ CalcStenosis(*) {
     stenosis := saved.StenosisMeasure + 0
 
     if (normal <= 0) {
-        MsgBox("Normal diameter must be greater than 0.", "Error", 16)
+        MsgBox("Normal diameter must be greater than 0.", "Error", 0x40010)
         return
     }
 
     if (stenosis >= normal) {
-        MsgBox("Stenosis should be less than normal diameter.", "Error", 16)
+        MsgBox("Stenosis should be less than normal diameter.", "Error", 0x40010)
         return
     }
 
@@ -777,6 +784,7 @@ ShowRVLVGui() {
     RVLVGuiObj.Add("Button", "x110 y105 w80", "Cancel").OnEvent("Click", RVLVGuiClose)
     RVLVGuiObj.OnEvent("Close", RVLVGuiClose)
     RVLVGuiObj.Show("x" xPos " y" yPos " w220 h145")
+    RA_Front(RVLVGuiObj.Hwnd)
 }
 
 RVLVGuiClose(*) {
@@ -791,7 +799,7 @@ CalcRVLV(*) {
     saved := RVLVGuiObj.Submit(false)
 
     if (saved.RVDiam = "" || saved.LVDiam = "") {
-        MsgBox("Please enter both RV and LV diameters.", "Error", 16)
+        MsgBox("Please enter both RV and LV diameters.", "Error", 0x40010)
         return
     }
 
@@ -799,7 +807,7 @@ CalcRVLV(*) {
     lv := saved.LVDiam + 0
 
     if (lv <= 0) {
-        MsgBox("LV diameter must be greater than 0.", "Error", 16)
+        MsgBox("LV diameter must be greater than 0.", "Error", 0x40010)
         return
     }
 
@@ -859,6 +867,7 @@ ShowFleischnerGui() {
     FleischnerGuiObj.Add("Button", "x120 y190 w80", "Cancel").OnEvent("Click", FleischnerGuiClose)
     FleischnerGuiObj.OnEvent("Close", FleischnerGuiClose)
     FleischnerGuiObj.Show("x" xPos " y" yPos " w280 h230")
+    RA_Front(FleischnerGuiObj.Hwnd)
 }
 
 FleischnerGuiClose(*) {
@@ -873,7 +882,7 @@ CalcFleischner(*) {
     saved := FleischnerGuiObj.Submit(false)
 
     if (saved.FleischSize = "") {
-        MsgBox("Please enter nodule size.", "Error", 16)
+        MsgBox("Please enter nodule size.", "Error", 0x40010)
         return
     }
 
@@ -981,6 +990,7 @@ ShowEllipsoidVolumeGuiPrefilled(d1, d2, d3) {
     EllipsoidGuiObj.Add("Button", "x120 y95 w80", "Cancel").OnEvent("Click", EllipsoidGuiClose)
     EllipsoidGuiObj.OnEvent("Close", EllipsoidGuiClose)
     EllipsoidGuiObj.Show("x" xPos " y" yPos " w250 h135")
+    RA_Front(EllipsoidGuiObj.Hwnd)
 }
 
 ShowRVLVGuiPrefilled(rv, lv) {
@@ -1004,6 +1014,7 @@ ShowRVLVGuiPrefilled(rv, lv) {
     RVLVGuiObj.Add("Button", "x110 y105 w80", "Cancel").OnEvent("Click", RVLVGuiClose)
     RVLVGuiObj.OnEvent("Close", RVLVGuiClose)
     RVLVGuiObj.Show("x" xPos " y" yPos " w220 h145")
+    RA_Front(RVLVGuiObj.Hwnd)
 }
 
 ShowNASCETGuiPrefilled(distal, stenosis) {
@@ -1027,6 +1038,7 @@ ShowNASCETGuiPrefilled(distal, stenosis) {
     NASCETGuiObj.Add("Button", "x110 y105 w80", "Cancel").OnEvent("Click", NASCETGuiClose)
     NASCETGuiObj.OnEvent("Close", NASCETGuiClose)
     NASCETGuiObj.Show("x" xPos " y" yPos " w240 h145")
+    RA_Front(NASCETGuiObj.Hwnd)
 }
 
 ShowAdrenalWashoutGuiPrefilled(pre, post, delayed) {
@@ -1053,6 +1065,7 @@ ShowAdrenalWashoutGuiPrefilled(pre, post, delayed) {
     AdrenalGuiObj.Add("Button", "x110 y135 w80", "Cancel").OnEvent("Click", AdrenalGuiClose)
     AdrenalGuiObj.OnEvent("Close", AdrenalGuiClose)
     AdrenalGuiObj.Show("x" xPos " y" yPos " w230 h175")
+    RA_Front(AdrenalGuiObj.Hwnd)
 }
 
 ShowFleischnerGuiPrefilled(size, nodeType, number) {
@@ -1091,6 +1104,7 @@ ShowFleischnerGuiPrefilled(size, nodeType, number) {
     FleischnerGuiObj.Add("Button", "x120 y190 w80", "Cancel").OnEvent("Click", FleischnerGuiClose)
     FleischnerGuiObj.OnEvent("Close", FleischnerGuiClose)
     FleischnerGuiObj.Show("x" xPos " y" yPos " w280 h230")
+    RA_Front(FleischnerGuiObj.Hwnd)
 }
 
 ; -----------------------------------------
@@ -1273,7 +1287,7 @@ FilterNonMeasurements(input) {
 global ConfirmGuiObj := ""
 
 ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
-    global SmartParseFallbackToGUI, g_ConfirmAction, g_ParsedResultText, ConfirmGuiObj
+    global SmartParseFallbackToGUI, g_ParsedResultText, ConfirmGuiObj
 
     g_ParsedResultText := calculatedResult
 
@@ -1297,7 +1311,7 @@ ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     MouseGetPos(&mouseX, &mouseY)
 
     if (ConfirmGuiObj != "")
-        try ConfirmGuiObj.Destroy()
+        RA_CloseConfirm()
 
     ConfirmGuiObj := Gui("+AlwaysOnTop -MinimizeBox", "Confirm " parseType)
     ConfirmGuiObj.SetFont("s10", "Segoe UI")
@@ -1316,8 +1330,10 @@ ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     ConfirmGuiObj.Add("Text", "x10 y+8 w440 c" (confidence < 50 ? "C00000" : confidence < 80 ? "A06000" : "008000"), conf)
 
     lowConf := (confidence < 50 && SmartParseFallbackToGUI)
-    ConfirmGuiObj.Add("Button", "x10 y+10 w130" (lowConf ? "" : " Default"), lowConf ? "Insert Anyway" : "Insert").OnEvent("Click", ConfirmInsert)
-    ConfirmGuiObj.Add("Button", "x+10 yp w130" (lowConf ? " Default" : ""), "Edit in GUI").OnEvent("Click", ConfirmEdit)
+    btnIns := ConfirmGuiObj.Add("Button", "x10 y+10 w130" (lowConf ? "" : " Default"), lowConf ? "Insert Anyway" : "Insert")
+    btnIns.OnEvent("Click", ConfirmInsert)
+    btnEdit := ConfirmGuiObj.Add("Button", "x+10 yp w130" (lowConf ? " Default" : ""), "Edit in GUI")
+    btnEdit.OnEvent("Click", ConfirmEdit)
     ConfirmGuiObj.Add("Button", "x+10 yp w130", "Cancel").OnEvent("Click", ConfirmCancel)
 
     ConfirmGuiObj.Show("x" (mouseX + 10) " y" (mouseY + 10) " AutoSize")
@@ -1331,35 +1347,94 @@ ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     }
     if (gx + gw > waR || gy + gh > waB)
         ConfirmGuiObj.Move(Min(gx, waR - gw), Min(gy, waB - gh))
-    hWnd := ConfirmGuiObj.Hwnd
 
-    g_ConfirmAction := ""
-    WinWaitClose("ahk_id " hWnd)
-    return g_ConfirmAction
+    ; WHY: PowerScribe/Sectra windows can sit above normal always-on-top windows.
+    ;      Force the dialog to the front now and keep it there while it is open.
+    ; NOTE: Non-blocking - the buttons do the work, so Shift+Right-click keeps working.
+    RA_Front(ConfirmGuiObj.Hwnd)
+    (lowConf ? btnEdit : btnIns).Focus()      ; Enter = default action, preview text not selected
+    SetTimer(RA_KeepConfirmFront, 300)
+}
+
+; Keep the confirmation dialog above other apps' windows while it is open
+RA_KeepConfirmFront() {
+    global ConfirmGuiObj
+    try {
+        h := ConfirmGuiObj.Hwnd
+        if !WinExist("ahk_id " h) {
+            SetTimer(RA_KeepConfirmFront, 0)
+            return
+        }
+        if QC_IsObscured(h)
+            QC_RaiseTop(h)
+    } catch {
+        SetTimer(RA_KeepConfirmFront, 0)
+    }
+}
+
+; Bring one of our windows to the very front and give it the keyboard focus.
+; WHY: Windows blocks focus stealing; briefly attaching to the foreground
+;      window's input thread is the standard way to be allowed to activate.
+RA_Front(hwnd) {
+    try {
+        DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", -2, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+        DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", -1, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+        fg := DllCall("GetForegroundWindow", "Ptr")
+        fgThread := fg ? DllCall("GetWindowThreadProcessId", "Ptr", fg, "Ptr", 0, "UInt") : 0
+        myThread := DllCall("GetCurrentThreadId", "UInt")
+        attached := (fgThread && fgThread != myThread) ? DllCall("AttachThreadInput", "UInt", myThread, "UInt", fgThread, "Int", 1) : 0
+        DllCall("BringWindowToTop", "Ptr", hwnd)
+        DllCall("SetForegroundWindow", "Ptr", hwnd)
+        if attached
+            DllCall("AttachThreadInput", "UInt", myThread, "UInt", fgThread, "Int", 0)
+        WinActivate("ahk_id " hwnd)
+    }
+}
+
+; Re-activate the report window the user Shift+Right-clicked in, before pasting
+RA_ActivateTarget() {
+    global g_TargetHwnd
+    if (g_TargetHwnd && WinExist("ahk_id " g_TargetHwnd)) {
+        WinActivate("ahk_id " g_TargetHwnd)
+        WinWaitActive("ahk_id " g_TargetHwnd, , 1)
+        Sleep(50)
+    }
+}
+
+RA_CloseConfirm() {
+    global ConfirmGuiObj
+    SetTimer(RA_KeepConfirmFront, 0)
+    try ConfirmGuiObj.Destroy()
+    ConfirmGuiObj := ""
 }
 
 ConfirmInsert(*) {
-    global g_ConfirmAction, ConfirmGuiObj
-    g_ConfirmAction := "insert"
-    ConfirmGuiObj.Destroy()
+    global g_SPResult
+    r := g_SPResult
+    RA_CloseConfirm()
+    if !IsObject(r)
+        return
+    RA_ActivateTarget()
+    if r.atImpression
+        InsertAtImpression(r.text)
+    else
+        InsertAfterSelection(r.text)
 }
 
 ConfirmEdit(*) {
-    global g_ConfirmAction, ConfirmGuiObj
-    g_ConfirmAction := "edit"
-    ConfirmGuiObj.Destroy()
+    global g_SPResult
+    r := g_SPResult
+    RA_CloseConfirm()
+    if (IsObject(r) && r.edit)
+        r.edit.Call()
 }
 
 ConfirmCancel(*) {
-    global g_ConfirmAction, ConfirmGuiObj
-    g_ConfirmAction := "cancel"
-    ConfirmGuiObj.Destroy()
+    RA_CloseConfirm()
 }
 
 ConfirmGuiClose(*) {
-    global g_ConfirmAction, ConfirmGuiObj
-    g_ConfirmAction := "cancel"
-    ConfirmGuiObj.Destroy()
+    RA_CloseConfirm()
 }
 
 ; =========================================
@@ -1996,20 +2071,15 @@ PE_ByName(name, text) {
 }
 
 ; Show confirmation, then insert / open GUI
+; NOTE: Returns right away; the dialog's Insert / Edit buttons finish the job.
 SP_Run(r) {
+    global g_SPResult
     if !r.ok {
-        MsgBox(r.err, "Smart Parse", 48)
+        MsgBox(r.err, "Smart Parse", 0x40030)   ; 0x40000 = always on top, 0x30 = warning icon
         return
     }
-    action := ShowParseConfirmation(r.title, r.values, r.text, r.conf)
-    if (action = "insert") {
-        if r.atImpression
-            InsertAtImpression(r.text)
-        else
-            InsertAfterSelection(r.text)
-    } else if (action = "edit" && r.edit) {
-        r.edit.Call()
-    }
+    g_SPResult := r
+    ShowParseConfirmation(r.title, r.values, r.text, r.conf)
 }
 
 ; -----------------------------------------
@@ -2120,6 +2190,7 @@ ShowICHVolumeGui() {
     ICHGuiObj.Add("Button", "x30 y135 w80", "Calculate").OnEvent("Click", CalcICH)
     ICHGuiObj.Add("Button", "x130 y135 w80", "Cancel").OnEvent("Click", ICHGuiClose)
     ICHGuiObj.Show("x" xPos " y" yPos " w280 h175")
+    RA_Front(ICHGuiObj.Hwnd)
     ICHGuiObj.Title := "ICH Volume (ABC/2)"
 }
 
@@ -2144,6 +2215,7 @@ ShowICHVolumeGuiPrefilled(a, b, c) {
     ICHGuiObj.Add("Button", "x30 y135 w80", "Calculate").OnEvent("Click", CalcICH)
     ICHGuiObj.Add("Button", "x130 y135 w80", "Cancel").OnEvent("Click", ICHGuiClose)
     ICHGuiObj.Show("x" xPos " y" yPos " w280 h175")
+    RA_Front(ICHGuiObj.Hwnd)
     ICHGuiObj.Title := "ICH Volume (ABC/2)"
 }
 
@@ -2157,7 +2229,7 @@ CalcICH(*) {
     saved := ICHGuiObj.Submit(false)
 
     if (saved.ICHDimA = "" || saved.ICHDimB = "" || saved.ICHDimC = "") {
-        MsgBox("Please enter all three dimensions.", "Error", 16)
+        MsgBox("Please enter all three dimensions.", "Error", 0x40010)
         return
     }
 
@@ -2166,7 +2238,7 @@ CalcICH(*) {
     c := saved.ICHDimC + 0
 
     if (a <= 0 || b <= 0 || c <= 0) {
-        MsgBox("All dimensions must be greater than 0.", "Error", 16)
+        MsgBox("All dimensions must be greater than 0.", "Error", 0x40010)
         return
     }
 
@@ -2228,6 +2300,7 @@ ShowDateCalculatorGui() {
     DateGuiObj.Add("Button", "x30 y85 w80", "Calculate").OnEvent("Click", CalcDate)
     DateGuiObj.Add("Button", "x130 y85 w80", "Cancel").OnEvent("Click", DateGuiClose)
     DateGuiObj.Show("x" xPos " y" yPos " w260 h125")
+    RA_Front(DateGuiObj.Hwnd)
     DateGuiObj.Title := "Follow-up Date"
 }
 
@@ -2254,6 +2327,7 @@ ShowDateCalculatorGuiPrefilled(interval, unit) {
     DateGuiObj.Add("Button", "x30 y85 w80", "Calculate").OnEvent("Click", CalcDate)
     DateGuiObj.Add("Button", "x130 y85 w80", "Cancel").OnEvent("Click", DateGuiClose)
     DateGuiObj.Show("x" xPos " y" yPos " w260 h125")
+    RA_Front(DateGuiObj.Hwnd)
     DateGuiObj.Title := "Follow-up Date"
 }
 
@@ -2267,13 +2341,13 @@ CalcDate(*) {
     saved := DateGuiObj.Submit(false)
 
     if (saved.DateInterval = "") {
-        MsgBox("Please enter an interval.", "Error", 16)
+        MsgBox("Please enter an interval.", "Error", 0x40010)
         return
     }
 
     interval := saved.DateInterval + 0
     if (interval <= 0) {
-        MsgBox("Interval must be greater than 0.", "Error", 16)
+        MsgBox("Interval must be greater than 0.", "Error", 0x40010)
         return
     }
 
@@ -2321,7 +2395,7 @@ CopySectraHistory() {
     }
 
     if (A_Clipboard = "") {
-        MsgBox("No text found. Select history text in Sectra first.", "Info", 48)
+        MsgBox("No text found. Select history text in Sectra first.", "Info", 0x40030)
         A_Clipboard := ClipSaved
         return
     }
@@ -2456,6 +2530,7 @@ ShowSettings() {
     SettingsGuiObj.Add("Button", "x70 y560 w80", "Save").OnEvent("Click", SaveSettings)
     SettingsGuiObj.Add("Button", "x160 y560 w80", "Cancel").OnEvent("Click", SettingsGuiClose)
     SettingsGuiObj.Show("x" xPos " y" yPos " w295 h600")
+    RA_Front(SettingsGuiObj.Hwnd)
     SettingsGuiObj.Title := "Settings"
 }
 
@@ -2529,7 +2604,7 @@ SaveSettings(*) {
     writeSuccess := writeSuccess && IniWriteWithRetry("QuickCallEnabled", QuickCallEnabled)
 
     if (!writeSuccess)
-        MsgBox("Some settings may not have saved. Check file permissions or OneDrive sync status.", "Warning", 48)
+        MsgBox("Some settings may not have saved. Check file permissions or OneDrive sync status.", "Warning", 0x40030)
 
     ToolTip("Settings saved")
     SetTimer(RemoveToolTip, -1500)
@@ -2577,6 +2652,7 @@ ShowResult(text) {
     ResultGuiObj.Add("Button", "x140 y220 w120", "Copy to Clipboard").OnEvent("Click", CopyResult)
     ResultGuiObj.Add("Button", "x270 y220 w120", "Close").OnEvent("Click", ResultGuiClose)
     ResultGuiObj.Show("x" xPos " y" yPos " w400 h260")
+    RA_Front(ResultGuiObj.Hwnd)
     ResultGuiObj.Title := "Result"
 }
 
@@ -2596,6 +2672,7 @@ CopyResult(*) {
 InsertResult(*) {
     global ResultGuiObj
     ResultGuiObj.Destroy()
+    RA_ActivateTarget()
     Sleep(100)
     ; WHY: Deselect any selected text first to prevent replacing it
     ; NOTE: Right arrow moves cursor to end of selection without deleting
@@ -2799,10 +2876,6 @@ QC_Init() {
     Hotkey(QC_PopupHotkey, QC_TogglePanel, "Off")
     Hotkey(QC_DialSelHotkey, QC_DialSelection, "Off")
     Hotkey(QC_LogHotkey, QC_LogCall, "Off")
-    HotIf(QC_PanelActive)
-    Loop 9
-        Hotkey(String(A_Index), QC_MainKey, "Off")
-    HotIf()
     OnExit(QC_OnExit)
 }
 
@@ -2844,10 +2917,6 @@ QC_SetHotkeys(state) {
     Hotkey(QC_PopupHotkey, state)
     Hotkey(QC_DialSelHotkey, state)
     Hotkey(QC_LogHotkey, state)
-    HotIf(QC_PanelActive)
-    Loop 9
-        Hotkey(String(A_Index), state)
-    HotIf()
 }
 
 QC_SetTray(add) {
@@ -2965,11 +3034,11 @@ QC_BuildPanel(activate := true) {
     c.toggle := g.AddButton("x8 y6 w30 h26", QC_Collapsed ? "+" : "-")
     c.toggle.OnEvent("Click", QC_ToggleCollapse)
     g.SetFont("s9 norm c9FC5E8")
-    c.hint := g.AddText("x46 y12 w220 h18 BackgroundTrans", QC_Collapsed ? "Quick Call (click + to expand)" : "1-9 to dial   Ctrl+Alt+P hide")
+    c.hint := g.AddText("x46 y12 w220 h18 BackgroundTrans", QC_Collapsed ? "Quick Call (click + to expand)" : "Click a name to call   Ctrl+Alt+P hide")
 
     g.SetFont("s11 norm cDefault")
     for i, e in grps.main {
-        b := g.AddButton("x0 y0 w10 h10", (i <= 9 ? i "   " : "") e.label (e.num = "" ? " (add #)" : ""))
+        b := g.AddButton("x0 y0 w10 h10", i "   " e.label (e.num = "" ? " (add #)" : ""))
         b.OnEvent("Click", QC_DialEntry.Bind(e))
         QC_BtnMap[b.Hwnd] := e
         c.main.Push(b)
@@ -3140,7 +3209,7 @@ QC_ToggleCollapse(*) {
     QC_Collapsed := !QC_Collapsed
     try IniWrite(QC_Collapsed ? 1 : 0, QC_IniFile, "Panel", "Collapsed")
     QC_Ctl.toggle.Text := QC_Collapsed ? "+" : "-"
-    QC_Ctl.hint.Text := QC_Collapsed ? "Quick Call (click + to expand)" : "1-9 to dial   Ctrl+Alt+P hide"
+    QC_Ctl.hint.Text := QC_Collapsed ? "Quick Call (click + to expand)" : "Click a name to call   Ctrl+Alt+P hide"
     if QC_Collapsed {
         QC_SetBodyVisible(false)
         QC_Gui.Show("NoActivate w" cw " h" QC_CollapsedH())
@@ -3230,18 +3299,6 @@ QC_ValidPos(x, y) {
 
 QC_OnExit(*) {
     QC_SavePos()
-}
-
-QC_PanelActive(*) {
-    try return IsObject(QC_Gui) && WinActive("ahk_id " QC_Gui.Hwnd)
-    return false
-}
-
-QC_MainKey(hk) {
-    grps := QC_Groups()
-    i := Integer(hk)
-    if (i <= grps.main.Length)
-        QC_DialEntry(grps.main[i])
 }
 
 ; Keeps the panel above Sectra/PowerScribe and remembers the last non-browser window
@@ -3627,7 +3684,7 @@ if (QuickCallEnabled)
     QC_Enable()
 
 TrayAbout(*) {
-    MsgBox("RadAssist v2.4`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (``)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk (Macro or Inline format)`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)", "RadAssist", 64)
+    MsgBox("RadAssist v2.4`n`nShift+Right-click in PowerScribe or Notepad`nto access radiology calculators.`n`nv2.2 Features:`n- Pause/Resume with backtick key (``)`n- RV/LV macro format for PowerScribe`n- Fleischner inserts after IMPRESSION:`n- OneDrive compatible (auto-fallback path)`n- ASCII chars for encoding compatibility`n`nSmart Parsers:`n- Smart Volume: Organ detection + prostate interpretation`n- Smart RV/LV: PE risk (Macro or Inline format)`n- Smart NASCET: Stenosis severity grading`n- Smart Adrenal: Washout percentages`n- Parse Nodules: Fleischner 2017 recommendations`n`nUtilities:`n- Report Header Template`n- Sectra History Copy (Ctrl+Shift+H)", "RadAssist", 0x40040)
 }
 
 TrayReload(*) {

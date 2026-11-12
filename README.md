@@ -106,7 +106,7 @@ A floating, always-on-top call panel (Google Voice), built into `RadAssist.ahk` 
   (without stealing focus) whenever another app's window covers it
 - **Resizable**: drag any edge; buttons stretch to fit. The **[-] / [+]** button at the top collapses the
   panel to a thin bar and expands it again (size and state are remembered)
-- Big buttons for the main numbers (keys `1`-`9` while the panel is focused), **+ Techs** for per-site tech numbers
+- Click a name to call: big buttons for the main numbers, **+ Techs** for per-site tech numbers (number keys are left alone for window/level presets)
 - **Dial #...**, **Log call** (critical-result statement), **Edit #s** (phone book in `QuickCall_PhoneBook.txt`)
 - `Esc` or the X hides it; bring it back with `Ctrl+Alt+P`, the Shift+Right-click menu, or the tray menu
 - Turn it on/off in **Settings → Quick Call → Enable Quick Call panel**
