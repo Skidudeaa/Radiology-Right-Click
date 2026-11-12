@@ -4350,6 +4350,24 @@ SP_Init() {
     SP_Pid := DllCall("GetCurrentProcessId")
 }
 
+; ================= compatibility with older AutoHotkey v1.1 =================
+; Min() and Max() are built in only from v1.1.27; hospital PCs may have older v1.1.
+; A script-defined version works on every v1.1 (and simply overrides the built-in).
+Min(p*) {
+    r := ""
+    for _, v in p
+        if (r = "" || v < r)
+            r := v
+    return r
+}
+Max(p*) {
+    r := ""
+    for _, v in p
+        if (r = "" || v > r)
+            r := v
+    return r
+}
+
 ; ================= dark theme helpers (used by the host for its own windows too) =================
 ; Dark context menus: Windows 10 1903+/11 draw the app's popup menus dark with
 ; light text once the app opts in (uxtheme ordinals 135/136). Menu, Color alone

@@ -41,6 +41,10 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 `Radiology Right Click v1.22.ahk` (and `-local`) run on **AutoHotkey v1.1** (plain right-click menu, Quick Call built in).
 Both are single files that run from OneDrive or a USB stick.
 
+**Older AutoHotkey on hospital PCs:** the v1.22 scripts run on AutoHotkey **v1.1.24 or newer** (tested on
+1.1.24, 1.1.26, 1.1.30 and 1.1.37). RadAssist needs **AutoHotkey v2**. To check which AutoHotkey runs your
+scripts: right-click the AutoHotkey .exe > Properties > Details > File version.
+
 **Feature parity:** the v1.22 scripts include the same Smart Parse engine as RadAssist (ported to
 AutoHotkey v1 in `SmartParse_v1.ahk` and embedded): right-click > **Smart Parse (Auto-detect)** /
 **Smart Parse as...** (volume with prostate grading, ICH, RV/LV, NASCET/stenosis, adrenal, Fleischner,

@@ -11,7 +11,7 @@
 ; without any GUI. Results: {ok, title, values: [[label, value], ...], text, conf,
 ; atImpression} or {ok: false, err}.
 ;
-; Requires AutoHotkey v1.1.27+. Plain ASCII on purpose (AHK v1 reads it with no BOM).
+; Requires AutoHotkey v1.1.24+ (tested 1.1.24-1.1.37). Plain ASCII on purpose (AHK v1 reads it with no BOM).
 ; NOTE: No auto-execute code: the host calls SP_Init() once at startup.
 ; ============================================================
 
@@ -31,6 +31,24 @@ SP_Init() {
     SP_RVLVFormat := "Macro"         ; "Macro" = cm, "Inline" = mm
     SP_Result := "", SP_TargetHwnd := 0, SP_ConfHwnd := 0, SP_BoneHwnd := 0
     SP_Pid := DllCall("GetCurrentProcessId")
+}
+
+; ================= compatibility with older AutoHotkey v1.1 =================
+; Min() and Max() are built in only from v1.1.27; hospital PCs may have older v1.1.
+; A script-defined version works on every v1.1 (and simply overrides the built-in).
+Min(p*) {
+    r := ""
+    for _, v in p
+        if (r = "" || v < r)
+            r := v
+    return r
+}
+Max(p*) {
+    r := ""
+    for _, v in p
+        if (r = "" || v > r)
+            r := v
+    return r
 }
 
 ; ================= dark theme helpers (used by the host for its own windows too) =================

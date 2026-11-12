@@ -3431,20 +3431,23 @@ DownloadToString(url, postData := "") {
 }
 
 
+; NOTE: if/else instead of switch so this runs on AutoHotkey older than v1.1.31
 GetRaceValue(race) {
-    switch race {
-        case "White": return 3
-        case "Black": return 0
-        case "Hispanic": return 2
-        case "Chinese": return 1
-    }
+    if (race = "White")
+        return 3
+    if (race = "Black")
+        return 0
+    if (race = "Hispanic")
+        return 2
+    if (race = "Chinese")
+        return 1
 }
 
 GetSexValue(sex) {
-    switch sex {
-        case "Male": return 1
-        case "Female": return 0
-    }
+    if (sex = "Male")
+        return 1
+    if (sex = "Female")
+        return 0
 }
 
 GetLastErrorMessage(errorCode) {
@@ -5442,6 +5445,24 @@ SP_Init() {
     SP_RVLVFormat := "Macro"         ; "Macro" = cm, "Inline" = mm
     SP_Result := "", SP_TargetHwnd := 0, SP_ConfHwnd := 0, SP_BoneHwnd := 0
     SP_Pid := DllCall("GetCurrentProcessId")
+}
+
+; ================= compatibility with older AutoHotkey v1.1 =================
+; Min() and Max() are built in only from v1.1.27; hospital PCs may have older v1.1.
+; A script-defined version works on every v1.1 (and simply overrides the built-in).
+Min(p*) {
+    r := ""
+    for _, v in p
+        if (r = "" || v < r)
+            r := v
+    return r
+}
+Max(p*) {
+    r := ""
+    for _, v in p
+        if (r = "" || v > r)
+            r := v
+    return r
 }
 
 ; ================= dark theme helpers (used by the host for its own windows too) =================
