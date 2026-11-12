@@ -485,25 +485,15 @@ return
 ; -------------------------------------------------------------------------
 ; GetSelectedText: Captures text from the clipboard after Ctrl+C
 ; -------------------------------------------------------------------------
-; WHY: ClipWait used to be 0.1 s - too short for Windows 11 Notepad / PowerScribe,
-;      so the highlighted text was often missed. Wait longer and retry once.
+; WHY: One quick try (max 0.4 s) so the menu appears fast even with nothing
+;      highlighted. If it misses, Smart Parse items copy again after the menu
+;      closes (SP_EnsureSel). (The original 0.1 s often missed the text.)
 GetSelectedText() {
     OldClipboard := ClipboardAll
-    SelectedText := ""
-    Loop, 2 {
-        Clipboard := ""
-        if (A_Index = 2) {
-            KeyWait, Shift, T1
-            KeyWait, Control, T0.5
-            Sleep, 50
-        }
-        Send, {Shift up}^c
-        ClipWait, % (A_Index = 1 ? 0.6 : 1.2)
-        if (!ErrorLevel) {
-            SelectedText := Clipboard
-            break
-        }
-    }
+    Clipboard := ""
+    Send, {Shift up}^c
+    ClipWait, 0.4
+    SelectedText := ErrorLevel ? "" : Clipboard
     Clipboard := OldClipboard
     OldClipboard := ""
     return SelectedText
@@ -5489,10 +5479,37 @@ SP_AddMenu(menuName, showTIRADS := true, showORADS := true, showBoneAge := false
         Menu, %menuName%, Add, Bone Age (Greulich && Pyle), SP_MenuBoneAge
 }
 
+; If the quick copy before the menu missed the highlighted text, copy it again now
+; (after the menu closed; the menu does not change the selection)
+SP_EnsureSel() {
+    if (g_SelectedText != "")
+        return
+    t := SP_TargetHwnd
+    if (t && WinExist("ahk_id " t)) {
+        WinWaitActive, ahk_id %t%, , 0.5
+        if (ErrorLevel)
+            SP_ActivateTarget()
+    }
+    Sleep, 30
+    saved := ClipboardAll
+    Loop, 2 {
+        Clipboard := ""
+        Send, {Shift up}^c
+        ClipWait, % (A_Index = 1 ? 0.6 : 1.2)
+        if (!ErrorLevel) {
+            g_SelectedText := Clipboard
+            break
+        }
+    }
+    Clipboard := saved
+    saved := ""
+}
+
 SP_MenuItem(itemName := "", itemPos := "", menuName := "") {
     names := {"Volume (prostate graded)": "Volume", "ICH Volume (ABC/2)": "ICH", "RV/LV Ratio": "RVLV", "NASCET (carotid)": "NASCET"
         , "Vessel Stenosis (any vessel)": "Stenosis", "Adrenal Washout": "Adrenal", "Fleischner Nodules": "Fleischner"
         , "Follow-up Date": "Date", "Thyroid ACR TI-RADS": "TIRADS", "Ovarian Cyst (O-RADS / SRU)": "ORADS"}
+    SP_EnsureSel()
     if (g_SelectedText = "") {
         MsgBox, 262192, Smart Parse, % "Highlight the dictated text first, then right-click."
         return
@@ -5501,6 +5518,7 @@ SP_MenuItem(itemName := "", itemPos := "", menuName := "") {
 }
 
 SP_MenuAuto(itemName := "", itemPos := "", menuName := "") {
+    SP_EnsureSel()
     if (SP_ShowBoneAge && RegExMatch(g_SelectedText, "i)bone\s+age")) {
         SP_ShowBoneAgeGui(g_SelectedText)
         return
@@ -5513,6 +5531,7 @@ SP_MenuAuto(itemName := "", itemPos := "", menuName := "") {
 }
 
 SP_MenuBoneAge(itemName := "", itemPos := "", menuName := "") {
+    SP_EnsureSel()
     SP_ShowBoneAgeGui(g_SelectedText)
 }
 

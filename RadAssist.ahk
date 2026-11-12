@@ -126,10 +126,10 @@ CleanupOnExit(ExitReason, ExitCode) {
     global g_TargetHwnd
     g_TargetHwnd := WinExist("A")   ; paste results back into this window later
 
-    ; Store any selected text
-    ; WHY: Extended timeout (0.5s → 1s) for slower applications like PowerScribe
-    ; TRADEOFF: Slightly slower menu appearance vs better reliability
-    g_SelectedText := RA_CopySelection()
+    ; WHY: Copying the selection used to make the menu lag up to ~2-3 s. Now: one
+    ;      quick try (max 0.4 s) here; if that gets nothing, RA_WithSel copies again
+    ;      after an item is chosen (the menu does not change the selection).
+    g_SelectedText := RA_QuickCopy(0.4)
 
     ; Build and show menu
     ; WHY: Conditionally build menu based on tool visibility preferences
@@ -139,52 +139,52 @@ CleanupOnExit(ExitReason, ExitCode) {
 
     smartParseHasItems := false
     if (ShowVolumeTools) {
-        SmartParseMenu.Add("Smart Volume (parse dimensions)", MenuSmartVolume)
+        SmartParseMenu.Add("Smart Volume (parse dimensions)", RA_WithSel.Bind(MenuSmartVolume))
         smartParseHasItems := true
     }
     if (ShowRVLVTools) {
-        SmartParseMenu.Add("Smart RV/LV (parse ratio)", MenuSmartRVLV)
+        SmartParseMenu.Add("Smart RV/LV (parse ratio)", RA_WithSel.Bind(MenuSmartRVLV))
         smartParseHasItems := true
     }
     if (ShowNASCETTools) {
-        SmartParseMenu.Add("Smart NASCET (parse stenosis)", MenuSmartNASCET)
+        SmartParseMenu.Add("Smart NASCET (parse stenosis)", RA_WithSel.Bind(MenuSmartNASCET))
         smartParseHasItems := true
     }
     if (ShowStenosisTools) {
-        SmartParseMenu.Add("Smart Vessel Stenosis (any vessel)", MenuSmartStenosis)
+        SmartParseMenu.Add("Smart Vessel Stenosis (any vessel)", RA_WithSel.Bind(MenuSmartStenosis))
         smartParseHasItems := true
     }
     if (ShowAdrenalTools) {
-        SmartParseMenu.Add("Smart Adrenal (parse HU values)", MenuSmartAdrenal)
+        SmartParseMenu.Add("Smart Adrenal (parse HU values)", RA_WithSel.Bind(MenuSmartAdrenal))
         smartParseHasItems := true
     }
     if (ShowFleischnerTools) {
         if (smartParseHasItems)
             SmartParseMenu.Add()
-        SmartParseMenu.Add("Parse Nodules (Fleischner)", MenuSmartFleischner)
+        SmartParseMenu.Add("Parse Nodules (Fleischner)", RA_WithSel.Bind(MenuSmartFleischner))
         smartParseHasItems := true
     }
     if (ShowICHTools) {
-        SmartParseMenu.Add("Smart ICH Volume (ABC/2)", MenuSmartICH)
+        SmartParseMenu.Add("Smart ICH Volume (ABC/2)", RA_WithSel.Bind(MenuSmartICH))
         smartParseHasItems := true
     }
     if (ShowDateCalculator) {
-        SmartParseMenu.Add("Smart Follow-up Date", MenuSmartDate)
+        SmartParseMenu.Add("Smart Follow-up Date", RA_WithSel.Bind(MenuSmartDate))
         smartParseHasItems := true
     }
     if (ShowTIRADS || ShowORADS)
         SmartParseMenu.Add()
     if (ShowTIRADS) {
-        SmartParseMenu.Add("Thyroid ACR TI-RADS", MenuSmartTIRADS)
+        SmartParseMenu.Add("Thyroid ACR TI-RADS", RA_WithSel.Bind(MenuSmartTIRADS))
         smartParseHasItems := true
     }
     if (ShowORADS) {
-        SmartParseMenu.Add("Ovarian Cyst (O-RADS / SRU)", MenuSmartORADS)
+        SmartParseMenu.Add("Ovarian Cyst (O-RADS / SRU)", RA_WithSel.Bind(MenuSmartORADS))
         smartParseHasItems := true
     }
 
     ; Auto-detect works out which calculation the highlighted text needs
-    RadAssistMenu.Add("Smart Parse (Auto-detect)", MenuAutoParse)
+    RadAssistMenu.Add("Smart Parse (Auto-detect)", RA_WithSel.Bind(MenuAutoParse))
     if (smartParseHasItems)
         RadAssistMenu.Add("Smart Parse as...", SmartParseMenu)
     if (DefaultSmartParse != "Auto")
@@ -194,11 +194,11 @@ CleanupOnExit(ExitReason, ExitCode) {
     ; GUI calculators - conditionally add based on visibility
     guiHasItems := false
     if (ShowVolumeTools) {
-        RadAssistMenu.Add("Ellipsoid Volume (GUI)", MenuEllipsoidVolume)
+        RadAssistMenu.Add("Ellipsoid Volume (GUI)", RA_WithSel.Bind(MenuEllipsoidVolume))
         guiHasItems := true
     }
     if (ShowAdrenalTools) {
-        RadAssistMenu.Add("Adrenal Washout (GUI)", MenuAdrenalWashout)
+        RadAssistMenu.Add("Adrenal Washout (GUI)", RA_WithSel.Bind(MenuAdrenalWashout))
         guiHasItems := true
     }
     if (guiHasItems)
@@ -206,37 +206,37 @@ CleanupOnExit(ExitReason, ExitCode) {
 
     stenosisHasItems := false
     if (ShowNASCETTools) {
-        RadAssistMenu.Add("NASCET (Carotid)", MenuNASCET)
+        RadAssistMenu.Add("NASCET (Carotid)", RA_WithSel.Bind(MenuNASCET))
         stenosisHasItems := true
     }
     if (ShowStenosisTools) {
-        RadAssistMenu.Add("Vessel Stenosis (General)", MenuStenosis)
+        RadAssistMenu.Add("Vessel Stenosis (General)", RA_WithSel.Bind(MenuStenosis))
         stenosisHasItems := true
     }
     if (ShowRVLVTools) {
-        RadAssistMenu.Add("RV/LV Ratio (GUI)", MenuRVLV)
+        RadAssistMenu.Add("RV/LV Ratio (GUI)", RA_WithSel.Bind(MenuRVLV))
         stenosisHasItems := true
     }
     if (stenosisHasItems)
         RadAssistMenu.Add()
 
     if (ShowFleischnerTools) {
-        RadAssistMenu.Add("Fleischner 2017 (GUI)", MenuFleischner)
+        RadAssistMenu.Add("Fleischner 2017 (GUI)", RA_WithSel.Bind(MenuFleischner))
         RadAssistMenu.Add()
     }
 
     ; New calculators section
     newCalcHasItems := false
     if (ShowICHTools) {
-        RadAssistMenu.Add("ICH Volume (ABC/2)", MenuICHVolume)
+        RadAssistMenu.Add("ICH Volume (ABC/2)", RA_WithSel.Bind(MenuICHVolume))
         newCalcHasItems := true
     }
     if (ShowDateCalculator) {
-        RadAssistMenu.Add("Follow-up Date Calculator", MenuDateCalc)
+        RadAssistMenu.Add("Follow-up Date Calculator", RA_WithSel.Bind(MenuDateCalc))
         newCalcHasItems := true
     }
     if (ShowBoneAge) {
-        RadAssistMenu.Add("Bone Age (Greulich && Pyle)", MenuBoneAge)
+        RadAssistMenu.Add("Bone Age (Greulich && Pyle)", RA_WithSel.Bind(MenuBoneAge))
         newCalcHasItems := true
     }
     if (newCalcHasItems)
@@ -270,10 +270,38 @@ RA_IsTargetApp() {
 ; WHY: Ctrl+C sent while Shift is still held (from Shift+Right-click) can be read
 ;      as Ctrl+Shift+C and copy nothing. Retry once after Shift is released.
 ; -----------------------------------------
-RA_CopySelection() {
+; Menu item wrapper: copy the highlighted text now (after the menu has closed and
+; focus is back in the report), then run the item's handler.
+RA_WithSel(handler, ItemName := "", ItemPos := 0, MyMenu := "") {
+    global g_SelectedText, g_TargetHwnd
+    ; (only if the quick copy before the menu got nothing)
+    ; wait until the closing menu has handed focus back to the report window
+    if (g_TargetHwnd && WinExist("ahk_id " g_TargetHwnd)) {
+        if !WinWaitActive("ahk_id " g_TargetHwnd, , 0.5)
+            RA_ActivateTarget()            ; focus did not come back by itself
+    }
+    Sleep(30)
+    if (g_SelectedText = "")
+        g_SelectedText := RA_CopySelection()
+    handler(ItemName, ItemPos, MyMenu)
+}
+
+; One fast copy attempt (used before showing the menu)
+RA_QuickCopy(timeout) {
+    saved := ClipboardAll()
+    A_Clipboard := ""
+    Send("{Shift up}^c")
+    txt := ClipWait(timeout) ? A_Clipboard : ""
+    A_Clipboard := saved
+    return txt
+}
+
+; retry: also try a second time after Shift is released (only needed when copying
+; while Shift+Right-click is still held)
+RA_CopySelection(retry := true) {
     saved := ClipboardAll()
     txt := ""
-    Loop 2 {
+    Loop (retry ? 2 : 1) {
         A_Clipboard := ""
         if (A_Index = 2) {
             KeyWait("Shift", "T1")
@@ -281,7 +309,7 @@ RA_CopySelection() {
             Sleep(50)
         }
         Send("{Shift up}^c")
-        if ClipWait(A_Index = 1 ? 0.6 : 1.2) {
+        if ClipWait(retry ? (A_Index = 1 ? 0.6 : 1.2) : 1) {
             txt := A_Clipboard
             break
         }
