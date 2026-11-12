@@ -64,6 +64,11 @@ global ShowFleischnerTools := true
 global ShowStenosisTools := true
 global ShowICHTools := true
 global ShowDateCalculator := true
+global ShowTIRADS := true          ; Thyroid ACR TI-RADS
+global ShowORADS := true           ; Ovarian cyst O-RADS / SRU
+global ShowBoneAge := false        ; Bone age (Greulich & Pyle) - mostly for MSK/peds readers
+global DarkTheme := false          ; Dark colors for RadAssist windows
+global RA_ThemeKeep := Map()       ; controls whose own text color should be kept
 
 ; -----------------------------------------
 ; Quick Call (floating always-on-top call panel, see QuickCall.ahk)
@@ -108,7 +113,7 @@ CleanupOnExit(ExitReason, ExitCode) {
 +RButton:: {
     global g_SelectedText, TargetApps, ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools, ShowICHTools
-    global ShowDateCalculator, DefaultSmartParse
+    global ShowDateCalculator, DefaultSmartParse, ShowTIRADS, ShowORADS, ShowBoneAge
 
     ; Check if we're in a target application
     inTargetApp := RA_IsTargetApp()
@@ -167,6 +172,16 @@ CleanupOnExit(ExitReason, ExitCode) {
         SmartParseMenu.Add("Smart Follow-up Date", MenuSmartDate)
         smartParseHasItems := true
     }
+    if (ShowTIRADS || ShowORADS)
+        SmartParseMenu.Add()
+    if (ShowTIRADS) {
+        SmartParseMenu.Add("Thyroid ACR TI-RADS", MenuSmartTIRADS)
+        smartParseHasItems := true
+    }
+    if (ShowORADS) {
+        SmartParseMenu.Add("Ovarian Cyst (O-RADS / SRU)", MenuSmartORADS)
+        smartParseHasItems := true
+    }
 
     ; Auto-detect works out which calculation the highlighted text needs
     RadAssistMenu.Add("Smart Parse (Auto-detect)", MenuAutoParse)
@@ -218,6 +233,10 @@ CleanupOnExit(ExitReason, ExitCode) {
     }
     if (ShowDateCalculator) {
         RadAssistMenu.Add("Follow-up Date Calculator", MenuDateCalc)
+        newCalcHasItems := true
+    }
+    if (ShowBoneAge) {
+        RadAssistMenu.Add("Bone Age (Greulich && Pyle)", MenuBoneAge)
         newCalcHasItems := true
     }
     if (newCalcHasItems)
@@ -339,12 +358,39 @@ MenuQuickSmartParse(ItemName, ItemPos, MyMenu) {
 }
 
 MenuAutoParse(ItemName, ItemPos, MyMenu) {
-    global g_SelectedText
+    global g_SelectedText, ShowBoneAge
+    if (ShowBoneAge && RegExMatch(g_SelectedText, "i)bone\s+age")) {
+        ShowBoneAgeGui(g_SelectedText)
+        return
+    }
     if (g_SelectedText = "") {
         MsgBox("Highlight the dictated sentence(s) first, then Shift+Right-click > Smart Parse.", "No Selection", 0x40030)
         return
     }
     ParseAndInsertAuto(g_SelectedText)
+}
+
+MenuSmartTIRADS(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
+    if (g_SelectedText = "") {
+        MsgBox("Highlight the thyroid nodule description(s) - or the whole report - first.", "No Selection", 0x40030)
+        return
+    }
+    ParseAndInsertTIRADS(g_SelectedText)
+}
+
+MenuSmartORADS(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
+    if (g_SelectedText = "") {
+        MsgBox("Highlight the ovarian cyst description first (size, simple/hemorrhagic/endometrioma/dermoid, menopausal status if known).", "No Selection", 0x40030)
+        return
+    }
+    ParseAndInsertORADS(g_SelectedText)
+}
+
+MenuBoneAge(ItemName, ItemPos, MyMenu) {
+    global g_SelectedText
+    ShowBoneAgeGui(g_SelectedText)
 }
 
 MenuSmartStenosis(ItemName, ItemPos, MyMenu) {
@@ -1241,7 +1287,7 @@ FilterNonMeasurements(input) {
 global ConfirmGuiObj := ""
 
 ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
-    global SmartParseFallbackToGUI, g_ParsedResultText, ConfirmGuiObj
+    global SmartParseFallbackToGUI, g_ParsedResultText, ConfirmGuiObj, DarkTheme
     Critical()      ; build and show the dialog before any button click can run
 
     g_ParsedResultText := calculatedResult
@@ -1276,19 +1322,24 @@ ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     ConfirmGuiObj.Add("Text", "x10 y10 w440", parseType)
     ConfirmGuiObj.SetFont("s10 norm")
     ConfirmGuiObj.Add("Text", "x10 y+6 w440", "Found:")
-    ConfirmGuiObj.SetFont("s10 bold c1F4E79")
-    ConfirmGuiObj.Add("Text", "x20 y+2 w430", Trim(displayText, "`r`n"))
+    ConfirmGuiObj.SetFont("s10 bold c" (DarkTheme ? "9CDCFE" : "1F4E79"))
+    tFound := ConfirmGuiObj.Add("Text", "x20 y+2 w430", Trim(displayText, "`r`n"))
+    RA_ThemeKeep[tFound.Hwnd] := true
     ConfirmGuiObj.SetFont("s10 norm cDefault")
     ConfirmGuiObj.Add("Text", "x10 y+8 w440", "Will insert:")
     lines := StrSplit(Trim(calculatedResult, "`r`n "), "`n").Length
-    ConfirmGuiObj.Add("Edit", "x10 y+2 w440 r" Min(14, Max(2, lines + 1)) " ReadOnly", Trim(StrReplace(calculatedResult, "`n", "`r`n"), "`r`n "))
-    ConfirmGuiObj.Add("Text", "x10 y+8 w440 c" (confidence < 50 ? "C00000" : confidence < 80 ? "A06000" : "008000"), conf)
+    ePreview := ConfirmGuiObj.Add("Edit", "x10 y+2 w440 r" Min(14, Max(2, lines + 1)) " ReadOnly", Trim(StrReplace(calculatedResult, "`n", "`r`n"), "`r`n "))
+    tConf := ConfirmGuiObj.Add("Text", "x10 y+8 w440 c" (DarkTheme ? (confidence < 50 ? "FF7070" : confidence < 80 ? "FFC060" : "70E070") : (confidence < 50 ? "C00000" : confidence < 80 ? "A06000" : "008000")), conf)
+    RA_ThemeKeep[tConf.Hwnd] := true
 
     lowConf := (confidence < 50 && SmartParseFallbackToGUI)
     btnIns := ConfirmGuiObj.Add("Button", "x10 y+10 w130" (lowConf ? "" : " Default"), lowConf ? "Insert Anyway" : "Insert")
     btnIns.OnEvent("Click", ConfirmInsert)
     btnEdit := ConfirmGuiObj.Add("Button", "x+10 yp w130" (lowConf ? " Default" : ""), "Edit in GUI")
     btnEdit.OnEvent("Click", ConfirmEdit)
+    global g_SPResult
+    if !(IsObject(g_SPResult) && g_SPResult.edit)
+        btnEdit.Enabled := false          ; no calculator window for this result (TI-RADS, O-RADS)
     ConfirmGuiObj.Add("Button", "x+10 yp w130", "Cancel").OnEvent("Click", ConfirmCancel)
 
     ConfirmGuiObj.Show("x" (mouseX + 10) " y" (mouseY + 10) " AutoSize")
@@ -1297,6 +1348,7 @@ ShowParseConfirmation(parseType, parsedValues, calculatedResult, confidence) {
     ;      Force the dialog to the front now and keep it there while it is open.
     ; NOTE: Non-blocking - the buttons do the work, so Shift+Right-click keeps working.
     hConfirm := ConfirmGuiObj.Hwnd
+    try SendMessage(0x115, 6, 0, ePreview)    ; preview scrolled to the top
     RA_Front(hConfirm)
     try (lowConf ? btnEdit : btnIns).Focus()  ; Enter = default action, preview text not selected
     ; Windows sometimes refuses the first activation; try again shortly after
@@ -1356,7 +1408,40 @@ RA_FitOnMouseMonitor(hwnd) {
     }
 }
 
+; Dark theme for a RadAssist window (Settings > Appearance > Dark theme)
+RA_ApplyTheme(hwnd) {
+    global DarkTheme, RA_ThemeKeep
+    if !DarkTheme
+        return
+    try g := GuiFromHwnd(hwnd)
+    catch
+        return
+    if !IsObject(g) || hwnd = (IsSet(QC_Gui) && IsObject(QC_Gui) ? QC_Gui.Hwnd : 0)
+        return
+    g.BackColor := "1E1E1E"
+    try DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "Int", 20, "Int*", 1, "Int", 4)   ; dark title bar (Win10 20H1+/Win11)
+    for ctrl in g {
+        try {
+            switch ctrl.Type {
+                case "Edit", "ComboBox", "DDL", "ListBox":
+                    ctrl.Opt("Background2D2D2D")
+                    ctrl.SetFont("cE6E6E6")
+                case "Button":
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", ctrl.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                case "CheckBox", "Radio", "GroupBox":
+                    ctrl.Opt("-Theme")            ; themed checkboxes ignore text color
+                    ctrl.SetFont("cE6E6E6")
+                case "Text", "Link":
+                    if !RA_ThemeKeep.Has(ctrl.Hwnd)
+                        ctrl.SetFont("cE6E6E6")
+            }
+        }
+    }
+    DllCall("RedrawWindow", "Ptr", hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0185)
+}
+
 RA_Front(hwnd) {
+    RA_ApplyTheme(hwnd)
     RA_FitOnMouseMonitor(hwnd)
     try {
         DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", -2, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
@@ -2051,6 +2136,10 @@ PE_Auto(text) {
         tryOrder.Push("RVLV")
     if RegExMatch(t, "i)stenos|stenotic|narrow|residual\s+lumen|NASCET|minimal\s+lumen")
         tryOrder.Push("Stenosis")
+    if (RegExMatch(t, "i)thyroid|\bTI-?RADS|isthmus|\b(?:right|left)\s+lobe\b") && RegExMatch(t, "i)nodul"))
+        tryOrder.Push("TIRADS")
+    if (RegExMatch(t, "i)ovar|adnex") && RegExMatch(t, "i)\bsimple\b|hemorrhag|endometrioma|dermoid|teratoma|reticular|ground[- ]?glass|low[- ]level\s+echoes|menopaus|O-?RADS"))
+        tryOrder.Push("ORADS")
     if PE_FindDims(t)
         tryOrder.Push(RegExMatch(t, "i)hemorrhage|hematoma|\bICH\b|\bbleed|intraparenchymal|intracerebral") ? "ICH" : "Volume")
     if RegExMatch(t, "i)nodul|\bGG[NO]|ground[- ]?glass")
@@ -2070,7 +2159,7 @@ PE_Auto(text) {
             list .= (list != "" ? ", " : "") n
         msg .= "`n`nTried: " list
     }
-    msg .= "`n`nSupported: 3-D volumes, ICH (ABC/2), RV/LV, NASCET / vessel stenosis, adrenal washout (HU), Fleischner nodules, follow-up dates."
+    msg .= "`n`nSupported: 3-D volumes, ICH (ABC/2), RV/LV, NASCET / vessel stenosis, adrenal washout (HU), Fleischner nodules, thyroid TI-RADS, ovarian cysts (O-RADS/SRU), follow-up dates."
     return PE_Fail(msg)
 }
 
@@ -2084,6 +2173,8 @@ PE_ByName(name, text) {
         case "Adrenal": return PE_Adrenal(text)
         case "Fleischner": return PE_Fleischner(text)
         case "Date": return PE_Date(text)
+        case "TIRADS": return PE_TIRADS(text)
+        case "ORADS": return PE_ORADS(text)
         default: return PE_Auto(text)
     }
 }
@@ -2100,6 +2191,539 @@ SP_Run(r) {
     ShowParseConfirmation(r.title, r.values, r.text, r.conf)
 }
 
+; ---------------- THYROID: ACR TI-RADS ----------------
+; Scores each nodule from its descriptors (ACR TI-RADS, Tessler et al. JACR 2017).
+; Highlight one description or the whole report; text after IMPRESSION is ignored
+; so nodules repeated in the impression are not double-counted.
+PE_TIRADS(text) {
+    t := RegExReplace(text, "\R", "`n")
+    if RegExMatch(t, "i)(?:^|\n)\s*(?:CLINICAL\s+)?IMPRESSIONS?\s*:", &im)
+        t := SubStr(t, 1, im.Pos - 1)
+    t := RegExReplace(t, "\s+", " ")
+    t := StrReplace(t, Chr(0xD7), "x")
+    t := RegExReplace(t, "(?<!\d)\.(?!\d)|;", ".`n")          ; sentences (not decimals)
+
+    ; Group sentences into nodules: a sentence that mentions a nodule with a size
+    ; starts a new nodule; following sentences without a new size add descriptors.
+    nodules := [], cur := ""
+    for s in StrSplit(t, "`n") {
+        s := Trim(s)
+        if (s = "")
+            continue
+        hasNod := RegExMatch(s, "i)\b(?:nodules?|lesions?|mass|TR\d)\b")
+        sz := PE_TIRADSSize(s)
+        if (hasNod && sz > 0) {
+            if RegExMatch(s, "i)\bno\s+(?:\w+\s+){0,3}nodules?\b")
+                continue
+            cur := {text: s, size: sz}
+            nodules.Push(cur)
+        } else if IsObject(cur) {
+            if (RegExMatch(s, "i)\b(?:nodules?|lobe|isthmus)\b") && !RegExMatch(s, "i)\b(?:it|this|the\s+nodule|which|there\s+is)\b"))
+                cur := ""                      ; talking about something else now
+            else
+                cur.text .= " " s
+        }
+    }
+    if (nodules.Length = 0)
+        return PE_Fail("Could not find a thyroid nodule with a size.`n`nExample: Right lobe: solid, hypoechoic, 1.5 cm nodule with macrocalcifications, wider-than-tall with smooth margins.")
+
+    out := "`n`nACR TI-RADS:"
+    vals := [], fnaCount := 0, conf := 90
+    for i, n in nodules {
+        sc := PE_TIRADSScore(n.text)
+        tr := PE_TIRADSLevel(sc.total)
+        rec := PE_TIRADSRec(tr, n.size)
+        if InStr(rec, "FNA recommended")
+            fnaCount++
+        loc := PE_ThyroidLoc(n.text)
+        out .= "`nNodule " i (loc != "" ? " (" loc ")" : "") ", " PE_Fmt(n.size) " cm: " sc.detail
+        out .= " = " sc.total " point" (sc.total = 1 ? "" : "s") ", TR" tr " (" PE_TIRADSName(tr) "). " rec
+        vals.Push(["Nodule " i, (loc != "" ? loc " " : "") PE_Fmt(n.size) " cm, " sc.total " pts, TR" tr (sc.missing != "" ? "  [assumed: " sc.missing "]" : "")])
+        if (sc.missing != "")
+            conf := Min(conf, 70)
+    }
+    if (fnaCount > 2)
+        out .= "`nNote: ACR TI-RADS suggests FNA of no more than two nodules, those with the highest point totals."
+    out .= "`nRef: Tessler FN et al. ACR Thyroid Imaging, Reporting and Data System (TI-RADS). JACR 2017;14:587-595."
+    return PE_Ok("ACR TI-RADS", vals, out, conf, "", true)     ; true = insert after the IMPRESSION
+}
+
+; Largest dimension in cm ("1.5 x 1.2 x 1.0 cm", "15 mm", "1.5 cm")
+PE_TIRADSSize(s) {
+    best := 0, pos := 1
+    while (p := RegExMatch(s, "i)" PE_N "\s*(?:" PE_U ")?((?:\s*(?:x|by)\s*(?:\d+(?:\.\d+)?|\.\d+)\s*(?:" PE_U ")?){0,2})", &m, pos)) {
+        pos := p + Max(1, m.Len)
+        ; unit = last unit written in this measurement
+        u := ""
+        if RegExMatch(m[0], "i)(mm|cm|millimet|centimet)[a-z]*\s*$", &um)
+            u := PE_Unit(um[1])
+        if (u = "")
+            continue
+        nums := [], q := 1
+        while (qq := RegExMatch(m[0], "(\d+(?:\.\d+)?|\.\d+)", &nm, q))
+            nums.Push(nm[1] + 0), q := qq + nm.Len
+        mx := Max(nums*)
+        best := Max(best, u = "mm" ? mx / 10 : mx)
+    }
+    return best
+}
+
+PE_TIRADSScore(s) {
+    ; Drop negated findings first ("no microcalcifications", "not taller-than-wide")
+    t := RegExReplace(s, "i)\b(?:no|without|absent|negative\s+for)\s+(?:\w+[\s,]+){0,4}?(?:micro|macro)?calcifications?|\b(?:no|without)\s+(?:\w+\s+){0,3}?echogenic\s+foci", " ")
+    t := RegExReplace(t, "i)\b(?:no|without)\s+(?:evidence\s+of\s+)?extra-?\s?thyroidal\s+extension", " ")
+    t := RegExReplace(t, "i)\bnot\s+taller[- ]than[- ]wide", " wider-than-tall")
+    detail := "", missing := ""
+
+    ; Composition
+    if RegExMatch(t, "i)spongiform") {
+        return {total: 0, detail: "spongiform (0; other features not scored)", missing: ""}
+    } else if RegExMatch(t, "i)mixed|partially\s+cystic|predominantly\s+(?:solid|cystic)|solid\s+and\s+cystic|cystic\s+and\s+solid|complex\s+cystic|cystic\s+(?:and|with)\s+solid|solid\s+(?:with|and)\s+cystic") {
+        comp := 1, cname := "mixed cystic and solid"
+    } else if RegExMatch(t, "i)(?:purely|completely|entirely|almost\s+completely|simple)\s+cystic|\bcyst\b|anechoic\s+cyst|\bcystic\b") && !RegExMatch(t, "i)\bsolid\b") {
+        comp := 0, cname := "cystic"
+    } else if RegExMatch(t, "i)\bsolid\b") {
+        comp := 2, cname := "solid"
+    } else {
+        comp := 2, cname := "solid (composition not stated)", missing .= "composition "
+    }
+    ; Echogenicity
+    if (comp = 0) {
+        echo := 0, ename := "anechoic"
+    } else if RegExMatch(t, "i)(?:very|markedly)\s+hypoechoic") {
+        echo := 3, ename := "very hypoechoic"
+    } else if RegExMatch(t, "i)hypoechoic|hypoechogenic") {
+        echo := 2, ename := "hypoechoic"
+    } else if RegExMatch(t, "i)isoechoic|hyperechoic|iso-?\s?echoic|hyper-?\s?echoic|echogenic\s+nodule") {
+        echo := 1, ename := RegExMatch(t, "i)hyper") ? "hyperechoic" : "isoechoic"
+    } else if RegExMatch(t, "i)anechoic") {
+        echo := 0, ename := "anechoic"
+    } else {
+        echo := 1, ename := "echogenicity not stated", missing .= "echogenicity "
+    }
+    ; Shape
+    if RegExMatch(t, "i)taller[- ]than[- ]wide|anti-?parallel") {
+        shape := 3, sname := "taller-than-wide"
+    } else {
+        shape := 0, sname := "wider-than-tall"
+        if !RegExMatch(t, "i)wider[- ]than[- ]tall|parallel|oval|round")
+            sname .= " (shape not stated)"
+    }
+    ; Margin
+    if RegExMatch(t, "i)extra-?\s?thyroidal|\bETE\b|invad(?:es|ing)\s+(?:the\s+)?(?:strap|capsule|trachea)") {
+        margin := 3, mname := "extrathyroidal extension"
+    } else if RegExMatch(t, "i)lobulated|irregular|spiculated|angular|microlobulated") {
+        margin := 2, mname := "lobulated/irregular margins"
+    } else if RegExMatch(t, "i)smooth|well[- ]?(?:defined|circumscribed)|circumscribed|ill[- ]?defined") {
+        margin := 0, mname := "smooth margins"
+    } else {
+        margin := 0, mname := "margins not stated"
+    }
+    ; Echogenic foci (additive)
+    foci := 0, fnames := ""
+    if RegExMatch(t, "i)microcalcification|punctate\s+(?:echogenic\s+foci|calcification)|psammoma") {
+        foci += 3, fnames .= "punctate echogenic foci (3) "
+    }
+    if RegExMatch(t, "i)peripheral\s+(?:rim\s+)?calcification|rim\s+calcification|eggshell|peripheral\s+calcific") {
+        foci += 2, fnames .= "peripheral calcifications (2) "
+    }
+    if RegExMatch(t, "i)macro-?\s?calcification|coarse\s+calcification|large\s+calcification") {
+        foci += 1, fnames .= "macrocalcifications (1) "
+    }
+    if (fnames = "")
+        fnames := RegExMatch(t, "i)comet[- ]tail") ? "comet-tail artifacts (0) " : "no echogenic foci (0) "
+
+    total := comp + echo + shape + margin + foci
+    detail := cname " (" comp "), " ename " (" echo "), " sname " (" shape "), " mname " (" margin "), " Trim(fnames)
+    return {total: total, detail: detail, missing: Trim(missing)}
+}
+
+PE_TIRADSLevel(pts) => pts >= 7 ? 5 : pts >= 4 ? 4 : pts = 3 ? 3 : pts = 2 ? 2 : 1
+PE_TIRADSName(tr) => ["benign", "not suspicious", "mildly suspicious", "moderately suspicious", "highly suspicious"][tr]
+
+PE_TIRADSRec(tr, cm) {
+    static fna := [0, 0, 2.5, 1.5, 1.0], fu := [0, 0, 1.5, 1.0, 0.5]
+    static when := ["", "", "ultrasound at 1, 3 and 5 years", "ultrasound at 1, 2, 3 and 5 years", "ultrasound annually for up to 5 years"]
+    if (tr <= 2)
+        return "No FNA."
+    if (cm >= fna[tr])
+        return "FNA recommended (TR" tr " nodule " PE_Fmt(fna[tr]) " cm or larger)."
+    if (cm >= fu[tr])
+        return "Follow-up " when[tr] " (TR" tr " nodule " PE_Fmt(fu[tr]) " cm or larger)."
+    return "No FNA or follow-up needed based on size."
+}
+
+PE_ThyroidLoc(s) {
+    loc := ""
+    if RegExMatch(s, "i)\bisthmus")
+        loc := "isthmus"
+    else if RegExMatch(s, "i)\b(right|left)\b", &m)
+        loc := StrLower(m[1]) " lobe"
+    if RegExMatch(s, "i)\b(upper|mid(?:dle)?|lower|inferior|superior)\s*(?:pole|portion|third)?", &p) && loc != "isthmus"
+        loc := Trim(loc " " StrLower(p[1]) " pole")
+    return loc
+}
+
+; ---------------- OVARIAN / ADNEXAL CYST: O-RADS US + SRU ----------------
+; Classic benign cysts only (simple, hemorrhagic, endometrioma, dermoid).
+; Category: O-RADS US. Follow-up: SRU consensus (simple cysts: Levine et al.
+; Radiology 2019; hemorrhagic/endometrioma/dermoid: Levine et al. Radiology 2010).
+PE_ORADS(text) {
+    t := RegExReplace(text, "\R", " ")
+    t := StrReplace(t, Chr(0xD7), "x")
+    cm := PE_TIRADSSize(t)
+    if (cm <= 0)
+        return PE_Fail("Could not find the cyst size.`n`nExample: Simple right ovarian cyst measuring 4.2 x 3.8 x 3.5 cm in a premenopausal patient.")
+    if RegExMatch(t, "i)papillary|solid\s+(?:component|nodule|portion|area)|mural\s+nodul|thick(?:ened)?\s+septa|irregular\s+(?:wall|septa)|internal\s+(?:blood\s+)?flow|vascular\s+(?:solid|septa)|multilocular|ascites")
+        return PE_Fail("This lesion has features that are not a classic benign cyst (solid component, papillary projection, thick/irregular septation, flow or multilocularity).`n`nUse the full O-RADS US lexicon (O-RADS 3-5); no automatic follow-up recommendation.")
+    type := ""
+    if RegExMatch(t, "i)dermoid|teratoma|echogenic\s+plug|dermoid\s+mesh|rokitansky")
+        type := "dermoid"
+    else if RegExMatch(t, "i)endometrioma|ground[- ]?glass|homogeneous\s+low[- ]level\s+echoes|chocolate")
+        type := "endometrioma"
+    else if RegExMatch(t, "i)hemorrhag|haemorrhag|reticular|lace-?like|fishnet|retract(?:ing|ile)\s+clot|cobweb")
+        type := "hemorrhagic"
+    else if RegExMatch(t, "i)\bsimple\b|anechoic|unilocular\s+(?:thin|smooth)|thin[- ]walled")
+        type := "simple"
+    if (type = "")
+        return PE_Fail("Found a " PE_Fmt(cm) " cm cyst but not its type.`n`nAdd a descriptor: simple / anechoic, hemorrhagic (reticular, retracting clot), endometrioma (ground-glass, low-level echoes) or dermoid (echogenic plug).")
+
+    meno := ""
+    if RegExMatch(t, "i)post-?\s?menopaus")
+        meno := "post"
+    else if RegExMatch(t, "i)pre-?\s?menopaus|reproductive[- ]age|\bLMP\b|last\s+menstrual|day\s+\d+\s+of\s+(?:her\s+)?cycle|pregnan")
+        meno := "pre"
+    else if RegExMatch(t, "i)\b(\d{2})[- ]?(?:year|yr|y)[- ]?(?:old|o\b)", &am) {
+        age := am[1] + 0
+        meno := age < 45 ? "pre" : age >= 55 ? "post" : ""
+    }
+
+    if (cm >= 10) {
+        cat := "O-RADS US 3 (low risk)"
+        rec := "Classic benign-appearing lesion 10 cm or larger: management by gynecologist; consider MRI (O-RADS MRI)."
+        res := "`n`nOvarian/adnexal cyst: " PE_Fmt(cm) " cm " type " cyst. " cat ". " rec
+    } else {
+        cat := (type = "simple" && cm <= 3 && meno != "post") ? "O-RADS US 1 (normal ovary, physiologic follicle)" : "O-RADS US 2 (almost certainly benign)"
+        if (meno = "")
+            rec := "Premenopausal: " PE_ORADSRec(type, cm, "pre") " Postmenopausal: " PE_ORADSRec(type, cm, "post")
+        else
+            rec := PE_ORADSRec(type, cm, meno)
+        if (type = "simple" && cm <= 3 && meno = "")
+            cat := "O-RADS US 1 if premenopausal (physiologic follicle), O-RADS US 2 if postmenopausal"
+        res := "`n`nOvarian/adnexal cyst: " PE_Fmt(cm) " cm " type " cyst" (meno != "" ? " in a " meno "menopausal patient" : "") ". " cat ". " rec
+    }
+    res .= "`nRef: O-RADS US v2022 (ACR); follow-up per SRU consensus (Levine et al. Radiology 2010;256:943-954 and 2019;293:359-371)."
+    vals := [["Size (largest)", PE_Fmt(cm) " cm"], ["Type", type], ["Menopausal status", meno = "" ? "not stated (both given)" : meno "menopausal"], ["Category", cat]]
+    return PE_Ok("Ovarian Cyst (O-RADS / SRU)", vals, res, meno = "" ? 75 : 90, "", true)
+}
+
+PE_ORADSRec(type, cm, meno) {
+    switch type {
+        case "simple":
+            if (meno = "pre") {
+                if (cm <= 3)
+                    return "Physiologic follicle; no follow-up."
+                if (cm <= 5)
+                    return "No follow-up needed."
+                if (cm <= 7)
+                    return "Follow-up ultrasound in 1 year."
+                return "MRI or surgical evaluation."
+            }
+            if (cm <= 1)
+                return "No follow-up needed."
+            if (cm <= 7)
+                return "Follow-up ultrasound in 1 year."
+            return "MRI or surgical evaluation."
+        case "hemorrhagic":
+            if (meno = "pre")
+                return cm <= 5 ? "No follow-up needed." : "Follow-up ultrasound in 6-12 weeks to confirm resolution."
+            return "Early postmenopause: follow-up ultrasound in 6-12 weeks to confirm resolution; late postmenopause: surgical evaluation."
+        case "endometrioma":
+            return meno = "pre" ? "Follow-up ultrasound in 6-12 weeks, then yearly if not surgically removed." : "Surgical evaluation may be considered; otherwise follow-up ultrasound in 6-12 weeks, then yearly."
+        case "dermoid":
+            return "Yearly follow-up ultrasound if not surgically removed."
+    }
+    return ""
+}
+
+; ---------------- BONE AGE: Greulich & Pyle ----------------
+; Parse an age in many dictation styles -> months (or "" if none)
+; "13 years 6 months", "13y6m", "13 yrs 6 mos", "13.5 years", "13 and a half years",
+; "13 1/2", "13 6/12", "13-6/12", "162 months", "13:6", "13 years"
+PE_AgeMonths(s) {
+    s := Trim(RegExReplace(s, "\s+", " "))
+    uY := "(?:years?|yrs?|y/?o|y\.?o\.?|y)"
+    uM := "(?:months?|mos?|m)"
+    if RegExMatch(s, "^(\d+)\s*:\s*(\d+)$", &m)          ; "13:6"
+        return m[1] * 12 + m[2]
+    if RegExMatch(s, "^(\d+(?:\.\d+)?)$", &m)             ; bare number = years
+        return Round(m[1] * 12)
+    if RegExMatch(s, "i)(\d+)\s*-?\s*" uY "\.?\s*and\s+(?:a\s+)?half", &m)   ; "9 years and a half"
+        return m[1] * 12 + 6
+    if RegExMatch(s, "i)(\d+)\s*-?\s*" uY "\.?(?:\s*(?:,|and|\+)?\s*(\d+(?:\.\d+)?)\s*-?\s*" uM "\b)", &m)
+        return m[1] * 12 + Round(m[2] + 0)
+    if RegExMatch(s, "i)(\d+)\s*(?:-|\s)\s*(\d+)\s*/\s*12\b", &m)
+        return m[1] * 12 + m[2]
+    if RegExMatch(s, "i)(\d+)\s*(?:and\s+(?:a\s+)?half|-?\s*1/2|" Chr(0xBD) ")", &m)
+        return m[1] * 12 + 6
+    if RegExMatch(s, "i)(\d+)\s*(?:and\s+(?:a\s+)?quarter|-?\s*1/4)", &m)
+        return m[1] * 12 + 3
+    if RegExMatch(s, "i)(\d+)\s*(?:and\s+three\s+quarters|-?\s*3/4)", &m)
+        return m[1] * 12 + 9
+    if RegExMatch(s, "i)(\d+(?:\.\d+)?)\s*-?\s*" uY "\b", &m)
+        return Round(m[1] * 12)
+    if RegExMatch(s, "i)(\d+)\s*-?\s*" uM "\b", &m)
+        return m[1] + 0
+    return ""
+}
+
+PE_AgeText(months) {
+    months := Round(months)
+    y := months // 12, m := Mod(months, 12)
+    return y " year" (y = 1 ? "" : "s") (m ? " " m " month" (m = 1 ? "" : "s") : "")
+}
+
+; Chronological age, sex and bone age from report text (header and/or dictation)
+PE_BoneAgeExtract(text) {
+    t := RegExReplace(text, "\R", " ")
+    r := {chrono: "", sex: "", bone: "", dob: "", examDate: ""}
+    ; Bone age written in the dictation
+    if RegExMatch(t, "i)bone\s+age\s*(?:is|of|:|=|estimated\s+(?:at|to\s+be)|approximately|approx\.?|consistent\s+with|corresponds\s+to)?\s*(?:approximately\s+|about\s+)?(.{1,40}?)(?:[.;,](?!\d)|\(|$|\s+(?:which|by|per|using|according)|\s+and\s+(?!(?:a\s+)?half|\d))", &m)
+        r.bone := PE_AgeMonths(m[1])
+    ; Chronological age stated directly
+    if RegExMatch(t, "i)(?:chronologic(?:al)?\s+age|actual\s+age|patient(?:'s)?\s+age|(?<!bone\s)(?<!bone)\bage)\s*(?:is|of|:|=)?\s*(.{1,30}?)(?:[.;,](?!\d)|\(|$|\s+(?:male|female|boy|girl|M\b|F\b))", &m)
+        r.chrono := PE_AgeMonths(m[1])
+    if (r.chrono = "" && RegExMatch(t, "i)(\d+)[- ](?:year|yr)[- ]?(?:s)?[- ](?:and[- ])?(\d+)[- ]month[- ]?(?:s)?[- ]old", &m))
+        r.chrono := m[1] * 12 + m[2]
+    if (r.chrono = "" && RegExMatch(t, "i)(\d+(?:\.\d+)?)[- ]?(?:year|yr)s?[- ]?old|(\d+(?:\.\d+)?)\s*(?:yo|y/o|y\.o\.)\b", &m))
+        r.chrono := Round((m[1] != "" ? m[1] : m[2]) * 12)
+    if (r.chrono = "" && RegExMatch(t, "i)(\d+)[- ]month[- ]old", &m))
+        r.chrono := m[1] + 0
+    ; DOB + exam date (more exact than a rounded age)
+    dateRe := "(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})"
+    if RegExMatch(t, "i)(?:DOB|D\.O\.B\.|date\s+of\s+birth|birth\s*date|born)\s*:?\s*" dateRe, &d) {
+        r.dob := PE_Ymd(d[1], d[2], d[3])
+        ex := ""
+        if RegExMatch(t, "i)(?:exam(?:ination)?|study|service|procedure|scan|accession)\s*(?:date|dt)?\s*:?\s*" dateRe, &e)
+            ex := PE_Ymd(e[1], e[2], e[3])
+        r.examDate := ex != "" ? ex : FormatTime(, "yyyyMMdd")
+        if (r.dob != "" && r.dob < r.examDate)
+            r.chrono := PE_MonthsBetween(r.dob, r.examDate)
+    }
+    ; Sex
+    if RegExMatch(t, "i)\b(female|girl|f)\b(?!\.?\s*(?:u|/u))", &s) || RegExMatch(t, "i)\b(male|boy|m)\b", &s)
+        r.sex := RegExMatch(s[1], "i)^(?:female|girl|f)$") ? "Female" : "Male"
+    if RegExMatch(t, "i)\b(?:sex|gender)\s*:?\s*(m|f|male|female)\b", &s)
+        r.sex := RegExMatch(s[1], "i)^f") ? "Female" : "Male"
+    return r
+}
+
+PE_Ymd(mo, d, y) {
+    y := y + 0
+    if (y < 100)
+        y += (y > Mod(A_YYYY, 100) ? 1900 : 2000)
+    if (mo < 1 || mo > 12 || d < 1 || d > 31)
+        return ""
+    return Format("{:04}{:02}{:02}", y, mo, d)
+}
+
+PE_MonthsBetween(a, b) {
+    m := (SubStr(b, 1, 4) - SubStr(a, 1, 4)) * 12 + (SubStr(b, 5, 2) - SubStr(a, 5, 2))
+    if (SubStr(b, 7, 2) + 0 < SubStr(a, 7, 2) + 0)
+        m -= 1
+    return m
+}
+
+; Greulich & Pyle standard deviations (months) by chronological age (months),
+; Brush Foundation data as tabulated in the G&P atlas. Linear interpolation.
+PE_GPSD(chronoMonths, sex) {
+    static ages := [3, 6, 9, 12, 18, 24, 30, 36, 42, 48, 54, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168, 180, 192, 204]
+    static male := [0.72, 1.13, 1.43, 1.97, 3.52, 3.92, 4.52, 5.08, 5.40, 6.66, 8.36, 8.79, 9.17, 8.91, 9.10, 11.00, 11.38, 10.77, 10.44, 10.72, 11.32, 12.86, 13.05, 13.84]
+    static female := [0.72, 1.16, 1.36, 1.77, 3.49, 4.64, 5.37, 5.97, 7.48, 8.98, 10.73, 11.65, 10.23, 9.64, 10.23, 10.74, 11.73, 11.94, 10.24, 10.67, 11.30, 9.23, 7.31, 7.31]
+    sd := (sex = "Female") ? female : male
+    if (chronoMonths <= ages[1])
+        return sd[1]
+    if (chronoMonths >= ages[ages.Length])
+        return sd[ages.Length]
+    Loop ages.Length - 1 {
+        i := A_Index
+        if (chronoMonths <= ages[i + 1]) {
+            f := (chronoMonths - ages[i]) / (ages[i + 1] - ages[i])
+            return sd[i] + f * (sd[i + 1] - sd[i])
+        }
+    }
+    return sd[ages.Length]
+}
+
+; Standard bone age paragraph
+PE_BoneAgeReport(boneMonths, chronoMonths, sex) {
+    if (boneMonths = "" || chronoMonths = "" || sex = "")
+        return PE_Fail("Need bone age, chronological age and sex.")
+    sd := PE_GPSD(chronoMonths, sex)
+    diff := boneMonths - chronoMonths
+    z := sd > 0 ? diff / sd : 0
+    if (Abs(z) <= 2)
+        interp := "The bone age is within normal limits (within 2 standard deviations of the chronological age)."
+    else if (z > 0)
+        interp := "The bone age is advanced (greater than 2 standard deviations above the chronological age)."
+    else
+        interp := "The bone age is delayed (greater than 2 standard deviations below the chronological age)."
+    who := (sex = "Female") ? "a girl" : "a boy"
+    r := " Using the standards of Greulich and Pyle, the bone age is estimated to be " PE_AgeText(boneMonths) "."
+    r .= " The chronological age is " PE_AgeText(chronoMonths) "."
+    r .= " The standard deviation for " who " of this chronological age is " PE_Fmt(sd, 1) " months."
+    r .= " The bone age is " (diff = 0 ? "equal to" : PE_Fmt(Abs(diff), 0) " month" (Abs(diff) = 1 ? "" : "s") (diff > 0 ? " greater than" : " less than")) " the chronological age (" (z >= 0 ? "+" : "-") PE_Fmt(Abs(z), 1) " SD). " interp
+    vals := [["Bone age", PE_AgeText(boneMonths)], ["Chronological age", PE_AgeText(chronoMonths)], ["Sex", sex], ["SD at this age", PE_Fmt(sd, 1) " months"], ["Difference", (diff >= 0 ? "+" : "") diff " months (" (z >= 0 ? "+" : "") PE_Fmt(z, 1) " SD)"]]
+    return PE_Ok("Bone Age (Greulich & Pyle)", vals, r, 90)
+}
+
+
+; -----------------------------------------
+; Bone Age (Greulich & Pyle) window
+; WHY: The reader types only the bone age; chronological age and sex are taken
+;      from the highlighted text / report header (DOB + exam date, "Age: 12y 3m",
+;      "12-year-old girl", ...). Every field stays editable; preview updates live.
+; -----------------------------------------
+global BoneAgeGuiObj := "", g_BoneAgeText := ""
+
+ShowBoneAgeGui(prefill := "") {
+    global BoneAgeGuiObj
+    if IsObject(BoneAgeGuiObj)
+        try BoneAgeGuiObj.Destroy()
+    x := PE_BoneAgeExtract(prefill)
+    g := Gui("+AlwaysOnTop -MinimizeBox", "Bone Age (Greulich & Pyle)")
+    g.SetFont("s10", "Segoe UI")
+    g.OnEvent("Close", BoneAgeClose)
+    g.OnEvent("Escape", BoneAgeClose)
+    g.Add("Text", "x10 y12 w160", "Bone age (as read):")
+    g.eBone := g.Add("Edit", "x175 y9 w230", x.bone != "" ? PE_AgeText(x.bone) : "")
+    g.Add("Text", "x10 y+12 w160", "Chronological age:")
+    g.eChrono := g.Add("Edit", "x175 yp-3 w230", (x.chrono != "" && x.dob = "") ? PE_AgeText(x.chrono) : "")
+    g.Add("Text", "x10 y+12 w160", "or DOB  /  exam date:")
+    g.eDob := g.Add("Edit", "x175 yp-3 w110", x.dob != "" ? FormatTime(x.dob, "M/d/yyyy") : "")
+    g.eExam := g.Add("Edit", "x+10 yp w110", x.examDate != "" ? FormatTime(x.examDate, "M/d/yyyy") : FormatTime(, "M/d/yyyy"))
+    g.Add("Text", "x10 y+12 w160", "Sex:")
+    g.ddSex := g.Add("DropDownList", "x175 yp-3 w110" (x.sex = "Male" ? " Choose1" : x.sex = "Female" ? " Choose2" : ""), ["Male", "Female"])
+    g.Add("Button", "x295 yp-1 w110", "Read report").OnEvent("Click", BoneAgeReadReport)
+    g.SetFont("s8 c808080")
+    g.Add("Text", "x10 y+8 w400", "Any style works: 13 years 6 months, 13y6m, 13.5, 13 1/2, 13 6/12, 13:6, 162 months")
+    g.SetFont("s10 cDefault")
+    g.preview := g.Add("Edit", "x10 y+6 w395 r7 ReadOnly")
+    g.Add("Button", "x10 y+10 w125 Default", "Insert").OnEvent("Click", BoneAgeInsert)
+    g.Add("Button", "x+10 yp w125", "Copy").OnEvent("Click", BoneAgeCopy)
+    g.Add("Button", "x+10 yp w125", "Cancel").OnEvent("Click", BoneAgeClose)
+    for c in [g.eBone, g.eChrono, g.eDob, g.eExam]
+        c.OnEvent("Change", BoneAgeUpdate)
+    g.ddSex.OnEvent("Change", BoneAgeUpdate)
+    BoneAgeGuiObj := g
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&mx, &my)
+    g.Show("x" (mx + 10) " y" (my + 10) " AutoSize")
+    RA_Front(g.Hwnd)
+    g.eBone.Focus()
+    BoneAgeUpdate()
+}
+
+BoneAgeUpdate(*) {
+    global BoneAgeGuiObj, g_BoneAgeText
+    g := BoneAgeGuiObj
+    if !IsObject(g)
+        return
+    bone := PE_AgeMonths(g.eBone.Value)
+    chrono := ""
+    dob := PE_ParseDate(g.eDob.Value), exam := PE_ParseDate(g.eExam.Value)
+    if (dob != "" && exam != "" && dob < exam)
+        chrono := PE_MonthsBetween(dob, exam)
+    else
+        chrono := PE_AgeMonths(g.eChrono.Value)
+    sex := g.ddSex.Text
+    g_BoneAgeText := ""
+    if (bone = "") {
+        g.preview.Value := "Type the bone age above."
+        return
+    }
+    if (chrono = "") {
+        g.preview.Value := "Enter the chronological age, or DOB and exam date."
+        return
+    }
+    if (sex = "") {
+        g.preview.Value := "Select the sex."
+        return
+    }
+    r := PE_BoneAgeReport(bone, chrono, sex)
+    g_BoneAgeText := r.text
+    g.preview.Value := Trim(r.text)
+}
+
+PE_ParseDate(s) {
+    if RegExMatch(s, "(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})", &d)
+        return PE_Ymd(d[1], d[2], d[3])
+    return ""
+}
+
+; Read age / DOB / sex from the whole report (cursor ends at the end of the report)
+BoneAgeReadReport(*) {
+    global BoneAgeGuiObj
+    g := BoneAgeGuiObj
+    RA_ActivateTarget()
+    saved := ClipboardAll()
+    A_Clipboard := ""
+    Send("^a")
+    Sleep(50)
+    Send("^c")
+    txt := ClipWait(1) ? A_Clipboard : ""
+    A_Clipboard := saved
+    Send("{Right}")                ; clear the select-all
+    if (txt = "") {
+        MsgBox("Could not read the report text.", "Bone Age", 0x40030)
+        return
+    }
+    x := PE_BoneAgeExtract(txt)
+    if (x.dob != "") {
+        g.eDob.Value := FormatTime(x.dob, "M/d/yyyy")
+        g.eExam.Value := FormatTime(x.examDate, "M/d/yyyy")
+    } else if (x.chrono != "") {
+        g.eChrono.Value := PE_AgeText(x.chrono)
+    }
+    if (x.sex != "")
+        g.ddSex.Choose(x.sex = "Male" ? 1 : 2)
+    if (x.bone != "" && g.eBone.Value = "")
+        g.eBone.Value := PE_AgeText(x.bone)
+    RA_Front(g.Hwnd)
+    BoneAgeUpdate()
+}
+
+BoneAgeInsert(*) {
+    global BoneAgeGuiObj, g_BoneAgeText
+    Critical()
+    BoneAgeUpdate()
+    if (g_BoneAgeText = "") {
+        MsgBox("Fill in bone age, chronological age and sex first.", "Bone Age", 0x40030)
+        return
+    }
+    txt := g_BoneAgeText
+    RA_ActivateTarget()
+    try BoneAgeGuiObj.Hide()
+    InsertAfterSelection(txt)
+    BoneAgeClose()
+}
+
+BoneAgeCopy(*) {
+    global g_BoneAgeText
+    BoneAgeUpdate()
+    if (g_BoneAgeText = "")
+        return
+    A_Clipboard := Trim(g_BoneAgeText)
+    ToolTip("Copied to clipboard")
+    SetTimer(RemoveToolTip, -1500)
+}
+
+BoneAgeClose(*) {
+    global BoneAgeGuiObj
+    try BoneAgeGuiObj.Destroy()
+    BoneAgeGuiObj := ""
+}
+
 ; -----------------------------------------
 ; Smart parse entry points (kept for menu handlers)
 ; -----------------------------------------
@@ -2112,6 +2736,8 @@ ParseAndInsertFleischner(input) => SP_Run(PE_Fleischner(input))
 ParseAndInsertICH(input) => SP_Run(PE_ICH(input))
 ParseAndInsertDate(input) => SP_Run(PE_Date(input))
 ParseAndInsertAuto(input) => SP_Run(PE_Auto(input))
+ParseAndInsertTIRADS(input) => SP_Run(PE_TIRADS(input))
+ParseAndInsertORADS(input) => SP_Run(PE_ORADS(input))
 
 ; -----------------------------------------
 ; Generate Fleischner recommendation for specific nodule sizes and risk level
@@ -2467,7 +3093,7 @@ ShowSettings() {
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
     global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
-    global ShowICHTools, ShowDateCalculator, QuickCallEnabled
+    global ShowICHTools, ShowDateCalculator, QuickCallEnabled, ShowTIRADS, ShowORADS, ShowBoneAge, DarkTheme
     global SettingsGuiObj
 
     CoordMode("Mouse", "Screen")
@@ -2493,7 +3119,7 @@ ShowSettings() {
     qcChecked := QuickCallEnabled ? "Checked" : ""
 
     ; Determine which item to select in dropdown (1-based index)
-    parseChoices := ["Auto", "Volume", "RVLV", "NASCET", "Stenosis", "Adrenal", "Fleischner", "ICH", "Date"]
+    parseChoices := ["Auto", "Volume", "RVLV", "NASCET", "Stenosis", "Adrenal", "Fleischner", "ICH", "Date", "TIRADS", "ORADS"]
     smartParseSelect := 1
     for i, name in parseChoices {
         if (DefaultSmartParse = name)
@@ -2509,45 +3135,51 @@ ShowSettings() {
     SettingsGuiObj := Gui("+AlwaysOnTop")
     SettingsGuiObj.OnEvent("Close", SettingsGuiClose)
     SettingsGuiObj.OnEvent("Escape", SettingsGuiClose)
-    SettingsGuiObj.Add("Text", "x10 y10 w280", "RadAssist v2.3 Settings")
+    SettingsGuiObj.SetFont("s9", "Segoe UI")
+    SettingsGuiObj.Add("Text", "x10 y10 w280", "RadAssist Settings")
     SettingsGuiObj.Add("Text", "x10 y40", "Default Quick Parse:")
     SettingsGuiObj.Add("DropDownList", "x130 y37 w120 vSetDefaultParse Choose" smartParseSelect, parseChoices)
 
-    ; Tool Visibility section (flat checkbox list per user preference)
-    SettingsGuiObj.Add("GroupBox", "x10 y65 w270 h125", "Tool Visibility (uncheck to hide)")
-    SettingsGuiObj.Add("Checkbox", "x20 y85 w120 vSetShowVolume " volChecked, "Volume")
-    SettingsGuiObj.Add("Checkbox", "x150 y85 w120 vSetShowRVLV " rvlvChecked, "RV/LV Ratio")
-    SettingsGuiObj.Add("Checkbox", "x20 y108 w120 vSetShowNASCET " nascetChecked, "NASCET")
-    SettingsGuiObj.Add("Checkbox", "x150 y108 w120 vSetShowAdrenal " adrenalChecked, "Adrenal")
-    SettingsGuiObj.Add("Checkbox", "x20 y131 w120 vSetShowFleischner " fleischnerChecked, "Fleischner")
-    SettingsGuiObj.Add("Checkbox", "x150 y131 w120 vSetShowStenosis " stenosisChecked, "Stenosis")
-    SettingsGuiObj.Add("Checkbox", "x20 y154 w120 vSetShowICH " ichChecked, "ICH Volume")
-    SettingsGuiObj.Add("Checkbox", "x150 y154 w120 vSetShowDate " dateChecked, "Date Calculator")
+    ; ---- left column
+    SettingsGuiObj.Add("GroupBox", "x10 y65 w280 h170", "Tool Visibility (uncheck to hide)")
+    SettingsGuiObj.Add("Checkbox", "x20 y85 w125 vSetShowVolume " volChecked, "Volume")
+    SettingsGuiObj.Add("Checkbox", "x155 y85 w125 vSetShowRVLV " rvlvChecked, "RV/LV Ratio")
+    SettingsGuiObj.Add("Checkbox", "x20 y108 w125 vSetShowNASCET " nascetChecked, "NASCET")
+    SettingsGuiObj.Add("Checkbox", "x155 y108 w125 vSetShowAdrenal " adrenalChecked, "Adrenal")
+    SettingsGuiObj.Add("Checkbox", "x20 y131 w125 vSetShowFleischner " fleischnerChecked, "Fleischner")
+    SettingsGuiObj.Add("Checkbox", "x155 y131 w125 vSetShowStenosis " stenosisChecked, "Stenosis")
+    SettingsGuiObj.Add("Checkbox", "x20 y154 w125 vSetShowICH " ichChecked, "ICH Volume")
+    SettingsGuiObj.Add("Checkbox", "x155 y154 w125 vSetShowDate " dateChecked, "Date Calculator")
+    SettingsGuiObj.Add("Checkbox", "x20 y177 w125 vSetShowTIRADS " (ShowTIRADS ? "Checked" : ""), "Thyroid TI-RADS")
+    SettingsGuiObj.Add("Checkbox", "x155 y177 w125 vSetShowORADS " (ShowORADS ? "Checked" : ""), "Ovarian O-RADS")
+    SettingsGuiObj.Add("Checkbox", "x20 y200 w260 vSetShowBoneAge " (ShowBoneAge ? "Checked" : ""), "Bone Age (Greulich && Pyle) - MSK/peds")
 
-    SettingsGuiObj.Add("GroupBox", "x10 y195 w270 h105", "Smart Parse Options")
-    SettingsGuiObj.Add("Checkbox", "x20 y215 w250 vSetConfirmation " confirmChecked, "Show confirmation dialog before insert")
-    SettingsGuiObj.Add("Checkbox", "x20 y240 w250 vSetFallbackGUI " fallbackChecked, "Fall back to GUI when confidence low")
-    SettingsGuiObj.Add("Text", "x20 y268", "Default units (no units in text):")
-    SettingsGuiObj.Add("DropDownList", "x190 y265 w70 vSetDefaultUnit Choose" unitSelect, ["cm", "mm"])
+    SettingsGuiObj.Add("GroupBox", "x10 y245 w280 h105", "Smart Parse Options")
+    SettingsGuiObj.Add("Checkbox", "x20 y265 w260 vSetConfirmation " confirmChecked, "Show confirmation dialog before insert")
+    SettingsGuiObj.Add("Checkbox", "x20 y290 w260 vSetFallbackGUI " fallbackChecked, "Fall back to GUI when confidence low")
+    SettingsGuiObj.Add("Text", "x20 y318", "Default units (no units in text):")
+    SettingsGuiObj.Add("DropDownList", "x200 y315 w70 vSetDefaultUnit Choose" unitSelect, ["cm", "mm"])
 
-    SettingsGuiObj.Add("GroupBox", "x10 y305 w270 h80", "RV/LV & Fleischner Output")
-    SettingsGuiObj.Add("Text", "x20 y325", "RV/LV format:")
-    SettingsGuiObj.Add("DropDownList", "x100 y322 w80 vSetRVLVFormat Choose" rvlvSelect, ["Macro", "Inline"])
-    SettingsGuiObj.Add("Text", "x185 y325 w90", "(Macro = cm)")
-    SettingsGuiObj.Add("Checkbox", "x20 y350 w250 vSetFleischnerImpression " fleischnerImprChecked, "Insert Fleischner at end of report")
+    ; ---- right column
+    SettingsGuiObj.Add("GroupBox", "x305 y65 w280 h80", "RV/LV && Fleischner Output")
+    SettingsGuiObj.Add("Text", "x315 y85", "RV/LV format:")
+    SettingsGuiObj.Add("DropDownList", "x400 y82 w80 vSetRVLVFormat Choose" rvlvSelect, ["Macro", "Inline"])
+    SettingsGuiObj.Add("Text", "x488 y85 w90", "(Macro = cm)")
+    SettingsGuiObj.Add("Checkbox", "x315 y112 w260 vSetFleischnerImpression " fleischnerImprChecked, "Insert Fleischner / TI-RADS at end of report")
 
-    SettingsGuiObj.Add("GroupBox", "x10 y390 w270 h105", "Output Options")
-    SettingsGuiObj.Add("Checkbox", "x20 y410 w250 vSetDatamine " dmChecked, "Include datamining phrase by default")
-    SettingsGuiObj.Add("Checkbox", "x20 y435 w250 vSetCitations " citChecked, "Show citations in output")
-    SettingsGuiObj.Add("Text", "x20 y460", "Datamining phrase:")
-    SettingsGuiObj.Add("Edit", "x110 y457 w160 vSetDMPhrase", DataminingPhrase)
+    SettingsGuiObj.Add("GroupBox", "x305 y155 w280 h105", "Output Options")
+    SettingsGuiObj.Add("Checkbox", "x315 y175 w260 vSetDatamine " dmChecked, "Include datamining phrase by default")
+    SettingsGuiObj.Add("Checkbox", "x315 y200 w260 vSetCitations " citChecked, "Show citations in output")
+    SettingsGuiObj.Add("Text", "x315 y228", "Datamining phrase:")
+    SettingsGuiObj.Add("Edit", "x420 y225 w155 vSetDMPhrase", DataminingPhrase)
 
-    SettingsGuiObj.Add("GroupBox", "x10 y500 w270 h50", "Quick Call")
-    SettingsGuiObj.Add("Checkbox", "x20 y520 w250 vSetQuickCall " qcChecked, "Enable Quick Call panel (Ctrl+Alt+P)")
+    SettingsGuiObj.Add("GroupBox", "x305 y270 w280 h80", "Appearance && Quick Call")
+    SettingsGuiObj.Add("Checkbox", "x315 y290 w260 vSetDarkTheme " (DarkTheme ? "Checked" : ""), "Dark theme")
+    SettingsGuiObj.Add("Checkbox", "x315 y315 w260 vSetQuickCall " qcChecked, "Enable Quick Call panel (Ctrl+Alt+P)")
 
-    SettingsGuiObj.Add("Button", "x70 y560 w80", "Save").OnEvent("Click", SaveSettings)
-    SettingsGuiObj.Add("Button", "x160 y560 w80", "Cancel").OnEvent("Click", SettingsGuiClose)
-    SettingsGuiObj.Show("x" xPos " y" yPos " w295 h600")
+    SettingsGuiObj.Add("Button", "x200 y365 w90 Default", "Save").OnEvent("Click", SaveSettings)
+    SettingsGuiObj.Add("Button", "x305 y365 w90", "Cancel").OnEvent("Click", SettingsGuiClose)
+    SettingsGuiObj.Show("x" xPos " y" yPos " w595 h405")
     RA_Front(SettingsGuiObj.Hwnd)
     SettingsGuiObj.Title := "Settings"
 }
@@ -2563,7 +3195,7 @@ SaveSettings(*) {
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
     global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
-    global ShowICHTools, ShowDateCalculator, QuickCallEnabled
+    global ShowICHTools, ShowDateCalculator, QuickCallEnabled, ShowTIRADS, ShowORADS, ShowBoneAge, DarkTheme
     global PreferencesPath
     global SettingsGuiObj
 
@@ -2589,6 +3221,10 @@ SaveSettings(*) {
     ShowStenosisTools := saved.SetShowStenosis
     ShowICHTools := saved.SetShowICH
     ShowDateCalculator := saved.SetShowDate
+    ShowTIRADS := saved.SetShowTIRADS
+    ShowORADS := saved.SetShowORADS
+    ShowBoneAge := saved.SetShowBoneAge
+    DarkTheme := saved.SetDarkTheme
 
     ; Quick Call - apply immediately (open the panel when newly enabled)
     wasQuickCall := QuickCallEnabled
@@ -2620,6 +3256,10 @@ SaveSettings(*) {
     writeSuccess := writeSuccess && IniWriteWithRetry("ShowICHTools", ShowICHTools)
     writeSuccess := writeSuccess && IniWriteWithRetry("ShowDateCalculator", ShowDateCalculator)
     writeSuccess := writeSuccess && IniWriteWithRetry("QuickCallEnabled", QuickCallEnabled)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowTIRADS", ShowTIRADS)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowORADS", ShowORADS)
+    writeSuccess := writeSuccess && IniWriteWithRetry("ShowBoneAge", ShowBoneAge)
+    writeSuccess := writeSuccess && IniWriteWithRetry("DarkTheme", DarkTheme)
 
     if (!writeSuccess)
         MsgBox("Some settings may not have saved. Check file permissions or OneDrive sync status.", "Warning", 0x40030)
@@ -2740,7 +3380,7 @@ LoadPreferences() {
     global DefaultMeasurementUnit, RVLVOutputFormat, FleischnerInsertAfterImpression
     global ShowVolumeTools, ShowRVLVTools, ShowNASCETTools
     global ShowAdrenalTools, ShowFleischnerTools, ShowStenosisTools
-    global ShowICHTools, ShowDateCalculator, QuickCallEnabled
+    global ShowICHTools, ShowDateCalculator, QuickCallEnabled, ShowTIRADS, ShowORADS, ShowBoneAge, DarkTheme
     global PreferencesPath
 
     ; Use PreferencesPath set by InitPreferencesPath() for OneDrive compatibility
@@ -2765,6 +3405,10 @@ LoadPreferences() {
         ShowICHTools := IniRead(PreferencesPath, "Settings", "ShowICHTools", "1")
         ShowDateCalculator := IniRead(PreferencesPath, "Settings", "ShowDateCalculator", "1")
         QuickCallEnabled := IniRead(PreferencesPath, "Settings", "QuickCallEnabled", "1")
+        ShowTIRADS := IniRead(PreferencesPath, "Settings", "ShowTIRADS", "1") = "1"
+        ShowORADS := IniRead(PreferencesPath, "Settings", "ShowORADS", "1") = "1"
+        ShowBoneAge := IniRead(PreferencesPath, "Settings", "ShowBoneAge", "0") = "1"
+        DarkTheme := IniRead(PreferencesPath, "Settings", "DarkTheme", "0") = "1"
 
         IncludeDatamining := (IncludeDatamining = "1")
         ShowCitations := (ShowCitations = "1")
@@ -2785,7 +3429,7 @@ LoadPreferences() {
     }
 
     ; Validate loaded preferences
-    validParsers := ",Auto,Volume,RVLV,NASCET,Stenosis,Adrenal,Fleischner,ICH,Date,"
+    validParsers := ",Auto,Volume,RVLV,NASCET,Stenosis,Adrenal,Fleischner,ICH,Date,TIRADS,ORADS,"
     if (DefaultSmartParse = "" || !InStr(validParsers, "," DefaultSmartParse ","))
         DefaultSmartParse := "Auto"
 

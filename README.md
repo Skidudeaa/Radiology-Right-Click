@@ -37,6 +37,10 @@ Open `index.html` in any browser for a modern, responsive calculator suite featu
 
 ## Desktop App (Windows)
 
+**Which file?** `RadAssist.ahk` needs **AutoHotkey v2** (Shift+Right-click tools, all smart parsers, Quick Call built in).
+`Radiology Right Click v1.22.ahk` (and `-local`) run on **AutoHotkey v1.1** (plain right-click menu, Quick Call built in).
+Both are single files that run from OneDrive or a USB stick.
+
 ### What's New in v2.5
 
 - **AutoHotkey v2 conversion** - Full rewrite to AHK v2 syntax for modern compatibility
@@ -85,6 +89,16 @@ Auto-detect recognizes normal dictation, for example:
 | 45 HU on noncontrast, 85 HU on portal venous phase, and 50 HU on 15-minute delayed phase. | Adrenal washout |
 | 7 mm solid noncalcified pulmonary nodule in the right upper lobe. | Fleischner 2017 (repeat mentions in the impression are not double-counted) |
 | Recommend follow-up ultrasound in 6 months. | Follow-up due date |
+| Right lobe: solid, hypoechoic, 1.5 cm nodule with macrocalcifications. | ACR TI-RADS points, TR level and FNA / follow-up per nodule (whole report OK; nodules repeated in the IMPRESSION are skipped; inserted after the IMPRESSION) |
+| 5.8 cm right ovarian hemorrhagic cyst with reticular echoes, 32-year-old. | O-RADS US category + SRU follow-up (simple, hemorrhagic, endometrioma, dermoid; pre/postmenopausal - both given if unknown; solid/papillary/flow features are refused) |
+
+**Bone Age (Greulich & Pyle):** turn on in Settings (off by default). Shift+Right-click > Bone Age
+(or Smart Parse on text containing "bone age"). Type the bone age in any style (13 years 6 months, 13y6m,
+13.5, 13 1/2, 13 6/12, 13:6, 162 months); chronological age and sex are filled from the highlighted text
+or **Read report** (DOB + exam date, "Age: 12 years 3 months", "12-year-old girl", "8 yo M"). Inserts the
+standard paragraph with the G&P standard deviation for age/sex and whether the bone age is within 2 SD.
+
+**Dark theme:** Settings > Appearance > Dark theme.
 
 **Inserting:** the confirmation dialog stays in front of PowerScribe/Sectra, does not block
 Shift+Right-click, and Insert pastes back into the window you Shift+Right-clicked in. Fleischner
