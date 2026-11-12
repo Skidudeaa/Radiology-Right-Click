@@ -92,10 +92,11 @@ A floating, always-on-top call panel (Google Voice) built in from `QuickCall.ahk
 - Turn it on/off in **Settings → Quick Call → Enable Quick Call panel**
 
 ### Quick Call in Radiology Right Click v1.22 (AutoHotkey v1)
-`QuickCall_v1.ahk` is the same panel rewritten for AutoHotkey v1.1 (needs v1.1.25+; a portable
-`AutoHotkey.exe` run from OneDrive works). It is `#Include`d by `Radiology Right Click v1.22.ahk`
-and `Radiology Right Click v1.22-local.ahk`.
-- Keep `QuickCall_v1.ahk` in the **same folder** as the v1.22 script (e.g. your OneDrive folder)
+The Quick Call panel, rewritten for AutoHotkey v1.1 (needs v1.1.25+; a portable `AutoHotkey.exe`
+run from OneDrive works), is **built into** `Radiology Right Click v1.22.ahk` and
+`Radiology Right Click v1.22-local.ahk`, so each script is a single self-contained file.
+(`QuickCall_v1.ahk` is the same code as a standalone script, if you want to run it on its own.)
+- Extract the ZIP first (don't run the script from inside the ZIP), then copy the v1.22 script to your OneDrive folder
 - Turn it on/off in **Right-click → Preferences → Quick Call Panel (Ctrl+Alt+P)**
   (on by default in v1.22; off by default in v1.22-local because it opens Google Voice links)
 - Phone book and panel position are saved next to the script (`QuickCall_PhoneBook.txt`,
