@@ -8,6 +8,7 @@
 
 #NoEnv
 #SingleInstance, Force
+#IfTimeout 2000   ; right-click check may wait for a briefly busy script (default 1 s let clicks fall through)
 SetWorkingDir, %A_ScriptDir%
 
 ; -----------------------------------------
@@ -36,6 +37,8 @@ global ShowFleischnerCriteria := true
 global ShowNASCETCalculator := true
 global ShowRVLVCalculator := true
 global ShowSpellCheck := true
+global SP_ShowParse := true, SP_ShowTIRADS := true, SP_ShowORADS := true, SP_ShowBoneAge := false   ; Smart Parse (SmartParse_v1 module)
+global QuickCallEnabled := true   ; Quick Call floating phone panel (QuickCall_v1.ahk)
 
 ; -------------- NEW/CHANGED CODE --------------
 ; Menu-sorting-related Globals
@@ -104,8 +107,9 @@ LoadPreferencesFromFile() {
     global MenuSortingMethod, CustomMenuOrder
     global g_FunctionFrequency
 	
-	if (!CheckPreferencesIntegrity()) {
-        MsgBox, Warning: Preferences file was corrupted and has been restored from backup.
+	; Returns true only when a missing preferences.ini was restored from the backup
+	if (CheckPreferencesIntegrity()) {
+        MsgBox, Warning: Preferences file was missing and has been restored from backup.
     }
 
     preferencesFile := A_ScriptDir . "\preferences.ini"
@@ -140,7 +144,7 @@ LoadPreferencesFromFile() {
 
         ; --- [Menu] or [Sorting] section ---
         IniRead, MenuSortingMethod, %preferencesFile%, Menu, SortingMethod, none
-        IniRead, CustomMenuOrder, %preferencesFile%, Menu, CustomMenuOrder,
+        IniRead, CustomMenuOrder, %preferencesFile%, Menu, CustomMenuOrder, %A_Space%
 		
 		; --- [References] section ---
 		IniRead, referencesList, %preferencesFile%, References, SavedReferences, %A_Space%
@@ -176,6 +180,7 @@ LoadPreferencesFromFile() {
 		
 		; [Spell Check]
 		IniRead, ShowSpellCheck, %preferencesFile%, Calculations, ShowSpellCheck, 1
+		IniRead, QuickCallEnabled, %preferencesFile%, QuickCall, Enabled, 1
 		
 
         ; Convert string "1" to boolean true, etc.
@@ -202,6 +207,13 @@ LoadPreferencesFromFile() {
         ShowRVLVCalculator := (ShowRVLVCalculator = "1")
         PauseDuration += 0
 		ShowSpellCheck := (ShowSpellCheck = "1")
+		QuickCallEnabled := (QuickCallEnabled = "1")
+        IniRead, SP_ShowParse, %preferencesFile%, SmartParse, ShowMenu, 1
+        IniRead, SP_ShowTIRADS, %preferencesFile%, SmartParse, ShowTIRADS, 1
+        IniRead, SP_ShowORADS, %preferencesFile%, SmartParse, ShowORADS, 1
+        IniRead, SP_ShowBoneAge, %preferencesFile%, SmartParse, ShowBoneAge, 0
+        SP_ShowParse := (SP_ShowParse = "1"), SP_ShowTIRADS := (SP_ShowTIRADS = "1")
+        SP_ShowORADS := (SP_ShowORADS = "1"), SP_ShowBoneAge := (SP_ShowBoneAge = "1")
 
         ; Load frequency data
         LoadMenuFrequencies()
@@ -211,6 +223,11 @@ LoadPreferencesFromFile() {
 }
 LoadPreferencesFromFile()
 InitializeRecommendations()  ; For Fleischner
+
+; Quick Call floating phone panel (functions are embedded at the end of this file)
+if (QuickCallEnabled)
+    QC_Enable()
+SP_Init()     ; Smart Parse module (functions embedded at the end of this file)
 
 ; -------------------------------------------------------------------------
 ; Load stored frequency data from .ini
@@ -272,6 +289,10 @@ RButton::
     ; Store original mouse position
     CoordMode, Mouse, Screen  ; Ensure we're using screen coordinates
     MouseGetPos, originalX, originalY, windowUnderCursor
+    ; Never activate one of this script's own tooltips/menus that happens to be under the mouse
+    WinGet, underPid, PID, ahk_id %windowUnderCursor%
+    if (underPid = DllCall("GetCurrentProcessId"))
+        windowUnderCursor := WinActive("A")
     
     if (windowUnderCursor != WinActive("A")) {
         WinActivate, ahk_id %windowUnderCursor%
@@ -282,6 +303,7 @@ RButton::
 
     ; Grab selected text
     g_SelectedText := GetSelectedText()
+    SP_SetTarget(WinExist("A"))   ; Smart Parse pastes back into this window
 
     ; Build + show menu
     CreateCustomMenu()
@@ -298,6 +320,13 @@ IsTargetApp() {
     MouseGetPos, , , windowUnderCursor
     WinGetClass, windowClass, ahk_id %windowUnderCursor%
     WinGet, windowExe, ProcessName, ahk_id %windowUnderCursor%
+    ; WHY: One of this script's own tooltips/menus can be under the mouse for a moment
+    ;      (e.g. "Inserted"); then judge by the active window instead.
+    WinGet, underPid, PID, ahk_id %windowUnderCursor%
+    if (underPid = DllCall("GetCurrentProcessId") || windowClass = "tooltips_class32") {
+        WinGetClass, windowClass, A
+        WinGet, windowExe, ProcessName, A
+    }
 
     for index, app in TargetApps {
         if (windowClass == StrReplace(app, "ahk_class ", "")
@@ -318,11 +347,9 @@ CreateCustomMenu() {
     Menu, CustomMenu, DeleteAll
 
     ; Set menu colors based on Dark Mode
-    if (DarkMode) {
-        Menu, CustomMenu, Color, 0xA9A9A9
-    } else {
-        Menu, CustomMenu, Color, Default
-    }
+    ; Dark Mode: real dark menus with white text (the old grey background kept black text)
+    SP_SetDarkMenus(DarkMode)
+    Menu, CustomMenu, Color, Default
 
     ; Standard editing items (always at the top)
     Menu, CustomMenu, Add, Cut, MenuCut
@@ -330,6 +357,11 @@ CreateCustomMenu() {
     Menu, CustomMenu, Add, Paste, MenuPaste
     Menu, CustomMenu, Add, Delete, MenuDelete
 	Menu, CustomMenu, Add
+    ; Smart Parse: highlight dictation -> auto-detect calculation (SmartParse_v1 module)
+    if (SP_ShowParse) {
+        SP_AddMenu("CustomMenu", SP_ShowTIRADS, SP_ShowORADS, SP_ShowBoneAge)
+        Menu, CustomMenu, Add
+    }
 	
 	; Add spell check suggestion if enabled and text is selected
 	if (ShowSpellCheck = 1 && g_SelectedText != "") {
@@ -360,6 +392,8 @@ CreateCustomMenu() {
 
     ; Final items (always at bottom)
     Menu, CustomMenu, Add
+    if (QuickCallEnabled)
+        Menu, CustomMenu, Add, Quick Call Panel (Ctrl+Alt+P), QC_MenuShow
     Menu, CustomMenu, Add, Pause Script, PauseScript
     Menu, CustomMenu, Add, Preferences, ShowPreferences
 }
@@ -508,17 +542,17 @@ return
 ; -------------------------------------------------------------------------
 ; GetSelectedText: Captures text from the clipboard after Ctrl+C
 ; -------------------------------------------------------------------------
+; WHY: One quick try (max 0.4 s) so the menu appears fast even with nothing
+;      highlighted. If it misses, Smart Parse items copy again after the menu
+;      closes (SP_EnsureSel). (The original 0.1 s often missed the text.)
 GetSelectedText() {
     OldClipboard := ClipboardAll
     Clipboard := ""
-    Send, ^c
-    ClipWait, 0.1
-    if (ErrorLevel) {
-        Clipboard := OldClipboard
-        return ""
-    }
-    SelectedText := Clipboard
+    Send, {Shift up}^c
+    ClipWait, 0.4
+    SelectedText := ErrorLevel ? "" : Clipboard
     Clipboard := OldClipboard
+    OldClipboard := ""
     return SelectedText
 }
 
@@ -823,8 +857,8 @@ ShowPreferences() {
     monitorHeight := workAreaBottom - workAreaTop
 
     ; Increased height to accommodate new elements
-    guiW := 300
-    guiH := 860
+    guiW := 700
+    guiH := 435
     xPos := px + 10
     yPos := py + 10
     if (xPos + guiW > workAreaRight)
@@ -855,7 +889,7 @@ ShowPreferences() {
     else
         currentPauseDuration := PauseDuration . " ms"
 
-    Gui, Preferences:New, +AlwaysOnTop
+    Gui, Preferences:New, +AlwaysOnTop +HwndprefHwnd
     Gui, Preferences:Color, %bgColor%, %bgColor%
     Gui, Preferences:Font, s10 %textColor%, Segoe UI
 
@@ -863,51 +897,30 @@ ShowPreferences() {
     Gui, Add, Text, x10 y10 w200, Select functions to display:
     Gui, Add, Checkbox, x10 y30 w200 vDarkMode Checked%DarkMode%, Dark Mode
 
-    ; Calculation functions (vertical list)
-    y := 60
-    Gui, Add, Checkbox, x10 y%y% w200 vShowEllipsoidVolume Checked%ShowEllipsoidVolume%, Ellipsoid Volume
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowBulletVolume Checked%ShowBulletVolume%, Bullet Volume
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowPSADensity Checked%ShowPSADensity%, PSA Density
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowPregnancyDates Checked%ShowPregnancyDates%, Pregnancy Dates
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowMenstrualPhase Checked%ShowMenstrualPhase%, Menstrual Phase
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowAdrenalWashout Checked%ShowAdrenalWashout%, Adrenal Washout
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowThymusChemicalShift Checked%ShowThymusChemicalShift%, Thymus Chemical Shift
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowHepaticSteatosis Checked%ShowHepaticSteatosis%, Hepatic Steatosis
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowMRILiverIron Checked%ShowMRILiverIron%, MRI Liver Iron Content
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowStatistics Checked%ShowStatistics%, Calculate Statistics
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowNumberRange Checked%ShowNumberRange%, Calculate Number Range
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowCalciumScorePercentile Checked%ShowCalciumScorePercentile%, Calcium Score Percentile
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowCitations Checked%ShowCitations%, Show Citations in Output
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowArterialAge Checked%ShowArterialAge%, Show Arterial Age
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowContrastPremedication Checked%ShowContrastPremedication%, Contrast Premedication
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowFleischnerCriteria Checked%ShowFleischnerCriteria%, Fleischner Criteria
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowNASCETCalculator Checked%ShowNASCETCalculator%, NASCET Calculator
-    y += 30
-    Gui, Add, Checkbox, x10 y%y% w200 vShowRVLVCalculator Checked%ShowRVLVCalculator%, RV/LV Ratio Calculator
-	y += 30
-	Gui, Add, Checkbox, x10 y%y% w200 vShowSpellCheck Checked%ShowSpellCheck%, Spell Check
+    ; Calculation functions (two columns - keeps the window short)
+    Gui, Add, Checkbox, x10 y60 w205 vShowEllipsoidVolume Checked%ShowEllipsoidVolume%, Ellipsoid Volume
+    Gui, Add, Checkbox, x10 y86 w205 vShowBulletVolume Checked%ShowBulletVolume%, Bullet Volume
+    Gui, Add, Checkbox, x10 y112 w205 vShowPSADensity Checked%ShowPSADensity%, PSA Density
+    Gui, Add, Checkbox, x10 y138 w205 vShowPregnancyDates Checked%ShowPregnancyDates%, Pregnancy Dates
+    Gui, Add, Checkbox, x10 y164 w205 vShowMenstrualPhase Checked%ShowMenstrualPhase%, Menstrual Phase
+    Gui, Add, Checkbox, x10 y190 w205 vShowAdrenalWashout Checked%ShowAdrenalWashout%, Adrenal Washout
+    Gui, Add, Checkbox, x10 y216 w205 vShowThymusChemicalShift Checked%ShowThymusChemicalShift%, Thymus Chemical Shift
+    Gui, Add, Checkbox, x10 y242 w205 vShowHepaticSteatosis Checked%ShowHepaticSteatosis%, Hepatic Steatosis
+    Gui, Add, Checkbox, x10 y268 w205 vShowMRILiverIron Checked%ShowMRILiverIron%, MRI Liver Iron Content
+    Gui, Add, Checkbox, x10 y294 w205 vShowStatistics Checked%ShowStatistics%, Calculate Statistics
+    Gui, Add, Checkbox, x225 y60 w205 vShowNumberRange Checked%ShowNumberRange%, Calculate Number Range
+    Gui, Add, Checkbox, x225 y86 w205 vShowCalciumScorePercentile Checked%ShowCalciumScorePercentile%, Calcium Score Percentile
+    Gui, Add, Checkbox, x225 y112 w205 vShowCitations Checked%ShowCitations%, Show Citations in Output
+    Gui, Add, Checkbox, x225 y138 w205 vShowArterialAge Checked%ShowArterialAge%, Show Arterial Age
+    Gui, Add, Checkbox, x225 y164 w205 vShowContrastPremedication Checked%ShowContrastPremedication%, Contrast Premedication
+    Gui, Add, Checkbox, x225 y190 w205 vShowFleischnerCriteria Checked%ShowFleischnerCriteria%, Fleischner Criteria
+    Gui, Add, Checkbox, x225 y216 w205 vShowNASCETCalculator Checked%ShowNASCETCalculator%, NASCET Calculator
+    Gui, Add, Checkbox, x225 y242 w205 vShowRVLVCalculator Checked%ShowRVLVCalculator%, RV/LV Ratio Calculator
+    Gui, Add, Checkbox, x225 y268 w205 vShowSpellCheck Checked%ShowSpellCheck%, Spell Check
 
-    ; Pause duration
-    y += 40
-    Gui, Add, Text, x10 y%y% w250, Pause Length (current: %currentPauseDuration%):
-    y += 30
-    Gui, Add, DropDownList, x10 y%y% w200 vPauseDurationChoice, 3 minutes|10 minutes|30 minutes|1 hour|10 hours
+    ; Right column
+    Gui, Add, Text, x450 y10 w230, Pause Length (current: %currentPauseDuration%):
+    Gui, Add, DropDownList, x450 y30 w220 vPauseDurationChoice, 3 minutes|10 minutes|30 minutes|1 hour|10 hours
     if (PauseDuration = 180000)
         GuiControl, Choose, PauseDurationChoice, 1
     else if (PauseDuration = 600000)
@@ -918,29 +931,32 @@ ShowPreferences() {
         GuiControl, Choose, PauseDurationChoice, 4
     else if (PauseDuration = 36000000)
         GuiControl, Choose, PauseDurationChoice, 5
-
-    ; Menu sorting
-    y += 40
-    Gui, Add, Text, x10 y%y% w250, Menu Sorting Method:
-    y += 20
-    Gui, Add, DropDownList, x10 y%y% w200 vMenuSortingMethodChoice, none|frequency|custom
+    Gui, Add, Text, x450 y70 w230, Menu Sorting Method:
+    Gui, Add, DropDownList, x450 y90 w220 vMenuSortingMethodChoice, none|frequency|custom
     if (MenuSortingMethod = "none")
         GuiControl, Choose, MenuSortingMethodChoice, 1
     else if (MenuSortingMethod = "frequency")
         GuiControl, Choose, MenuSortingMethodChoice, 2
     else if (MenuSortingMethod = "custom")
         GuiControl, Choose, MenuSortingMethodChoice, 3
+    Gui, Add, Text, x450 y125 w230, Custom menu order (comma list):
+    Gui, Add, Edit, x450 y145 w230 h50 vCustomMenuOrderBox, % CustomMenuOrder
 
-    y += 30
-    Gui, Add, Text, x10 y%y% w280, Custom Menu Order (comma-separated function names):
-    y += 20
-    Gui, Add, Edit, x10 y%y% w280 h50 vCustomMenuOrderBox, % CustomMenuOrder
+    Gui, Add, GroupBox, x445 y205 w240 h130
+    ; title as a Text label: themed group box titles stay black in Dark Mode
+    Gui, Add, Text, x455 y198, % " Smart Parse (highlight + right-click) "
+    Gui, Add, Checkbox, x455 y225 w225 vSP_ShowParse Checked%SP_ShowParse%, Smart Parse menu (auto-detect)
+    Gui, Add, Checkbox, x455 y250 w225 vSP_ShowTIRADS Checked%SP_ShowTIRADS%, Thyroid ACR TI-RADS
+    Gui, Add, Checkbox, x455 y275 w225 vSP_ShowORADS Checked%SP_ShowORADS%, Ovarian cyst (O-RADS / SRU)
+    Gui, Add, Checkbox, x455 y300 w225 vSP_ShowBoneAge Checked%SP_ShowBoneAge%, Bone Age (Greulich && Pyle) - MSK
+    Gui, Add, Checkbox, x450 y345 w235 vQuickCallEnabled Checked%QuickCallEnabled%, Quick Call Panel (Ctrl+Alt+P)
 
     ; Buttons at the bottom
-    y += 60
-    Gui, Add, Button, x10 y%y% w135 gRestoreDefaults %buttonOptions%, Restore Defaults
-    Gui, Add, Button, x155 y%y% w135 gSavePreferences %buttonOptions%, Save
+    Gui, Add, Button, x305 y390 w135 gRestoreDefaults %buttonOptions%, Restore Defaults
+    Gui, Add, Button, x450 y390 w135 gSavePreferences %buttonOptions%, Save
 
+    if (DarkMode)
+        SP_DarkenGui(prefHwnd)      ; checkbox/group text readable on dark
     Gui, Show, x%xPos% y%yPos% w%guiW% h%guiH%, Preferences
 }
 
@@ -975,6 +991,7 @@ SavePreferences:
 
     SavePreferencesToFile()
     Gui, Destroy
+    QC_ApplyEnabled(QuickCallEnabled)   ; turn the Quick Call panel on/off now
 return
 
 PreferencesGuiClose:
@@ -1053,6 +1070,11 @@ SavePreferencesToFile() {
     IniWrite, %ShowNASCETCalculator%, %tempFile%, Calculations, ShowNASCETCalculator
     IniWrite, %ShowRVLVCalculator%, %tempFile%, Calculations, ShowRVLVCalculator
     IniWrite, %ShowSpellCheck%, %tempFile%, Calculations, ShowSpellCheck
+    IniWrite, %QuickCallEnabled%, %tempFile%, QuickCall, Enabled
+    IniWrite, %SP_ShowParse%, %tempFile%, SmartParse, ShowMenu
+    IniWrite, %SP_ShowTIRADS%, %tempFile%, SmartParse, ShowTIRADS
+    IniWrite, %SP_ShowORADS%, %tempFile%, SmartParse, ShowORADS
+    IniWrite, %SP_ShowBoneAge%, %tempFile%, SmartParse, ShowBoneAge
 
     ; Write script settings
     IniWrite, %PauseDuration%, %tempFile%, Script, PauseDuration
@@ -1089,9 +1111,11 @@ SavePreferencesToFile() {
 
 ; Add this function to check preferences integrity
 CheckPreferencesIntegrity() {
+    ; WHY: A fresh install has no preferences.ini and no backup - that is normal, not
+    ;      corruption. Only report (return true) when the file was actually restored.
     preferencesFile := A_ScriptDir . "\preferences.ini"
     backupFile := A_ScriptDir . "\preferences.backup.ini"
-    
+
     if (!FileExist(preferencesFile)) {
         if (FileExist(backupFile)) {
             FileCopy, %backupFile%, %preferencesFile%, 1
@@ -1099,19 +1123,17 @@ CheckPreferencesIntegrity() {
         }
         return false
     }
-    
-    ; Read critical sections to verify integrity
+
+    ; Saved references/prompts vanished but the backup still has them: restore quietly
     IniRead, references, %preferencesFile%, References, SavedReferences, %A_Space%
     IniRead, prompts, %preferencesFile%, AIAssistant, SavedPrompts, %A_Space%
-    
-    if (references = "" && prompts = "") {
-        if (FileExist(backupFile)) {
+    if (references = "" && prompts = "" && FileExist(backupFile)) {
+        IniRead, bRefs, %backupFile%, References, SavedReferences, %A_Space%
+        IniRead, bPrompts, %backupFile%, AIAssistant, SavedPrompts, %A_Space%
+        if (bRefs != "" || bPrompts != "")
             FileCopy, %backupFile%, %preferencesFile%, 1
-            return true
-        }
     }
-    
-    return true
+    return false
 }
 
 
@@ -2139,7 +2161,7 @@ return
 ; -------------------------------------------------------------
 ; 15) CalculateRVLV - RV/LV Ratio Calculator for CTPA/PE
 ; WHY: RV/LV ratio is a key prognostic marker for pulmonary embolism severity.
-;      Ratio >= 1.0 indicates significant right heart strain.
+;      Ratio >= 1.0 is elevated (RV dilatation); 0.9-0.99 borderline.
 ; ARCHITECTURE: GUI-based input for direct measurement entry with clinical interpretation.
 ; -------------------------------------------------------------
 CalculateRVLV() {
@@ -2225,18 +2247,15 @@ CalculateRVLVRatio:
     result .= "RV/LV Ratio: " . ratio . "`n`n"
 
     ; Clinical interpretation based on user-provided thresholds
+    ; WHY: No validated mild/moderate/severe grading exists for the CT RV/LV ratio;
+    ;      state only what the number shows (no "severe" / strain diagnosis).
     if (ratio >= 1.0) {
-        result .= "Interpretation: Significant right heart strain`n"
-        result .= "- Suggestive of severe pulmonary embolism or chronic pulmonary hypertension.`n"
-        result .= "- Consider ICU admission and advanced therapies."
+        result .= "Interpretation: Elevated (1.0 or greater), compatible with right ventricular dilatation.`n"
+        result .= "- Correlate clinically and with echocardiography for right heart strain."
     } else if (ratio >= 0.9) {
-        result .= "Interpretation: Suggestive of right heart strain`n"
-        result .= "- Ratio 0.9-0.99 is associated with increased risk of adverse events in acute PE.`n"
-        result .= "- Close monitoring recommended."
+        result .= "Interpretation: Borderline (0.9-0.99)."
     } else {
-        result .= "Interpretation: Normal`n"
-        result .= "- RV size normal relative to LV.`n"
-        result .= "- Low risk for RV dysfunction in setting of PE."
+        result .= "Interpretation: Normal (less than 0.9)."
     }
 
     if (ShowCitations = 1) {
@@ -3402,20 +3421,23 @@ DownloadToString(url, postData := "") {
 }
 
 
+; NOTE: if/else instead of switch so this runs on AutoHotkey older than v1.1.31
 GetRaceValue(race) {
-    switch race {
-        case "White": return 3
-        case "Black": return 0
-        case "Hispanic": return 2
-        case "Chinese": return 1
-    }
+    if (race = "White")
+        return 3
+    if (race = "Black")
+        return 0
+    if (race = "Hispanic")
+        return 2
+    if (race = "Chinese")
+        return 1
 }
 
 GetSexValue(sex) {
-    switch sex {
-        case "Male": return 1
-        case "Female": return 0
-    }
+    if (sex = "Male")
+        return 1
+    if (sex = "Female")
+        return 0
 }
 
 GetLastErrorMessage(errorCode) {
@@ -4407,4 +4429,2591 @@ return
 ; ------------------------------------------
 ExitApp
 
+; ============================================================
+; QuickCall (embedded) - floating always-on-top Google Voice call panel
+; Same code as QuickCall_v1.ahk, built in so this script is self-contained.
+; Must stay after ExitApp: it has no auto-execute code; QC_Enable() starts it.
+; Toggle: right-click > Preferences > Quick Call Panel (Ctrl+Alt+P)
+; ============================================================
 
+; >>> QUICKCALL BEGIN (generated from QuickCall_v1.ahk - edit there, then re-embed) >>>
+; ================= SETTINGS (values are set in QC_Init) =================
+global QC_RadName, QC_IncludeReadBack, QC_OpenAtStart, QC_DialMode, QC_GVAccount
+global QC_BookFile, QC_IniFile, QC_TickMs
+
+; ================= STATE =================
+global QC_Initialized := false, QC_Enabled := false
+global QC_Entries, QC_BtnMap, QC_Expanded, QC_LastCall, QC_DialogOpen
+global QC_X, QC_Y, QC_LastExtWin, QC_Pid, QC_PanelHwnd, QC_EditorHwnd
+global QC_CtxEntry, QC_Work
+global QC_EdLV, QC_EdSec, QC_EdLab, QC_EdNum      ; editor GUI control variables
+global QC_Collapsed, QC_W, QC_H, QC_CW, QC_CH       ; panel size / collapse state
+global QC_CMain, QC_CHeads, QC_CCols, QC_CBottom, QC_CTechs, QC_CToggle, QC_CHint, QC_NMain, QC_MaxRows
+
+; ================= HOTKEYS =================
+; Active only while Quick Call is enabled; otherwise the keys pass through.
+#If QC_Enabled
+^!p::QC_TogglePanel()       ; Ctrl+Alt+P  show / hide panel
+^!d::QC_DialSelection()     ; Ctrl+Alt+D  dial highlighted number
+^!l::QC_LogCall()           ; Ctrl+Alt+L  paste critical-result statement
+#If
+
+; ================= ENABLE / DISABLE =================
+QC_Init() {
+    if (QC_Initialized)
+        return
+    QC_Initialized := true
+
+    ; ---- user settings ----
+    QC_OpenAtStart     := true      ; open the panel when the script starts
+    QC_DialMode        := "url"     ; "url" = voice.google.com link | "tel" = tel: link
+    QC_GVAccount       := 0         ; Google account index if signed into several
+    QC_RadName         := "Dr. Harwood"
+    QC_IncludeReadBack := true
+    QC_TickMs          := 500       ; how often the panel checks it is still on top
+    QC_BookFile := A_ScriptDir "\QuickCall_PhoneBook.txt"
+    QC_IniFile  := A_ScriptDir "\QuickCall_Settings.ini"
+
+    ; ---- state ----
+    QC_Entries := [], QC_BtnMap := {}, QC_Expanded := false, QC_LastCall := ""
+    QC_DialogOpen := 0, QC_X := "", QC_Y := "", QC_LastExtWin := 0
+    QC_PanelHwnd := 0, QC_EditorHwnd := 0, QC_Work := []
+    QC_Pid := DllCall("GetCurrentProcessId")
+
+    QC_LoadBook()
+    IniRead, QC_X, %QC_IniFile%, Panel, X, %A_Space%
+    IniRead, QC_Y, %QC_IniFile%, Panel, Y, %A_Space%
+    IniRead, exp, %QC_IniFile%, Panel, Expanded, 0
+    QC_Expanded := (exp = "1")
+    IniRead, QC_W, %QC_IniFile%, Panel, W, %A_Space%
+    IniRead, QC_H, %QC_IniFile%, Panel, H, %A_Space%
+    IniRead, col, %QC_IniFile%, Panel, Collapsed, 0
+    QC_Collapsed := (col = "1")
+    QC_CW := 0, QC_CH := 0
+    OnExit("QC_OnExit")
+    OnMessage(0xA3, "QC_OnDblClick")      ; double-click title bar
+    OnMessage(0x203, "QC_OnDblClick")     ; double-click header strip
+}
+
+; showPanel: -1 = follow QC_OpenAtStart, 0 = don't open, 1 = open now
+QC_Enable(showPanel := -1) {
+    QC_Init()
+    if (!QC_Enabled) {
+        QC_Enabled := true
+        QC_SetTray(true)
+        SetTimer, QC_Tick, %QC_TickMs%
+    }
+    if (showPanel = 1)
+        QC_ShowPanel(true)
+    else if (showPanel = -1 && QC_OpenAtStart)
+        QC_ShowPanel(false)     ; at startup: don't steal focus from PowerScribe
+}
+
+QC_Disable() {
+    if (!QC_Enabled)
+        return
+    QC_Enabled := false
+    SetTimer, QC_Tick, Off
+    QC_SetTray(false)
+    QC_EdClose()
+    if (QC_PanelHwnd) {
+        QC_SavePos()
+        Gui, QCPanel:Destroy
+        QC_PanelHwnd := 0
+    }
+}
+
+; Called by the host script after Preferences are saved
+QC_ApplyEnabled(on) {
+    if (on && !QC_Enabled)
+        QC_Enable(1)
+    else if (!on && QC_Enabled)
+        QC_Disable()
+}
+
+QC_SetTray(add) {
+    try Menu, Tray, Delete, Quick Call panel
+    try Menu, Tray, Delete, Edit phone numbers
+    if (!add)
+        return
+    Menu, Tray, Add, Quick Call panel, QC_MenuShow
+    Menu, Tray, Add, Edit phone numbers, QC_MenuEditor
+}
+
+; Menu callbacks (Menu passes ItemName, ItemPos, MenuName)
+QC_MenuShow(p1 := "", p2 := "", p3 := "") {
+    QC_ShowPanel(true)
+}
+QC_MenuEditor(p1 := "", p2 := "", p3 := "") {
+    QC_ShowEditor()
+}
+
+; ================= PHONE BOOK FILE =================
+QC_DefaultBook() {
+    t := "
+    (
+; QuickCall phone book. One contact per line: Group|Label|Number
+; Group Main = big buttons at the top. Any other group = a tech column.
+; Edit here or with the Edit #s button on the panel.
+Main|HC ER|636-947-5111
+Main|LSL ER|636-625-5300
+Main|HC ICU|
+Main|LSL ICU|
+HC|ED Charge RN|636-947-7503
+HC|Stroke Unit|636-443-7550
+HC|House Sup|636-443-7596
+HC|CT ED|636-947-5285
+HC|CT Street|636-947-5410
+HC|MRI|636-947-5606
+HC|US|636-947-5441
+HC|Rad / XR (ED)|636-443-2855
+HC|Nuc Med|636-947-5494
+HC|Vascular|636-947-5438
+HC|IR RN|
+HC|Front Desk (opt 1)|636-947-5444
+LSL|Stroke Unit|636-755-3617
+LSL|House Sup|636-625-7889
+LSL|CT|636-755-3635
+LSL|MRI|636-625-5407
+LSL|Rad / XR|636-625-7801
+LSL|US|636-755-3930
+LSL|Nuc Med|636-755-3112
+LSL|Vascular|636-625-5275
+LSL|IR RN|
+LSL|Front Desk (opt 2)|636-625-5303
+WZ|ER|636-327-1100
+WZ|ER MD|636-327-1102
+WZ|CT/Rad|636-327-1140
+WZ|CT|636-327-1088
+WZ|Rad|636-327-1145
+    )"
+    return t
+}
+
+QC_LoadBook() {
+    if !FileExist(QC_BookFile)
+        FileAppend, % QC_DefaultBook() "`n", %QC_BookFile%, UTF-8
+    QC_Entries := []
+    FileRead, txt, *P65001 %QC_BookFile%
+    Loop, Parse, txt, `n, `r
+    {
+        line := Trim(A_LoopField)
+        if (line = "" || SubStr(line, 1, 1) = ";")
+            continue
+        p := StrSplit(line, "|")
+        if (p.Length() < 2)
+            continue
+        QC_Entries.Push({sec: Trim(p[1]), label: Trim(p[2]), num: (p.Length() >= 3 ? Trim(p[3]) : "")})
+    }
+}
+
+; Writes to a temp file first so a OneDrive sync lock can't wipe the phone book
+QC_SaveBook() {
+    txt := "; QuickCall phone book. One contact per line: Group|Label|Number`n"
+    txt .= "; Group Main = big buttons at the top. Any other group = a tech column.`n"
+    for i, e in QC_Entries
+        txt .= e.sec "|" e.label "|" e.num "`n"
+    tmp := QC_BookFile ".tmp"
+    FileDelete, %tmp%
+    FileAppend, %txt%, %tmp%, UTF-8
+    if (ErrorLevel) {
+        MsgBox, 262192, Quick Call, Could not save the phone book (file locked by OneDrive?). Try again in a moment.
+        return
+    }
+    FileMove, %tmp%, %QC_BookFile%, 1
+    if (ErrorLevel)
+        MsgBox, 262192, Quick Call, Could not replace QuickCall_PhoneBook.txt (file locked by OneDrive?). Your changes are in QuickCall_PhoneBook.txt.tmp
+}
+
+QC_Groups() {
+    main := [], secs := [], grp := {}
+    for i, e in QC_Entries {
+        if (e.sec = "Main") {
+            main.Push(e)
+            continue
+        }
+        if !grp.HasKey(e.sec) {
+            grp[e.sec] := []
+            secs.Push(e.sec)
+        }
+        grp[e.sec].Push(e)
+    }
+    return {main: main, secs: secs, grp: grp}
+}
+
+QC_Full(e) {
+    return (e.sec = "Main") ? e.label : e.sec " " e.label
+}
+
+QC_IsValidNum(v) {
+    d := RegExReplace(v, "\D")
+    return StrLen(d) = 10 || (StrLen(d) = 11 && SubStr(d, 1, 1) = "1")
+}
+
+; ================= PANEL =================
+; Layout: [+/-] collapse button on top, main numbers (2 columns), "+ Techs" toggle,
+; optional tech columns, then Dial / Log / Edit. The window can be resized:
+; buttons stretch to the new width and button heights scale to the new height.
+QC_BuildPanel(activate := true) {
+    prevGui := A_DefaultGui
+    if (QC_PanelHwnd) {
+        QC_SavePos()
+        Gui, QCPanel:Destroy
+        QC_PanelHwnd := 0
+    }
+    QC_BtnMap := {}, QC_CMain := [], QC_CHeads := [], QC_CCols := [], QC_CBottom := []
+    grps := QC_Groups()
+    QC_NMain := grps.main.Length(), QC_MaxRows := 0
+
+    ; +ToolWindow = floating panel with no taskbar button; Esc / X hide it and it
+    ; comes back with Ctrl+Alt+P, the right-click menu, or the tray menu.
+    Gui, QCPanel:New, +AlwaysOnTop +ToolWindow +Resize -MaximizeBox -MinimizeBox +MinSize150x40 +HwndhPanel +LabelQC_Panel_, Quick Call
+    Gui, QCPanel:Color, 202020
+    Gui, QCPanel:Font, s12 bold, Segoe UI
+    Gui, QCPanel:Add, Button, x8 y6 w30 h26 gQC_BtnCollapse HwndhT, % (QC_Collapsed ? "+" : "-")
+    QC_CToggle := hT
+    Gui, QCPanel:Font, s9 norm c9FC5E8
+    Gui, QCPanel:Add, Text, x46 y12 w220 h18 BackgroundTrans gQC_HintClick HwndhH, % (QC_Collapsed ? "Quick Call" : "Click a name to call   Ctrl+Alt+P hide")
+    QC_CHint := hH
+
+    Gui, QCPanel:Font, s11 norm cDefault
+    for i, e in grps.main {
+        txt := i "   " e.label (e.num = "" ? " (add #)" : "")
+        Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnClick HwndhB, % txt
+        QC_BtnMap[hB + 0] := e
+        QC_CMain.Push(hB)
+    }
+    Gui, QCPanel:Font, s10
+    Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnTechs HwndhTechs, % (QC_Expanded ? "-   Techs" : "+   Techs")
+    QC_CTechs := hTechs
+    if (QC_Expanded) {
+        for k, sec in grps.secs {
+            Gui, QCPanel:Font, s10 bold c9FC5E8
+            Gui, QCPanel:Add, Text, x0 y0 w10 h10 BackgroundTrans HwndhHd, % sec
+            QC_CHeads.Push(hHd)
+            Gui, QCPanel:Font, s9 norm cDefault
+            col := []
+            for j, e in grps.grp[sec] {
+                txt := e.label (e.num = "" ? " (add #)" : "")
+                Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnClick HwndhB, % txt
+                QC_BtnMap[hB + 0] := e
+                col.Push(hB)
+            }
+            QC_CCols.Push(col)
+            QC_MaxRows := Max(QC_MaxRows, col.Length())
+        }
+    }
+    Gui, QCPanel:Font, s9 norm cDefault
+    Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnManual HwndhB1, Dial #...
+    Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnLog HwndhB2, Log call
+    Gui, QCPanel:Add, Button, x0 y0 w10 h10 gQC_BtnEdit HwndhB3, Edit #s
+    QC_CBottom := [hB1, hB2, hB3]
+
+    QC_PanelHwnd := hPanel
+    w := (QC_IsNum(QC_W) && QC_W >= 150) ? QC_W : QC_DefaultW()
+    nat := QC_NaturalH()
+    h := (QC_IsNum(QC_H) && QC_H >= nat * 0.55) ? QC_H : nat
+    if (QC_Collapsed) {
+        QC_SetBodyVisible(false)
+        w := QC_CollapsedW(), h := QC_CollapsedH()
+        QC_MoveCtl(QC_CHint, 46, 12, w - 52, 18)
+    } else {
+        QC_Layout(w, h)
+    }
+    QC_CW := w, QC_CH := h
+    showOpt := (activate ? "" : "NoActivate ") "w" w " h" h
+    if QC_ValidPos(QC_X, QC_Y)
+        showOpt .= " x" QC_X " y" QC_Y
+    Gui, QCPanel:Show, %showOpt%
+    QC_FitOnScreen()
+    QC_RaiseTop(hPanel)
+    Gui, %prevGui%:Default
+}
+
+QC_IsNum(v) {
+    if v is number
+        return true
+    return false
+}
+
+; Keep the whole panel on its monitor: move it up, or shrink it if taller than the screen
+QC_FitOnScreen() {
+    WinGetPos, x, y, w, ht, ahk_id %QC_PanelHwnd%
+    if (x = "")
+        return
+    cx := x + w // 2, cy := y + 10
+    l := 0, t := 0, r := A_ScreenWidth, b := A_ScreenHeight
+    SysGet, cnt, MonitorCount
+    Loop, %cnt% {
+        SysGet, m, MonitorWorkArea, %A_Index%
+        if (cx >= mLeft && cx < mRight && cy >= mTop && cy < mBottom)
+            l := mLeft, t := mTop, r := mRight, b := mBottom
+    }
+    nh := Min(ht, b - t), ny := Max(t, Min(y, b - nh)), nx := Max(l, Min(x, r - w))
+    if (nh != ht || ny != y || nx != x)
+        WinMove, ahk_id %QC_PanelHwnd%, , %nx%, %ny%, , %nh%
+}
+
+QC_DefaultW() {
+    n := QC_Expanded ? QC_CCols.Length() : 0
+    return Max(2 * 150 + 8 + 20, n * 158 - 8 + 20)
+}
+
+QC_CollapsedH() {
+    return 38
+}
+
+QC_CollapsedW() {      ; collapsed = small rectangle: [+] and "Quick Call"
+    return 175
+}
+
+; Double-click on the panel's title bar (or its empty header strip) collapses/expands it
+QC_OnDblClick(wParam, lParam, msg, hwnd) {
+    if (!QC_PanelHwnd || hwnd != QC_PanelHwnd)
+        return
+    if (msg = 0xA3 && wParam = 2) {            ; WM_NCLBUTTONDBLCLK on HTCAPTION
+        QC_ToggleCollapse()
+        return 0
+    }
+    if (msg = 0x203 && ((lParam >> 16) & 0xFFFF) < 38) {   ; WM_LBUTTONDBLCLK in the top strip
+        QC_ToggleCollapse()
+        return 0
+    }
+}
+
+; Double-click on the header text
+QC_HintClick(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    if (GuiEvent = "DoubleClick")
+        QC_ToggleCollapse()
+}
+
+; Height when nothing is stretched (fixed gaps + natural button heights)
+QC_NaturalH() {
+    f := QC_HeightParts()
+    return Round(f.fixed + f.scalable)
+}
+
+QC_HeightParts() {
+    rows := Ceil(QC_NMain / 2)
+    fixed := 40 + (rows > 0 ? (rows - 1) * 8 + 12 : 0) + 10 + 10
+    scalable := rows * 42 + 30 + 28
+    if (QC_Expanded && QC_CCols.Length()) {
+        fixed += 10 + 22 + (QC_MaxRows - 1) * 4
+        scalable += QC_MaxRows * 28
+    }
+    return {fixed: fixed, scalable: scalable}
+}
+
+QC_MoveCtl(hwnd, x, y, w, h) {
+    GuiControl, QCPanel:Move, %hwnd%, % "x" Round(x) " y" Round(y) " w" Round(w) " h" Round(h)
+}
+
+QC_Layout(w, h) {
+    if (!QC_PanelHwnd || !IsObject(QC_CMain))
+        return
+    M := 10, G := 8
+    f := QC_HeightParts()
+    s := (h - f.fixed) / f.scalable
+    s := Max(0.55, Min(3, s))
+    inner := Max(60, w - 2 * M)
+    QC_MoveCtl(QC_CHint, 46, 12, Max(10, w - 52), 18)
+
+    y := 40
+    bw := Floor((inner - G) / 2), mh := Round(42 * s)
+    for i, hb in QC_CMain {
+        col := Mod(i - 1, 2), row := (i - 1) // 2
+        QC_MoveCtl(hb, M + col * (bw + G), y + row * (mh + G), bw, mh)
+    }
+    rows := Ceil(QC_NMain / 2)
+    if (rows)
+        y += rows * mh + (rows - 1) * G + 12
+    th := Round(30 * s)
+    QC_MoveCtl(QC_CTechs, M, y, inner, th)
+    y += th
+    if (QC_Expanded && QC_CCols.Length()) {
+        n := QC_CCols.Length()
+        cw := Floor((inner - (n - 1) * G) / n)
+        rh := Round(28 * s)
+        y += 10
+        for k, col in QC_CCols {
+            x := M + (k - 1) * (cw + G)
+            QC_MoveCtl(QC_CHeads[k], x, y, cw, 20)
+            for j, hb in col
+                QC_MoveCtl(hb, x, y + 22 + (j - 1) * (rh + 4), cw, rh)
+        }
+        y += 22 + QC_MaxRows * rh + (QC_MaxRows - 1) * 4
+    }
+    y += 10
+    w3 := Floor((inner - 2 * G) / 3), bh := Round(28 * s)
+    for i, hb in QC_CBottom
+        QC_MoveCtl(hb, M + (i - 1) * (w3 + G), y, w3, bh)
+    DllCall("RedrawWindow", "Ptr", QC_PanelHwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0185)
+}
+
+QC_SetBodyVisible(v) {
+    cmd := v ? "Show" : "Hide"
+    all := []
+    for i, hb in QC_CMain
+        all.Push(hb)
+    all.Push(QC_CTechs)
+    for i, hb in QC_CHeads
+        all.Push(hb)
+    for i, col in QC_CCols
+        for j, hb in col
+            all.Push(hb)
+    for i, hb in QC_CBottom
+        all.Push(hb)
+    for i, hb in all
+        GuiControl, QCPanel:%cmd%, %hb%
+}
+
+; Size event (named by +LabelQC_Panel_)
+QC_Panel_Size(GuiHwnd := 0, EventInfo := 0, Width := 0, Height := 0) {
+    if (EventInfo = 1 || !QC_PanelHwnd)    ; minimized
+        return
+    QC_CW := Width, QC_CH := Height
+    if (QC_Collapsed) {
+        QC_MoveCtl(QC_CHint, 46, 12, Max(10, Width - 52), 18)
+        return
+    }
+    QC_W := Width, QC_H := Height
+    QC_Layout(Width, Height)
+}
+
+; The [+/-] button or a double-click on the header: collapse to a small rectangle, or expand
+QC_ToggleCollapse() {
+    cw := QC_CW, ch := QC_CH
+    if (!QC_Collapsed)
+        QC_W := cw, QC_H := ch
+    QC_Collapsed := !QC_Collapsed
+    IniWrite, % (QC_Collapsed ? 1 : 0), %QC_IniFile%, Panel, Collapsed
+    GuiControl, QCPanel:, %QC_CToggle%, % (QC_Collapsed ? "+" : "-")
+    GuiControl, QCPanel:, %QC_CHint%, % (QC_Collapsed ? "Quick Call" : "Click a name to call   Ctrl+Alt+P hide")
+    if (QC_Collapsed) {
+        QC_SetBodyVisible(false)
+        w := QC_CollapsedW(), h := QC_CollapsedH()
+        QC_MoveCtl(QC_CHint, 46, 12, w - 52, 18)
+        Gui, QCPanel:Show, NoActivate w%w% h%h%
+    } else {
+        w := (QC_IsNum(QC_W) && QC_W >= 150) ? QC_W : QC_DefaultW()
+        h := (QC_IsNum(QC_H) && QC_H > QC_CollapsedH() + 20) ? QC_H : QC_NaturalH()
+        QC_Layout(w, h)
+        QC_SetBodyVisible(true)
+        Gui, QCPanel:Show, NoActivate w%w% h%h%
+        QC_FitOnScreen()
+    }
+    QC_SavePos()
+}
+
+QC_BtnCollapse(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_ToggleCollapse()
+}
+
+QC_ShowPanel(activate := true) {
+    if (!QC_PanelHwnd) {
+        QC_BuildPanel(activate)
+        return
+    }
+    if (activate)
+        Gui, QCPanel:Show
+    else
+        Gui, QCPanel:Show, NoActivate
+    QC_RaiseTop(QC_PanelHwnd)
+}
+
+QC_TogglePanel() {
+    if (!QC_PanelHwnd) {
+        QC_BuildPanel(true)
+        return
+    }
+    if !DllCall("IsWindowVisible", "Ptr", QC_PanelHwnd) {
+        QC_ShowPanel(true)
+    } else {
+        QC_SavePos()
+        Gui, QCPanel:Hide
+    }
+}
+
+QC_ToggleTechs() {
+    QC_SavePos()
+    QC_Expanded := !QC_Expanded
+    IniWrite, % (QC_Expanded ? 1 : 0), %QC_IniFile%, Panel, Expanded
+    QC_H := ""                                   ; height follows the new content
+    if (QC_Expanded && QC_IsNum(QC_W))           ; widen enough for the tech columns
+        QC_W := Max(QC_W, QC_Groups().secs.Length() * 120 + 20)
+    QC_BuildPanel(true)
+    QC_SavePos()
+}
+
+; GUI event functions (named by +LabelQC_Panel_)
+QC_Panel_Close(GuiHwnd := 0) {
+    QC_SavePos()
+    Gui, QCPanel:Hide
+}
+QC_Panel_Escape(GuiHwnd := 0) {
+    QC_SavePos()
+    Gui, QCPanel:Hide
+}
+
+; Button callbacks (g-label functions get CtrlHwnd, GuiEvent, EventInfo, ErrLevel)
+QC_BtnClick(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    e := QC_BtnMap[CtrlHwnd + 0]
+    if IsObject(e)
+        QC_DialEntry(e)
+}
+QC_BtnTechs(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_ToggleTechs()
+}
+QC_BtnManual(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_ManualDial()
+}
+QC_BtnLog(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_LogCall()
+}
+QC_BtnEdit(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_ShowEditor()
+}
+
+QC_SavePos() {
+    if (!QC_PanelHwnd)
+        return
+    if !DllCall("IsWindowVisible", "Ptr", QC_PanelHwnd)
+        return
+    WinGet, mm, MinMax, ahk_id %QC_PanelHwnd%
+    if (mm = -1)
+        return
+    WinGetPos, x, y, , , ahk_id %QC_PanelHwnd%
+    if (x = "")
+        return
+    QC_X := x, QC_Y := y
+    IniWrite, %x%, %QC_IniFile%, Panel, X
+    IniWrite, %y%, %QC_IniFile%, Panel, Y
+    if (!QC_Collapsed && QC_CW > 0) {
+        IniWrite, %QC_CW%, %QC_IniFile%, Panel, W
+        IniWrite, %QC_CH%, %QC_IniFile%, Panel, H
+    }
+}
+
+QC_ValidPos(x, y) {
+    if (x = "" || y = "")
+        return false
+    SysGet, cnt, MonitorCount
+    Loop, %cnt% {
+        SysGet, m, MonitorWorkArea, %A_Index%
+        if (x >= mLeft - 50 && x < mRight - 50 && y >= mTop - 10 && y < mBottom - 50)
+            return true
+    }
+    return false
+}
+
+QC_OnExit(ExitReason := "", ExitCode := "") {
+    QC_SavePos()
+    return 0    ; allow exit
+}
+
+; Keeps the panel above Sectra/PowerScribe and remembers the last non-browser window
+QC_Tick() {
+    activePid := 0
+    WinGet, a, ID, A
+    if (a) {
+        WinGet, activePid, PID, ahk_id %a%
+        if (activePid != QC_Pid) {
+            WinGet, pn, ProcessName, ahk_id %a%
+            if !RegExMatch(pn, "i)^(chrome|msedge|firefox|brave)\.exe$")
+                QC_LastExtWin := a
+        }
+    }
+    if (!QC_PanelHwnd || QC_DialogOpen > 0)
+        return
+    if !DllCall("IsWindowVisible", "Ptr", QC_PanelHwnd)
+        return
+    if (activePid = QC_Pid)    ; one of our own windows or menus is active
+        return
+    ; Re-assert topmost every tick (cheap, no flicker). 0x13 = NOSIZE|NOMOVE|NOACTIVATE
+    DllCall("SetWindowPos", "Ptr", QC_PanelHwnd, "Ptr", -1, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+    ; Sectra / PowerScribe windows that are themselves topmost can still sit
+    ; above us; if anything covers the panel, bump it to the top of the band.
+    if QC_IsObscured(QC_PanelHwnd)
+        QC_RaiseTop(QC_PanelHwnd)
+}
+
+; Move the panel to the very top of the always-on-top band without activating it.
+; Toggling NOTOPMOST -> TOPMOST is what lifts it above other topmost windows.
+QC_RaiseTop(h) {
+    DllCall("SetWindowPos", "Ptr", h, "Ptr", -2, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+    DllCall("SetWindowPos", "Ptr", h, "Ptr", -1, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+}
+
+; True if another application's window is drawn over part of the panel.
+; Shell UI (taskbar, Start, Alt+Tab, menus, tooltips) and our own windows are ignored.
+QC_IsObscured(h) {
+    static shellCls := "i)^(Shell_TrayWnd|Shell_SecondaryTrayWnd|#32768|tooltips_class32|NotifyIconOverflowWindow|TopLevelWindowForOverflowXamlIsland|Windows\.UI\.Core\.CoreWindow|ForegroundStaging|MultitaskingViewFrame|XamlExplorerHostIslandWindow|TaskListThumbnailWnd|Progman|WorkerW)$"
+    WinGetPos, x, y, w, hh, ahk_id %h%
+    if (x = "")
+        return false
+    pts := [[x + w // 2, y + hh // 2], [x + 12, y + 12], [x + w - 12, y + 12], [x + 12, y + hh - 12], [x + w - 12, y + hh - 12]]
+    for i, p in pts {
+        hit := DllCall("WindowFromPoint", "Int64", (p[2] << 32) | (p[1] & 0xFFFFFFFF), "Ptr")
+        if (!hit)
+            continue
+        root := DllCall("GetAncestor", "Ptr", hit, "UInt", 2, "Ptr")   ; GA_ROOT
+        if (!root || root = h)
+            continue
+        WinGet, rpid, PID, ahk_id %root%
+        if (rpid = "" || rpid = QC_Pid)
+            continue
+        WinGetClass, cls, ahk_id %root%
+        if RegExMatch(cls, shellCls)
+            continue
+        return true
+    }
+    return false
+}
+
+QC_OwnIfVisible() {
+    if (QC_PanelHwnd && DllCall("IsWindowVisible", "Ptr", QC_PanelHwnd))
+        Gui, QCPanel:+OwnDialogs
+}
+
+; Right-click a button on the panel to edit it
+QC_Panel_ContextMenu(GuiHwnd := 0, CtrlHwnd := 0, EventInfo := "", IsRightClick := "", X := "", Y := "") {
+    e := QC_BtnMap[CtrlHwnd + 0]
+    if !IsObject(e)
+        return
+    QC_CtxEntry := e
+    Menu, QCCtx, Add
+    Menu, QCCtx, DeleteAll
+    Menu, QCCtx, Add, % "Edit number for " QC_Full(e) "...", QC_CtxEditNum
+    Menu, QCCtx, Add, Rename..., QC_CtxRename
+    Menu, QCCtx, Add
+    Menu, QCCtx, Add, Open phone book editor..., QC_MenuEditor
+    Menu, QCCtx, Show
+}
+QC_CtxEditNum(p1 := "", p2 := "", p3 := "") {
+    QC_EditField(QC_CtxEntry, "num")
+}
+QC_CtxRename(p1 := "", p2 := "", p3 := "") {
+    QC_EditField(QC_CtxEntry, "label")
+}
+
+QC_EditField(e, field) {
+    QC_DialogOpen++
+    QC_OwnIfVisible()
+    prompt := (field = "num") ? "Phone number for " QC_Full(e) ":" : "New label for " QC_Full(e) ":"
+    cur := e[field]
+    InputBox, val, Quick Call, % prompt, , 340, 140, , , , , % cur
+    cancelled := ErrorLevel
+    QC_DialogOpen--
+    if (cancelled)
+        return
+    val := Trim(val)
+    if (field = "num" && val != "" && !QC_IsValidNum(val)) {
+        MsgBox, 262192, Quick Call, Enter a 10-digit number (e.g. 636-947-5111) or leave it blank.
+        return
+    }
+    if (field = "label" && val = "")
+        return
+    e[field] := val
+    QC_SaveBook()
+    QC_BuildPanel(true)
+}
+
+; ================= PHONE BOOK EDITOR =================
+QC_ShowEditor() {
+    if (QC_EditorHwnd) {
+        Gui, QCEdit:Show
+        return
+    }
+    prevGui := A_DefaultGui
+    QC_Work := []
+    groups := "", seen := {}
+    for i, e in QC_Entries {
+        QC_Work.Push({sec: e.sec, label: e.label, num: e.num})
+        if !seen.HasKey(e.sec) {
+            seen[e.sec] := 1
+            groups .= (groups = "" ? "" : "|") e.sec
+        }
+    }
+
+    Gui, QCEdit:New, +AlwaysOnTop -MaximizeBox +HwndhEd +LabelQC_Edit_, Quick Call - Edit Phone Book
+    Gui, QCEdit:Font, s10, Segoe UI
+    Gui, QCEdit:Add, Text, xm, Group Main = big buttons at top. Other groups = tech columns. Type a new group name to add a column.
+    Gui, QCEdit:Add, ListView, xm w560 r16 -Multi Grid AltSubmit vQC_EdLV gQC_EdLVEvent, Group|Label|Number
+    Gui, QCEdit:Add, Text, xm y+10, Group
+    Gui, QCEdit:Add, ComboBox, x+5 yp-3 w100 vQC_EdSec, %groups%
+    Gui, QCEdit:Add, Text, x+12 yp+3, Label
+    Gui, QCEdit:Add, Edit, x+5 yp-3 w170 vQC_EdLab
+    Gui, QCEdit:Add, Text, x+12 yp+3, Number
+    Gui, QCEdit:Add, Edit, x+5 yp-3 w130 vQC_EdNum
+    Gui, QCEdit:Add, Button, xm y+12 w90 gQC_EdAdd, Add new
+    Gui, QCEdit:Add, Button, x+6 yp w90 gQC_EdUpdate, Update
+    Gui, QCEdit:Add, Button, x+6 yp w90 gQC_EdDelete, Delete
+    Gui, QCEdit:Add, Button, x+6 yp w50 gQC_EdUp, Up
+    Gui, QCEdit:Add, Button, x+6 yp w50 gQC_EdDown, Down
+    Gui, QCEdit:Add, Button, xm y+16 w130 gQC_EdSave, Save && Close
+    Gui, QCEdit:Add, Button, x+6 yp w90 gQC_EdCancel, Cancel
+
+    QC_EditorHwnd := hEd
+    QC_DialogOpen++
+    QC_EdRefresh()
+    Gui, QCEdit:Show
+    Gui, %prevGui%:Default
+}
+
+QC_EdRefresh(sel := 0) {
+    Gui, QCEdit:Default
+    Gui, QCEdit:ListView, QC_EdLV
+    LV_Delete()
+    for i, e in QC_Work
+        LV_Add("", e.sec, e.label, e.num)
+    LV_ModifyCol(1, 90), LV_ModifyCol(2, 260), LV_ModifyCol(3, 180)
+    if (sel > 0 && sel <= QC_Work.Length())
+        LV_Modify(sel, "Select Focus Vis")
+}
+
+QC_EdSelected() {
+    Gui, QCEdit:Default
+    Gui, QCEdit:ListView, QC_EdLV
+    return LV_GetNext(0)
+}
+
+QC_EdLVEvent(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    ; "I" event with a capital S in ErrorLevel = row became selected
+    if (GuiEvent == "I" && InStr(ErrLevel, "S", true)) {
+        e := QC_Work[EventInfo]
+        if !IsObject(e)
+            return
+        GuiControl, QCEdit:Text, QC_EdSec, % e.sec
+        GuiControl, QCEdit:, QC_EdLab, % e.label
+        GuiControl, QCEdit:, QC_EdNum, % e.num
+    }
+}
+
+QC_EdRead() {
+    Gui, QCEdit:Submit, NoHide
+    Gui, QCEdit:+OwnDialogs
+    s := Trim(QC_EdSec), l := Trim(QC_EdLab), n := Trim(QC_EdNum)
+    if (s = "" || l = "") {
+        MsgBox, 48, Quick Call, Group and Label are required.
+        return ""
+    }
+    if (n != "" && !QC_IsValidNum(n)) {
+        MsgBox, 48, Quick Call, Enter a 10-digit number (e.g. 636-947-5111) or leave it blank.
+        return ""
+    }
+    return {sec: s, label: l, num: n}
+}
+
+QC_EdAdd(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    f := QC_EdRead()
+    if !IsObject(f)
+        return
+    r := QC_EdSelected()
+    if (r = 0) {
+        QC_Work.Push(f)
+        r := QC_Work.Length()
+    } else {
+        QC_Work.InsertAt(r + 1, f)
+        r := r + 1
+    }
+    QC_EdRefresh(r)
+}
+
+QC_EdUpdate(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    r := QC_EdSelected()
+    if (r = 0) {
+        Gui, QCEdit:+OwnDialogs
+        MsgBox, 0, Quick Call, Select a row to update.
+        return
+    }
+    f := QC_EdRead()
+    if !IsObject(f)
+        return
+    QC_Work[r] := f
+    QC_EdRefresh(r)
+}
+
+QC_EdDelete(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    r := QC_EdSelected()
+    if (r = 0)
+        return
+    QC_Work.RemoveAt(r)
+    QC_EdRefresh(r > QC_Work.Length() ? QC_Work.Length() : r)
+}
+
+QC_EdMove(dir) {
+    r := QC_EdSelected()
+    t := r + dir
+    if (r = 0 || t < 1 || t > QC_Work.Length())
+        return
+    tmp := QC_Work[r]
+    QC_Work[r] := QC_Work[t]
+    QC_Work[t] := tmp
+    QC_EdRefresh(t)
+}
+QC_EdUp(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_EdMove(-1)
+}
+QC_EdDown(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_EdMove(1)
+}
+
+QC_EdSave(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_Entries := QC_Work
+    QC_SaveBook()
+    QC_EdClose()
+    QC_BuildPanel(true)
+}
+
+QC_EdCancel(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    QC_EdClose()
+}
+QC_Edit_Close(GuiHwnd := 0) {
+    QC_EdClose()
+}
+QC_Edit_Escape(GuiHwnd := 0) {
+    QC_EdClose()
+}
+
+QC_EdClose() {
+    if (!QC_EditorHwnd)
+        return
+    Gui, QCEdit:Destroy
+    QC_EditorHwnd := 0
+    QC_DialogOpen--
+}
+
+; ================= DIALING =================
+QC_DialEntry(e) {
+    if (e.num = "") {
+        QC_EditField(e, "num")
+        return
+    }
+    QC_Dial(e.num, QC_Full(e))
+}
+
+QC_Dial(num, label := "") {
+    d := RegExReplace(num, "\D")
+    if (StrLen(d) = 11 && SubStr(d, 1, 1) = "1")
+        d := SubStr(d, 2)
+    if (StrLen(d) != 10) {
+        MsgBox, 262192, Quick Call, % "Can't dial '" num "'. Need a full 10-digit number."
+        return
+    }
+    if (QC_DialMode = "tel")
+        url := "tel:+1" d
+    else
+        url := "https://voice.google.com/u/" QC_GVAccount "/calls?a=nc,%2B1" d
+    try Run, %url%
+    catch {
+        MsgBox, 262192, Quick Call, Could not open the dialer link. Is a default browser set?
+        return
+    }
+    QC_LastCall := {label: (label != "" ? label : QC_FormatPhone(d)), time: A_Now}
+    QC_Tip("Calling " QC_LastCall.label "  " QC_FormatPhone(d), 3000)
+}
+
+QC_DialText(txt) {
+    if !RegExMatch(txt, "(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}|\b8[057]-?\d{4}\b", m) {
+        QC_Tip("No phone number found")
+        return
+    }
+    d := RegExReplace(m, "\D")
+    if (StrLen(d) = 6) {
+        pre := SubStr(d, 1, 2), ext := SubStr(d, 3)
+        if (pre = "85")
+            d := "636947" ext
+        else if (pre = "80")
+            d := "636327" ext
+        else {
+            MsgBox, 262192, Quick Call, 87- extensions are split between 636-625 and 636-755. Dial the full number.
+            return
+        }
+    }
+    QC_Dial(d)
+}
+
+QC_DialSelection() {
+    Sleep, 100
+    saved := ClipboardAll
+    Clipboard := ""
+    Send, ^c
+    ClipWait, 0.5
+    if (ErrorLevel) {
+        Clipboard := saved
+        saved := ""
+        QC_Tip("Highlight a phone number first")
+        return
+    }
+    txt := Clipboard
+    Clipboard := saved
+    saved := ""
+    QC_DialText(txt)
+}
+
+QC_ManualDial() {
+    QC_DialogOpen++
+    QC_OwnIfVisible()
+    InputBox, val, Quick Call, Number to dial (10-digit or 85-xxxx / 80-xxxx):, , 340, 140
+    cancelled := ErrorLevel
+    QC_DialogOpen--
+    if (!cancelled && Trim(val) != "")
+        QC_DialText(val)
+}
+
+QC_FormatPhone(d) {
+    return SubStr(d, 1, 3) "-" SubStr(d, 4, 3) "-" SubStr(d, 7)
+}
+
+QC_Tip(msg, ms := 2000) {
+    ToolTip, % msg, , , 2
+    SetTimer, QC_TipOff, % -ms
+}
+QC_TipOff() {
+    ToolTip, , , , 2
+}
+
+; ================= CRITICAL RESULT STATEMENT =================
+QC_LogCall() {
+    if !IsObject(QC_LastCall) {
+        QC_Tip("No call placed yet this session")
+        return
+    }
+    target := 0
+    WinGet, a, ID, A
+    if (a) {
+        WinGet, apid, PID, ahk_id %a%
+        WinGet, pn, ProcessName, ahk_id %a%
+        if (apid != QC_Pid && !RegExMatch(pn, "i)^(chrome|msedge|firefox|brave)\.exe$"))
+            target := a
+    }
+    if (!target)
+        target := QC_LastExtWin
+
+    QC_DialogOpen++
+    QC_OwnIfVisible()
+    InputBox, who, % "Critical result: " QC_LastCall.label, Spoke with (name / title):, , 360, 140
+    cancelled := ErrorLevel
+    QC_DialogOpen--
+    if (cancelled || Trim(who) = "")
+        return
+
+    FormatTime, t, % QC_LastCall.time, h:mm tt
+    FormatTime, dt, % QC_LastCall.time, M/d/yyyy
+    s := "These findings were discussed by telephone with " Trim(who) " (" QC_LastCall.label ") by " QC_RadName " at " t " on " dt "."
+    if (QC_IncludeReadBack)
+        s .= " Read-back was performed."
+
+    Clipboard := s
+    ClipWait, 1
+    if (target && WinExist("ahk_id " target)) {
+        WinActivate, ahk_id %target%
+        WinWaitActive, ahk_id %target%, , 1
+        if (!ErrorLevel) {
+            Send, ^v
+            return
+        }
+    }
+    QC_Tip("Statement copied. Paste it into the report.", 3000)
+}
+; <<< QUICKCALL END
+
+; >>> SMARTPARSE BEGIN (generated from SmartParse_v1.ahk - edit there, then re-embed) >>>
+global SP_Result, SP_TargetHwnd, SP_ConfHwnd, SP_BoneHwnd, SP_BoneText
+global SP_DataminingPhrase, SP_IncludeDatamining, SP_FleischnerAtEnd, SP_RVLVFormat
+global SPB_Bone, SPB_Chrono, SPB_Dob, SPB_Exam, SPB_Sex, SPB_Preview    ; bone age GUI controls
+global SP_Initialized, SP_Pid
+global SP_ShowParse, SP_ShowTIRADS, SP_ShowORADS, SP_ShowBoneAge     ; set by the host (Preferences)
+
+SP_Init() {
+    if (SP_Initialized)
+        return
+    SP_Initialized := true
+    SP_DataminingPhrase := "SSM lung nodule"
+    SP_IncludeDatamining := true
+    SP_FleischnerAtEnd := true       ; Fleischner / TI-RADS / O-RADS go at the end of the report
+    SP_RVLVFormat := "Macro"         ; "Macro" = cm, "Inline" = mm
+    SP_Result := "", SP_TargetHwnd := 0, SP_ConfHwnd := 0, SP_BoneHwnd := 0
+    SP_Pid := DllCall("GetCurrentProcessId")
+}
+
+; ================= compatibility with older AutoHotkey v1.1 =================
+; Min() and Max() are built in only from v1.1.27; hospital PCs may have older v1.1.
+; A script-defined version works on every v1.1 (and simply overrides the built-in).
+Min(p*) {
+    r := ""
+    for _, v in p
+        if (r = "" || v < r)
+            r := v
+    return r
+}
+Max(p*) {
+    r := ""
+    for _, v in p
+        if (r = "" || v > r)
+            r := v
+    return r
+}
+
+; ================= dark theme helpers (used by the host for its own windows too) =================
+; Dark context menus: Windows 10 1903+/11 draw the app's popup menus dark with
+; light text once the app opts in (uxtheme ordinals 135/136). Menu, Color alone
+; only changes the background and leaves black text.
+SP_SetDarkMenus(on) {
+    static last := ""
+    if (last = on)
+        return
+    last := on
+    hMod := DllCall("GetModuleHandle", "Str", "uxtheme", "Ptr")
+    if (!hMod)
+        hMod := DllCall("LoadLibrary", "Str", "uxtheme", "Ptr")
+    setMode := DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 135, "Ptr")     ; SetPreferredAppMode
+    flush := DllCall("GetProcAddress", "Ptr", hMod, "Ptr", 136, "Ptr")       ; FlushMenuThemes
+    if (setMode)
+        DllCall(setMode, "Int", on ? 2 : 3)      ; 2 = force dark, 3 = force light
+    if (flush)
+        DllCall(flush)
+}
+
+; Make a GUI readable in dark mode: themed checkboxes, radio buttons and group
+; boxes ignore the text color (black on dark), so turn theming off for those;
+; buttons and edits get the system dark style; dark title bar.
+SP_DarkenGui(hwnd) {
+    dhw := A_DetectHiddenWindows
+    DetectHiddenWindows, On
+    WinGet, list, ControlListHwnd, ahk_id %hwnd%
+    Loop, Parse, list, `n
+    {
+        h := A_LoopField
+        WinGetClass, cls, ahk_id %h%
+        if (cls = "Button") {
+            WinGet, st, Style, ahk_id %h%
+            t := st & 0xF
+            if (t = 2 || t = 3 || t = 4 || t = 5 || t = 6 || t = 7 || t = 9)
+                DllCall("uxtheme\SetWindowTheme", "Ptr", h, "Str", "", "Str", "")
+            else
+                DllCall("uxtheme\SetWindowTheme", "Ptr", h, "Str", "DarkMode_Explorer", "Ptr", 0)
+        } else if (cls = "Edit" || cls = "ComboBox" || cls = "ListBox" || cls = "SysListView32") {
+            DllCall("uxtheme\SetWindowTheme", "Ptr", h, "Str", "DarkMode_Explorer", "Ptr", 0)
+        }
+    }
+    DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", hwnd, "Int", 20, "Int*", 1, "Int", 4)
+    DllCall("RedrawWindow", "Ptr", hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0185)
+    DetectHiddenWindows, %dhw%
+}
+
+; ================= small helpers (v1 equivalents of v2 built-ins) =================
+PE_N() {
+    return "(?<![\d.])(\d+(?:\.\d+)?|\.\d+)"
+}
+PE_U() {
+    return "(mm|cm|millimeters?|centimeters?|millimetres?|centimetres?)"
+}
+; RegExMatch returning a match object (adds the O option)
+PE_RX(hay, pat, ByRef m, start := 1) {
+    if RegExMatch(pat, "^[imsxADJUXPSC``]*\)")
+        pat := "O" pat
+    else
+        pat := "O)" pat
+    return RegExMatch(hay, pat, m, start)
+}
+PE_Lower(s) {
+    return Format("{:L}", s)
+}
+PE_IsNum(v) {
+    if v is number
+        return true
+    return false
+}
+PE_FormatTime(ts, fmt) {
+    FormatTime, out, %ts%, %fmt%
+    return out
+}
+PE_AddDays(ts, n) {
+    ts += n, Days
+    return ts
+}
+PE_DaysBetween(a, b) {     ; b - a in days
+    b -= a, Days
+    return b
+}
+PE_Fail(msg) {
+    return {ok: false, err: msg}
+}
+PE_Ok(title, values, text, conf, atImpression := false) {
+    return {ok: true, title: title, values: values, text: text, conf: conf, atImpression: atImpression}
+}
+
+; Remove numbers that are not measurements (image/series numbers, W/L, dates, MRN)
+PE_Filter(t) {
+    t := RegExReplace(t, "i)\(\s*(?:image|img|i|slice|ser|seq)\s*\d+\s*/\s*\d+\s*\)", "")
+    t := RegExReplace(t, "i)(?:image|img|slice|series|seq|level)\s*[:=#]?\s*\d+(?:\s*/\s*\d+)?", "")
+    t := RegExReplace(t, "\b(?:W|L|WW|WL)\s*[:=]\s*-?\d+", "")
+    t := RegExReplace(t, "\d{1,2}/\d{1,2}/\d{2,4}", "")
+    t := RegExReplace(t, "\d{4}-\d{1,2}-\d{1,2}", "")
+    t := RegExReplace(t, "i)page\s*\d+\s*(?:of|/)\s*\d+", "")
+    t := RegExReplace(t, "i)(?:ACC|MRN|ID)\s*#?\s*:?\s*\d+", "")
+    return t
+}
+
+PE_Clean(text) {
+    t := RegExReplace(text, "\R", " ")
+    t := StrReplace(t, Chr(0xD7), "x")
+    t := RegExReplace(t, "\s+", " ")
+    return PE_Filter(t)
+}
+
+PE_Unit(u) {
+    if (u = "")
+        return ""
+    return (SubStr(PE_Lower(u), 1, 1) = "c") ? "cm" : "mm"
+}
+PE_ToMm(v, u) {
+    return (u = "cm") ? v * 10 : v
+}
+PE_ToCm(v, u) {
+    return (u = "mm") ? v / 10 : v
+}
+PE_Fmt(v, dec := 1) {
+    s := Round(v, dec) ""
+    if InStr(s, ".")
+        s := RTrim(RTrim(s, "0"), ".")
+    return s
+}
+
+PE_FirstValue(s) {
+    if PE_RX(s, "i)" PE_N() "\s*-?\s*" PE_U() "?(?!\d|\.\d|\s*%|-?\s*(?:min|sec|hour|hr|day|week|month|year|HU|o'?clock))", m)
+        return {val: m[1] + 0, unit: PE_Unit(m[2]), pos: m.Pos(0), len: m.Len(0)}
+    return ""
+}
+
+PE_ValueAfter(t, labelRe, stopRe := "", maxGap := 90) {
+    pos := 1
+    while (p := PE_RX(t, "i)" labelRe, lm, pos)) {
+        after := SubStr(t, p + lm.Len(0), maxGap)
+        if (stopRe != "" && (sp := RegExMatch(after, "i)" stopRe)))
+            after := SubStr(after, 1, sp - 1)
+        v := PE_FirstValue(after)
+        if IsObject(v) {
+            v.labelPos := p
+            return v
+        }
+        pos := p + lm.Len(0)
+    }
+    return ""
+}
+
+PE_Measures(t) {
+    out := [], pos := 1
+    while (p := PE_RX(t, "i)" PE_N() "\s*-?\s*" PE_U() "\b", m, pos)) {
+        out.Push({val: m[1] + 0, unit: PE_Unit(m[2]), pos: p})
+        pos := p + m.Len(0)
+    }
+    return out
+}
+
+PE_FindDims(t) {
+    n := PE_N(), u := "\s*" PE_U() "?", sep := "\s*(?:x|by|\*)\s*"
+    if !PE_RX(t, "i)" n u sep n u sep n u "(?!\d|\.\d)", m)
+        return ""
+    vals := [m[1] + 0, m[3] + 0, m[5] + 0]
+    units := [PE_Unit(m[2]), PE_Unit(m[4]), PE_Unit(m[6])]
+    hasUnit := (units[1] != "" || units[2] != "" || units[3] != "")
+    Loop 3 {
+        i := 4 - A_Index
+        if (units[i] = "")
+            units[i] := (i < 3 && units[i + 1] != "") ? units[i + 1] : ""
+    }
+    Loop 3 {
+        if (units[A_Index] = "")
+            units[A_Index] := (A_Index > 1 && units[A_Index - 1] != "") ? units[A_Index - 1] : ""
+    }
+    guessed := false
+    if (!hasUnit) {
+        guessed := true
+        g := (Max(vals*) >= 20) ? "mm" : "cm"
+        units := [g, g, g]
+    }
+    return {vals: vals, units: units, hasUnit: hasUnit, guessed: guessed, pos: m.Pos(0), len: m.Len(0)}
+}
+
+PE_DimsText(d) {
+    if (d.units[1] = d.units[2] && d.units[2] = d.units[3])
+        return PE_Fmt(d.vals[1], 2) " x " PE_Fmt(d.vals[2], 2) " x " PE_Fmt(d.vals[3], 2) " " d.units[1]
+    return PE_Fmt(d.vals[1], 2) " " d.units[1] " x " PE_Fmt(d.vals[2], 2) " " d.units[2] " x " PE_Fmt(d.vals[3], 2) " " d.units[3]
+}
+
+PE_Before(t, pos, n := 140) {
+    start := Max(1, pos - n)
+    s := SubStr(t, start, pos - start)
+    if (p := InStr(s, ". ", false, 0))
+        s := SubStr(s, p + 2)
+    return s
+}
+
+; ================= VOLUME =================
+PE_Volume(text) {
+    t := PE_Clean(text)
+    d := PE_FindDims(t)
+    if !IsObject(d)
+        return PE_Fail("Could not find three dimensions.`n`nExamples:`n- The prostate gland measures 4.5 x 3.2 x 4.1 cm.`n- Right ovarian cyst measuring 32 x 24 x 28 mm.")
+    cm := [PE_ToCm(d.vals[1], d.units[1]), PE_ToCm(d.vals[2], d.units[2]), PE_ToCm(d.vals[3], d.units[3])]
+    vol := 0.5236 * cm[1] * cm[2] * cm[3]
+    organ := PE_Organ(PE_Before(t, d.pos))
+    conf := d.hasUnit ? ((RegExMatch(t, "i)measur|size|dimension") || organ != "") ? 95 : 85) : 40
+    if (Max(cm*) > 50)
+        conf -= 30
+    res := " This corresponds to a volume of " PE_Fmt(vol) " cc (mL)"
+    ; Size grading ONLY for the prostate (no descriptors for ICH, cysts, other organs)
+    if (organ = "prostate")
+        res .= ", " PE_ProstateGrade(vol) "."
+    else
+        res .= "."
+    vals := [["Structure", organ != "" ? organ : "(not detected)"], ["Dimensions", PE_DimsText(d) (d.guessed ? "  (units assumed)" : "")], ["Volume", PE_Fmt(vol) " cc"]]
+    if (organ = "prostate")
+        vals.Push(["Grade", "<30 normal, 30-49 mild, 50-79 moderate, 80+ severe"])
+    return PE_Ok(organ = "prostate" ? "Prostate Volume" : "Ellipsoid Volume", vals, res, conf)
+}
+
+PE_ProstateGrade(vol) {
+    if (vol < 30)
+        return "normal in size"
+    if (vol < 50)
+        return "compatible with mild prostatomegaly"
+    if (vol < 80)
+        return "compatible with moderate prostatomegaly"
+    return "compatible with severe prostatomegaly"
+}
+
+PE_Organ(s) {
+    static organs := ""
+    if !IsObject(organs)
+        organs := [["prostat", "prostate"], ["bladder", "bladder"], ["thyroid", "thyroid"], ["ovar", "ovary"], ["uter", "uterus"]
+            , ["testi", "testis"], ["kidney|renal", "kidney"], ["spleen|splenic", "spleen"], ["liver|hepatic", "liver"]
+            , ["hematoma", "hematoma"], ["hemorrhage|bleed", "hemorrhage"], ["abscess", "abscess"], ["collection", "collection"]
+            , ["cyst", "cyst"], ["lymph node|node", "lymph node"], ["mass", "mass"], ["lesion", "lesion"], ["nodule", "nodule"]]
+    for _, o in organs {
+        if RegExMatch(s, "i)\b(?:" o[1] ")")
+            return o[2]
+    }
+    return ""
+}
+
+; ================= ICH (ABC/2) =================
+PE_ICH(text) {
+    t := PE_Clean(text)
+    d := PE_FindDims(t)
+    if !IsObject(d)
+        return PE_Fail("Could not find three hemorrhage dimensions.`n`nExample: Intraparenchymal hemorrhage measuring 4.2 x 2.8 x 3.5 cm.")
+    a := PE_ToCm(d.vals[1], d.units[1]), b := PE_ToCm(d.vals[2], d.units[2]), c := PE_ToCm(d.vals[3], d.units[3])
+    vol := (a * b * c) / 2
+    conf := d.hasUnit ? 90 : 40
+    res := " ICH volume approximately " PE_Fmt(vol) " cc (ABC/2: " PE_Fmt(a) " x " PE_Fmt(b) " x " PE_Fmt(c) " cm)."
+    vals := [["Dimensions", PE_DimsText(d) (d.guessed ? "  (units assumed)" : "")], ["A x B x C", PE_Fmt(a) " x " PE_Fmt(b) " x " PE_Fmt(c) " cm"], ["Volume (ABC/2)", PE_Fmt(vol) " cc"]]
+    return PE_Ok("ICH Volume (ABC/2)", vals, res, conf)
+}
+
+; ================= RV / LV =================
+PE_RVLV(text) {
+    t := PE_Clean(text)
+    rvRe := "(?:\bRV\b|\bR\.V\.|\bright\s+ventric(?:le|ular)|\brt\.?\s+ventric(?:le|ular)|\brvval\b)"
+    lvRe := "(?:\bLV\b|\bL\.V\.|\bleft\s+ventric(?:le|ular)|\blt\.?\s+ventric(?:le|ular)|\blvval\b)"
+    rv := "", lv := "", conf := 0
+    if PE_RX(t, "i)\bRV\s*[/:]\s*LV\b[^\d]{0,20}" PE_N() "\s*[/:]\s*" PE_N(), m) {
+        rv := {val: m[1] + 0, unit: ""}, lv := {val: m[2] + 0, unit: ""}, conf := 80
+    } else if (PE_RX(t, "i)\bRV\s*(?:/|:|to)\s*LV\b(?:\s*(?:diameter\s*)?ratio)?[^\d]{0,20}" PE_N() "(?!\s*[/:]\s*\d)", m) && (m[1] + 0) < 4) {
+        ratio := PE_Fmt(m[1] + 0, 2)
+        return PE_Ok("RV/LV Ratio", [["Ratio", ratio]], " RV/LV ratio: " ratio ". " PE_RVLVInterp(ratio), 80)
+    } else {
+        rv := PE_ValueAfter(t, rvRe, lvRe)
+        lv := PE_ValueAfter(t, lvRe, rvRe)
+        if (IsObject(rv) && IsObject(lv))
+            conf := 90
+    }
+    if (!IsObject(rv) || !IsObject(lv))
+        return PE_Fail("Could not find both RV and LV measurements.`n`nExamples:`n- The right ventricle measures 4.2 cm and the left ventricle measures 3.8 cm.`n- RV 42 mm / LV 35 mm")
+    rvU := rv.unit != "" ? rv.unit : (rv.val < 10 ? "cm" : "mm")
+    lvU := lv.unit != "" ? lv.unit : (lv.val < 10 ? "cm" : "mm")
+    if (rv.unit = "" || lv.unit = "")
+        conf -= 15
+    rvMm := PE_ToMm(rv.val, rvU), lvMm := PE_ToMm(lv.val, lvU)
+    if (lvMm <= 0)
+        return PE_Fail("LV diameter must be greater than 0.")
+    if (rvMm < 10 || rvMm > 100 || lvMm < 10 || lvMm > 100)
+        conf -= 30
+    ratio := PE_Fmt(rvMm / lvMm, 2)
+    if (SP_RVLVFormat = "Inline")
+        res := " RV/LV ratio: " ratio " (RV " PE_Fmt(rvMm) "mm, LV " PE_Fmt(lvMm) "mm). " PE_RVLVInterp(ratio)
+    else
+        res := " RV/LV ratio: " ratio " (RV " PE_Fmt(rvMm / 10) "cm, LV " PE_Fmt(lvMm / 10) "cm). " PE_RVLVInterp(ratio)
+    vals := [["RV", PE_Fmt(rv.val, 2) " " rvU], ["LV", PE_Fmt(lv.val, 2) " " lvU], ["Ratio", ratio]]
+    return PE_Ok("RV/LV Ratio", vals, res, conf)
+}
+
+; No validated mild/moderate/severe grading exists for the CT RV/LV ratio, so the
+; text only states what the number shows (never "severe" or a strain diagnosis).
+PE_RVLVInterp(ratio) {
+    if (ratio >= 1.0)
+        return "Elevated (1.0 or greater), compatible with right ventricular dilatation. Correlate clinically and with echocardiography for right heart strain."
+    if (ratio >= 0.9)
+        return "Borderline (0.9-0.99)."
+    return "Normal (less than 0.9)."
+}
+
+; ================= STENOSIS / NASCET =================
+PE_Stenosis(text, forceNascet := false) {
+    t := PE_Clean(text)
+    stenRe := "(?:residual\s+(?:lumen|luminal\s+diameter|diameter)|minimal\s+lumen(?:al)?(?:\s+diameter)?|\bMLD\b|narrowest|tightest|narrowing|narrowed|stenos[ie]s|stenotic|lumen\s+at\s+the\s+(?:stenosis|narrowing))"
+    normRe := "(?:\bnormal|\breference|\bdistal|non-?stenotic|unaffected|uninvolved|beyond\s+the\s+(?:stenosis|narrowing)|downstream)"
+    sten := PE_ValueAfter(t, stenRe, normRe)
+    norm := PE_ValueAfter(t, normRe, stenRe)
+    conf := 90
+    if (!IsObject(sten) && PE_RX(t, "i)" PE_N() "\s*-?\s*" PE_U() "?\s+(?:residual\s+lumen|stenosis|narrowing)", m))
+        sten := {val: m[1] + 0, unit: PE_Unit(m[2])}
+    if (!IsObject(sten) || !IsObject(norm) || (sten.val = norm.val && sten.unit = norm.unit)) {
+        ms := PE_Measures(t)
+        if (ms.Length() = 2 && RegExMatch(t, "i)" stenRe)) {
+            a := ms[1], b := ms[2]
+            if (PE_ToMm(a.val, a.unit) <= PE_ToMm(b.val, b.unit))
+                sten := a, norm := b
+            else
+                sten := b, norm := a
+            conf := 60
+        } else {
+            return PE_Fail("Could not find a stenosis measurement and a normal (reference) measurement.`n`nExamples:`n- The proximal ICA residual lumen measures 1.2 mm and the normal distal cervical ICA measures 4.5 mm.`n- The SMA has a focal narrowing measuring 2 mm with a normal distal caliber of 6 mm.")
+        }
+    }
+    sU := sten.unit != "" ? sten.unit : ((norm.unit = "cm" && sten.val < 2) ? "cm" : "mm")
+    nU := norm.unit != "" ? norm.unit : ((sten.unit = "cm" && norm.val < 2) ? "cm" : "mm")
+    if (sten.unit = "" || norm.unit = "")
+        conf -= 10
+    s := PE_ToMm(sten.val, sU), n := PE_ToMm(norm.val, nU)
+    if (s >= n) {
+        if (s > n) {
+            tmp := s, s := n, n := tmp
+            conf -= 25
+        } else {
+            return PE_Fail("Stenosis and normal diameters are the same (" PE_Fmt(s) " mm) - nothing to calculate.")
+        }
+    }
+    if (n <= 0)
+        return PE_Fail("Normal diameter must be greater than 0.")
+    pct := Round((n - s) / n * 100, 1)
+    vessel := PE_Vessel(t)
+    severity := pct < 50 ? "mild stenosis" : pct < 70 ? "moderate stenosis" : "severe stenosis"
+    if (forceNascet || vessel = "ICA") {
+        res := " NASCET: " PE_Fmt(pct) "% stenosis (distal " PE_Fmt(n) "mm, stenosis " PE_Fmt(s) "mm), "
+        res .= pct < 50 ? "mild stenosis." : pct < 70 ? "moderate stenosis, consider intervention if symptomatic." : "severe stenosis, strong indication for CEA/CAS."
+        title := "NASCET Stenosis"
+    } else {
+        res := " " (vessel != "" ? vessel : "Vessel") " stenosis: " PE_Fmt(pct) "% (normal " PE_Fmt(n) "mm, stenosis " PE_Fmt(s) "mm), " severity "."
+        title := "Vessel Stenosis"
+    }
+    vals := [["Vessel", vessel != "" ? vessel : "(not detected)"], ["Stenosis", PE_Fmt(sten.val, 2) " " sU], ["Normal", PE_Fmt(norm.val, 2) " " nU], ["% stenosis", PE_Fmt(pct) "%"]]
+    return PE_Ok(title, vals, res, conf)
+}
+
+PE_NASCET(text) {
+    return PE_Stenosis(text, true)
+}
+
+PE_Vessel(t) {
+    static vessels := ""
+    if !IsObject(vessels)
+        vessels := [["\bICA\b|internal\s+carotid", "ICA"], ["\bCCA\b|common\s+carotid", "CCA"], ["\bECA\b|external\s+carotid", "ECA"]
+            , ["\bSMA\b|superior\s+mesenteric", "SMA"], ["\bIMA\b|inferior\s+mesenteric", "IMA"], ["celiac", "Celiac"]
+            , ["renal\s+arter", "Renal artery"], ["vertebral", "Vertebral artery"], ["basilar", "Basilar artery"]
+            , ["\bMCA\b|middle\s+cerebral", "MCA"], ["\bACA\b|anterior\s+cerebral", "ACA"], ["\bPCA\b|posterior\s+cerebral", "PCA"]
+            , ["subclavian", "Subclavian artery"], ["\bCIA\b|common\s+iliac", "Common iliac artery"], ["\bEIA\b|external\s+iliac", "External iliac artery"]
+            , ["\bIIA\b|internal\s+iliac", "Internal iliac artery"], ["\bSFA\b|superficial\s+femoral", "SFA"], ["\bCFA\b|common\s+femoral", "CFA"]
+            , ["popliteal", "Popliteal artery"], ["\bLAD\b", "LAD"], ["\bRCA\b", "RCA"], ["circumflex|\bLCx\b", "LCx"], ["left\s+main", "Left main"]
+            , ["carotid", "ICA"], ["aort", "Aorta"], ["iliac", "Iliac artery"], ["femoral", "Femoral artery"]]
+    for _, v in vessels {
+        if RegExMatch(t, "i)" v[1])
+            return v[2]
+    }
+    return ""
+}
+
+; ================= ADRENAL WASHOUT =================
+PE_Adrenal(text) {
+    t := PE_Clean(text)
+    vals := [], pos := 1
+    while (p := PE_RX(t, "i)(?<![\d.])(-?\d+(?:\.\d+)?)\s*(?:HU\b|Hounsfield(?:\s+units?)?)", m, pos)) {
+        vals.Push({val: m[1] + 0, pos: p, end: p + m.Len(0), phase: ""})
+        pos := p + m.Len(0)
+    }
+    if (vals.Length() < 2)
+        return PE_Fail("Could not find at least two HU values.`n`nExample: Left adrenal nodule measures 45 HU on noncontrast, 85 HU on portal venous phase, and 50 HU on 15-minute delayed phase.")
+    nv := vals.Length()
+    for i, v in vals {
+        nextStart := (i < nv) ? vals[i + 1].pos : StrLen(t) + 1
+        prevEnd := (i > 1) ? vals[i - 1].end : 1
+        after := SubStr(t, v.end, Min(45, nextStart - v.end))
+        before := SubStr(t, prevEnd, v.pos - prevEnd)
+        ph := ""
+        if PE_RX(after, "i)^\s*(?:\(|on\b|in\b|at\b|during\b|with\b|for\b)\s*(?:the\s+)?(.{0,30})", am)
+            ph := PE_Phase(am[1], true)
+        if (ph = "")
+            ph := PE_Phase(before, false)
+        if (ph = "" && PE_RX(after, "i)^[\s,]*(.{0,30})", am))
+            ph := PE_Phase(am[1], true)
+        v.phase := ph
+    }
+    pre := "", post := "", del := "", labeled := 0
+    for _, v in vals {
+        if (v.phase = "pre" && pre = "")
+            pre := v.val, labeled++
+        else if (v.phase = "post" && post = "")
+            post := v.val, labeled++
+        else if (v.phase = "delayed" && del = "")
+            del := v.val, labeled++
+    }
+    conf := 95
+    if (labeled < nv || post = "" || del = "") {
+        if (nv >= 3)
+            pre := vals[1].val, post := vals[2].val, del := vals[3].val
+        else
+            pre := "", post := vals[1].val, del := vals[2].val
+        conf := 55
+    }
+    if (post < -50 || post > 300 || del < -50 || del > 300)
+        conf -= 25
+    res := " Adrenal washout: "
+    if (pre != "" && post != pre) {
+        absW := Round((post - del) / (post - pre) * 100, 1)
+        res .= "absolute " PE_Fmt(absW) "%" (absW >= 60 ? " (likely adenoma)" : " (indeterminate)") ", "
+    }
+    if (post != 0) {
+        rel := Round((post - del) / post * 100, 1)
+        res .= "relative " PE_Fmt(rel) "%" (rel >= 40 ? " (likely adenoma)" : " (indeterminate)") "."
+    }
+    if (pre != "" && pre <= 10)
+        res .= " Pre-contrast " PE_Fmt(pre) " HU suggests lipid-rich adenoma."
+    out := [["Pre-contrast", pre != "" ? PE_Fmt(pre) " HU" : "N/A"], ["Portal venous", PE_Fmt(post) " HU"], ["Delayed", PE_Fmt(del) " HU"]]
+    return PE_Ok("Adrenal Washout", out, res, conf)
+}
+
+PE_Phase(s, fromStart) {
+    static phases := ""
+    if !IsObject(phases)
+        phases := [["delayed", "delayed|15[- ]?min(?:ute)?|10[- ]?min(?:ute)?|\blate\b|washout\s+phase"]
+            , ["post", "portal(?:\s+venous)?|\bvenous|\bPV\b|post-?contrast|postcontrast|contrast[- ]enhanced|\benhanced|arterial|nephrographic|60[- ]?(?:70[- ]?)?sec"]
+            , ["pre", "non-?contrast|non-?enhanced|unenhanced|pre-?contrast|precontrast|without\s+contrast|native|baseline|plain|non-?con\b|\bNC\b"]]
+    best := "", bestPos := fromStart ? 999 : 0
+    for _, ph in phases {
+        if (fromStart) {
+            if ((p := RegExMatch(s, "i)" ph[2])) && p < bestPos)
+                best := ph[1], bestPos := p
+        } else {
+            q := 1
+            while (p := PE_RX(s, "i)" ph[2], m, q)) {
+                if (p >= bestPos)
+                    best := ph[1], bestPos := p
+                q := p + Max(1, m.Len(0))
+            }
+        }
+    }
+    return best
+}
+
+; ================= FLEISCHNER =================
+PE_Fleischner(text) {
+    t := RegExReplace(text, "\R", " ")
+    t := StrReplace(t, Chr(0xD7), "x")
+    t := PE_Filter(t)
+    t := RegExReplace(t, "(?<!\d)\.(?!\d)|;|(?<=\d)\.(?=\s+[A-Z])", "`n")
+    nodRe := "i)\b(?:nodules?|nodular\s+(?:opacit(?:y|ies)|densit(?:y|ies))|micronodules?|GGNs?|GGOs?|ground[- ]?glass\s+(?:opacit(?:y|ies)|nodules?|lesions?|focus)|subsolid\s+(?:lesions?|opacit(?:y|ies)))\b"
+    nonLung := "i)\b(?:thyroid|adrenal|renal|kidney|hepatic|liver|breast|splenic|spleen|pancrea|ovar|testic|prostat|lymph|skin|subcutaneous|bone|osseous)"
+    found := [], plural := false
+    for _, s in StrSplit(t, "`n") {
+        if !RegExMatch(s, nodRe)
+            continue
+        if (RegExMatch(s, nonLung) && !RegExMatch(s, "i)lung|pulmonary|lobe|lingula|\b[RL][UML]L\b"))
+            continue
+        if (RegExMatch(s, "i)\bcalcified\b") && !RegExMatch(s, "i)\b(?:non-?|partially\s+)calcified\b"))
+            continue
+        size := 0, sub6 := false
+        if RegExMatch(s, "i)sub[- ]?(?:6|centimeter)|<\s*6\s*mm|less\s+than\s+6\s*mm|smaller\s+than\s+6\s*mm")
+            size := 5, sub6 := true
+        if (sub6) {
+            ; already sized
+        } else if PE_RX(s, "i)" PE_N() "\s*" PE_U() "?\s*(?:x|by)\s*" PE_N() "\s*" PE_U(), m) {
+            u1 := PE_Unit(m[2] != "" ? m[2] : m[4]), u2 := PE_Unit(m[4])
+            a := PE_ToMm(m[1] + 0, u1), b := PE_ToMm(m[3] + 0, u2)
+            size := Round((a + b) / 2)
+        } else {
+            for _, v in PE_Measures(s) {
+                mmv := PE_ToMm(v.val, v.unit)
+                if (mmv > size)
+                    size := mmv
+            }
+        }
+        if (size = 0 && RegExMatch(s, "i)punctate|tiny|small|micronodul|miliary"))
+            size := 5, sub6 := true
+        if (size = 0 || size > 30)
+            continue
+        size := PE_Fmt(size) + 0
+        type := "solid"
+        if RegExMatch(s, "i)part[- ]?solid|semi[- ]?solid|mixed(?:\s+(?:solid|density|attenuation))?")
+            type := "part-solid"
+        else if RegExMatch(s, "i)ground[- ]?glass|\bGG[NO]s?\b|sub[- ]?solid|non-?solid|hazy")
+            type := "subsolid"
+        lobe := PE_Lobe(s)
+        if RegExMatch(s, "i)\b(?:nodules|micronodules|GGNs|GGOs|opacities|multiple|several|numerous|innumerable|scattered|few|bilateral|two|three|four)\b")
+            plural := true
+        dup := false
+        for _, f in found {
+            if (f.type = type && Abs(f.size - size) <= 1 && (f.lobe = "" || lobe = "" || f.lobe = lobe)) {
+                dup := true
+                if (size > f.size)
+                    f.size := size
+                if (f.lobe = "")
+                    f.lobe := lobe
+                break
+            }
+        }
+        if (!dup)
+            found.Push({type: type, size: size, lobe: lobe, sub6: sub6})
+    }
+    if (found.Length() = 0)
+        return PE_Fail("Could not find a pulmonary nodule with a size.`n`nExamples:`n- There is a 7 mm solid noncalcified pulmonary nodule in the right upper lobe.`n- 8 x 6 mm ground-glass nodule in the left lower lobe.")
+    isMultiple := (found.Length() > 1) || plural
+    maxSolid := 0, maxSub := 0, maxPart := 0
+    for _, f in found {
+        if (f.type = "solid")
+            maxSolid := Max(maxSolid, f.size)
+        else if (f.type = "subsolid")
+            maxSub := Max(maxSub, f.size)
+        else
+            maxPart := Max(maxPart, f.size)
+    }
+    r := "`n`n___________________________________________________________`n"
+    r .= "Incidental Lung Nodule Discussion:`n"
+    r .= "2017 ACR Fleischner Society expert consensus recommendations on incidental pulmonary nodules.`n"
+    r .= "Target Demographic: 35+ years without known cancer or immunosuppressive disorder.`n`n"
+    r .= "Detected nodules:`n"
+    for i, f in found {
+        typeName := f.type = "solid" ? "solid" : f.type = "subsolid" ? "ground glass/subsolid" : "part-solid"
+        r .= i ". " (f.sub6 ? "<6" : PE_Fmt(f.size)) " mm " typeName " nodule" (f.lobe != "" ? " (" f.lobe ")" : "") "`n"
+    }
+    recLow := PE_FleischnerRec(maxSolid, maxSub, maxPart, isMultiple, "Low risk")
+    recHigh := PE_FleischnerRec(maxSolid, maxSub, maxPart, isMultiple, "High risk")
+    for _, f in found {
+        if (f.sub6) {
+            nm := f.type = "solid" ? "Solid" : f.type = "subsolid" ? "Ground glass" : "Part-solid"
+            recLow := StrReplace(recLow, nm " 5mm", nm " <6mm"), recHigh := StrReplace(recHigh, nm " 5mm", nm " <6mm")
+        }
+    }
+    r .= "`nLOW RISK recommendation:`n" recLow
+    r .= "`n`nHIGH RISK recommendation:`n" recHigh
+    if (SP_IncludeDatamining)
+        r .= "`n`nData Mining: " SP_DataminingPhrase " . ACR and AMA MIPS #364"
+    r .= "`n`nNote: The need for followup depends on clinical discussion of patient's comorbid conditions, demographics, and willingness to undergo followup imaging and potential intervention."
+    if (ShowCitations)
+        r .= "`nRef: MacMahon H et al. Radiology 2017;284:228-243"
+    r .= "`n___________________________________________________________"
+    summary := ""
+    for _, f in found
+        summary .= (summary != "" ? "; " : "") f.type " " (f.sub6 ? "<6" : PE_Fmt(f.size)) " mm" (f.lobe != "" ? " " f.lobe : "")
+    vals := [["Nodules", summary], ["Count", isMultiple ? "Multiple" : "Single"]]
+    return PE_Ok("Fleischner Nodules", vals, r, found.Length() > 3 ? 75 : 90, SP_FleischnerAtEnd)
+}
+
+PE_FleischnerRec(maxSolid, maxSubsolid, maxPartsolid, isMultiple, risk) {
+    result := ""
+    if (maxSolid > 0) {
+        if (maxSolid < 6)
+            result .= (risk = "Low risk") ? "- Solid " maxSolid "mm: No routine follow-up required." : "- Solid " maxSolid "mm: Optional CT at 12 months."
+        else if (maxSolid <= 8) {
+            if (isMultiple)
+                result .= (risk = "Low risk") ? "- Solid " maxSolid "mm (multiple): CT at 3-6 months, then consider CT at 18-24 months." : "- Solid " maxSolid "mm (multiple): CT at 3-6 months, then CT at 18-24 months."
+            else
+                result .= (risk = "Low risk") ? "- Solid " maxSolid "mm: CT at 6-12 months, then consider CT at 18-24 months." : "- Solid " maxSolid "mm: CT at 6-12 months, then CT at 18-24 months."
+        } else
+            result .= "- Solid " maxSolid "mm: Consider CT at 3 months, PET/CT, or tissue sampling."
+    }
+    if (maxSubsolid > 0) {
+        if (result != "")
+            result .= "`n"
+        if (maxSubsolid < 6)
+            result .= isMultiple ? "- Ground glass " maxSubsolid "mm (multiple): CT at 3-6 months. If stable, consider CT at 2 and 4 years." : "- Ground glass " maxSubsolid "mm: No routine follow-up required."
+        else
+            result .= isMultiple ? "- Ground glass " maxSubsolid "mm (multiple): CT at 3-6 months, subsequent management based on most suspicious nodule." : "- Ground glass " maxSubsolid "mm: CT at 6-12 months, then every 2 years for 5 years."
+    }
+    if (maxPartsolid > 0) {
+        if (result != "")
+            result .= "`n"
+        if (maxPartsolid < 6)
+            result .= "- Part-solid " maxPartsolid "mm: No routine follow-up required."
+        else
+            result .= isMultiple ? "- Part-solid " maxPartsolid "mm (multiple): CT at 3-6 months. If stable, annual CT for 5 years." : "- Part-solid " maxPartsolid "mm: CT at 3-6 months. If stable, annual CT for 5 years. If solid component >=6mm, consider PET/CT or biopsy."
+    }
+    return result
+}
+
+PE_Lobe(s) {
+    if PE_RX(s, "i)\b(right|left)\s+(upper|middle|lower)\s+lobe", m)
+        return PE_Lower(m[1] " " m[2]) " lobe"
+    if PE_RX(s, "\b(RUL|RML|RLL|LUL|LLL)\b", m) {
+        abbr := {RUL: "right upper lobe", RML: "right middle lobe", RLL: "right lower lobe", LUL: "left upper lobe", LLL: "left lower lobe"}
+        return abbr[m[1]]
+    }
+    if RegExMatch(s, "i)lingula")
+        return "lingula"
+    return ""
+}
+
+; ================= FOLLOW-UP DATE =================
+PE_FutureDate(interval, unit) {
+    today := A_YYYY A_MM A_DD
+    if (unit = "days")
+        d := PE_AddDays(today, interval)
+    else if (unit = "weeks")
+        d := PE_AddDays(today, interval * 7)
+    else {
+        months := (unit = "years") ? interval * 12 : interval
+        y := A_YYYY + 0, mo := A_MM + 0 + months, day := A_DD + 0
+        y += Floor((mo - 1) / 12)
+        mo := Mod(mo - 1, 12) + 1
+        first := Format("{:04}{:02}01", y, mo)
+        nextFirst := SubStr(PE_AddDays(first, 32), 1, 6) "01"
+        dim := PE_DaysBetween(first, nextFirst)
+        d := Format("{:04}{:02}{:02}", y, mo, Min(day, dim))
+    }
+    return PE_FormatTime(d, "MMMM d, yyyy")
+}
+
+PE_Date(text) {
+    t := RegExReplace(text, "\R", " ")
+    words := {a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, eighteen: 18}
+    num := "(\d+|twenty[- ]four|eighteen|twelve|eleven|ten|nine|eight|seven|six|five|four|three|two|one|an?)"
+    unitRe := "(days?|weeks?|wks?|months?|mos?|years?|yrs?)"
+    if !PE_RX(t, "i)\b" num "(?:\s*(?:-|to|or)\s*" num ")?[\s-]*" unitRe "\b(?![\s-]*old)", m) {
+        if !PE_RX(t, "i)\b(\d+)\s*(d|w|m|y)\b", m)
+            return PE_Fail("Could not find a follow-up interval.`n`nExamples:`n- Recommend follow-up ultrasound in 6 months.`n- Please schedule follow-up MRI in 3 weeks.")
+        n1 := m[1] + 0, n2 := "", u := m[2]
+    } else {
+        n1 := PE_WordNum(m[1], words)
+        n2 := (m[2] = "") ? "" : PE_WordNum(m[2], words)
+        u := m[3]
+    }
+    c := PE_Lower(SubStr(u, 1, 1))
+    unit := c = "d" ? "days" : c = "w" ? "weeks" : c = "m" ? "months" : "years"
+    if (n1 = 0)
+        return PE_Fail("Follow-up interval must be greater than 0.")
+    d1 := PE_FutureDate(n1, unit)
+    span := n1 (n2 != "" ? "-" n2 : "") " " ((n2 = "" && n1 = 1) ? RTrim(unit, "s") : unit)
+    when := (n2 != "") ? d1 " to " PE_FutureDate(n2, unit) : d1
+    modality := ""
+    if PE_RX(t, "i)\b(CT|MRI|MR|ultrasound|sonogra\w*|US|PET(?:/CT)?|mammogra\w*|radiograph\w*|x-?ray|CTA|MRA)\b", mm)
+        modality := mm[1]
+    if RegExMatch(t, "i)follow[- ]?up|recommend|repeat|re-?evaluat|re-?image|schedul")
+        res := " (Due approximately " when ".)"
+    else
+        res := " Recommend follow-up" (modality != "" ? " " modality : "") " in " span " (approximately " when ")."
+    vals := [["Interval", span], ["Modality", modality != "" ? modality : "(not stated)"], ["Due date", when]]
+    return PE_Ok("Follow-up Date", vals, res, 95)
+}
+
+PE_WordNum(w, words) {
+    if PE_IsNum(w)
+        return w + 0
+    w := PE_Lower(RegExReplace(w, "[- ]", ""))
+    if (w = "twentyfour")
+        return 24
+    return words[w]
+}
+
+; ================= THYROID: ACR TI-RADS =================
+PE_TIRADS(text) {
+    t := RegExReplace(text, "\R", "`n")
+    if PE_RX(t, "i)(?:^|\n)\s*(?:CLINICAL\s+)?IMPRESSIONS?\s*:", im)
+        t := SubStr(t, 1, im.Pos(0) - 1)
+    t := RegExReplace(t, "\s+", " ")
+    t := StrReplace(t, Chr(0xD7), "x")
+    t := RegExReplace(t, "(?<!\d)\.(?!\d)|;", ".`n")
+    nodules := [], cur := ""
+    for _, s in StrSplit(t, "`n") {
+        s := Trim(s)
+        if (s = "")
+            continue
+        hasNod := RegExMatch(s, "i)\b(?:nodules?|lesions?|mass|TR\d)\b")
+        sz := PE_TIRADSSize(s)
+        if (hasNod && sz > 0) {
+            if RegExMatch(s, "i)\bno\s+(?:\w+\s+){0,3}nodules?\b")
+                continue
+            cur := {text: s, size: sz}
+            nodules.Push(cur)
+        } else if IsObject(cur) {
+            if (RegExMatch(s, "i)\b(?:nodules?|lobe|isthmus)\b") && !RegExMatch(s, "i)\b(?:it|this|the\s+nodule|which|there\s+is)\b"))
+                cur := ""
+            else
+                cur.text .= " " s
+        }
+    }
+    if (nodules.Length() = 0)
+        return PE_Fail("Could not find a thyroid nodule with a size.`n`nExample: Right lobe: solid, hypoechoic, 1.5 cm nodule with macrocalcifications, wider-than-tall with smooth margins.")
+    out := "`n`nACR TI-RADS:"
+    vals := [], fnaCount := 0, conf := 90
+    for i, n in nodules {
+        sc := PE_TIRADSScore(n.text)
+        tr := PE_TIRADSLevel(sc.total)
+        rec := PE_TIRADSRec(tr, n.size)
+        if InStr(rec, "FNA recommended")
+            fnaCount++
+        loc := PE_ThyroidLoc(n.text)
+        out .= "`nNodule " i (loc != "" ? " (" loc ")" : "") ", " PE_Fmt(n.size) " cm: " sc.detail
+        out .= " = " sc.total " point" (sc.total = 1 ? "" : "s") ", TR" tr " (" PE_TIRADSName(tr) "). " rec
+        vals.Push(["Nodule " i, (loc != "" ? loc " " : "") PE_Fmt(n.size) " cm, " sc.total " pts, TR" tr (sc.missing != "" ? "  [assumed: " sc.missing "]" : "")])
+        if (sc.missing != "")
+            conf := Min(conf, 70)
+    }
+    if (fnaCount > 2)
+        out .= "`nNote: ACR TI-RADS suggests FNA of no more than two nodules, those with the highest point totals."
+    out .= "`nRef: Tessler FN et al. ACR Thyroid Imaging, Reporting and Data System (TI-RADS). JACR 2017;14:587-595."
+    return PE_Ok("ACR TI-RADS", vals, out, conf, true)
+}
+
+PE_TIRADSSize(s) {
+    best := 0, pos := 1
+    while (p := PE_RX(s, "i)" PE_N() "\s*(?:" PE_U() ")?((?:\s*(?:x|by)\s*(?:\d+(?:\.\d+)?|\.\d+)\s*(?:" PE_U() ")?){0,2})", m, pos)) {
+        pos := p + Max(1, m.Len(0))
+        u := ""
+        if PE_RX(m.Value(0), "i)(mm|cm|millimet|centimet)[a-z]*\s*$", um)
+            u := PE_Unit(um[1])
+        if (u = "")
+            continue
+        nums := [], q := 1, mv := m.Value(0)
+        while (qq := PE_RX(mv, "(\d+(?:\.\d+)?|\.\d+)", nm, q))
+            nums.Push(nm[1] + 0), q := qq + nm.Len(0)
+        mx := Max(nums*)
+        best := Max(best, u = "mm" ? mx / 10 : mx)
+    }
+    return best
+}
+
+PE_TIRADSScore(s) {
+    t := RegExReplace(s, "i)\b(?:no|without|absent|negative\s+for)\s+(?:\w+[\s,]+){0,4}?(?:micro|macro)?calcifications?|\b(?:no|without)\s+(?:\w+\s+){0,3}?echogenic\s+foci", " ")
+    t := RegExReplace(t, "i)\b(?:no|without)\s+(?:evidence\s+of\s+)?extra-?\s?thyroidal\s+extension", " ")
+    t := RegExReplace(t, "i)\bnot\s+taller[- ]than[- ]wide", " wider-than-tall")
+    missing := ""
+    if RegExMatch(t, "i)spongiform")
+        return {total: 0, detail: "spongiform (0; other features not scored)", missing: ""}
+    if RegExMatch(t, "i)mixed|partially\s+cystic|predominantly\s+(?:solid|cystic)|solid\s+and\s+cystic|cystic\s+and\s+solid|complex\s+cystic|cystic\s+(?:and|with)\s+solid|solid\s+(?:with|and)\s+cystic")
+        comp := 1, cname := "mixed cystic and solid"
+    else if (RegExMatch(t, "i)(?:purely|completely|entirely|almost\s+completely|simple)\s+cystic|\bcyst\b|anechoic\s+cyst|\bcystic\b") && !RegExMatch(t, "i)\bsolid\b"))
+        comp := 0, cname := "cystic"
+    else if RegExMatch(t, "i)\bsolid\b")
+        comp := 2, cname := "solid"
+    else
+        comp := 2, cname := "solid (composition not stated)", missing .= "composition "
+    if (comp = 0)
+        echo := 0, ename := "anechoic"
+    else if RegExMatch(t, "i)(?:very|markedly)\s+hypoechoic")
+        echo := 3, ename := "very hypoechoic"
+    else if RegExMatch(t, "i)hypoechoic|hypoechogenic")
+        echo := 2, ename := "hypoechoic"
+    else if RegExMatch(t, "i)isoechoic|hyperechoic|iso-?\s?echoic|hyper-?\s?echoic|echogenic\s+nodule")
+        echo := 1, ename := RegExMatch(t, "i)hyper") ? "hyperechoic" : "isoechoic"
+    else if RegExMatch(t, "i)anechoic")
+        echo := 0, ename := "anechoic"
+    else
+        echo := 1, ename := "echogenicity not stated", missing .= "echogenicity "
+    if RegExMatch(t, "i)taller[- ]than[- ]wide|anti-?parallel")
+        shape := 3, sname := "taller-than-wide"
+    else {
+        shape := 0, sname := "wider-than-tall"
+        if !RegExMatch(t, "i)wider[- ]than[- ]tall|parallel|oval|round")
+            sname .= " (shape not stated)"
+    }
+    if RegExMatch(t, "i)extra-?\s?thyroidal|\bETE\b|invad(?:es|ing)\s+(?:the\s+)?(?:strap|capsule|trachea)")
+        margin := 3, mname := "extrathyroidal extension"
+    else if RegExMatch(t, "i)lobulated|irregular|spiculated|angular|microlobulated")
+        margin := 2, mname := "lobulated/irregular margins"
+    else if RegExMatch(t, "i)smooth|well[- ]?(?:defined|circumscribed)|circumscribed|ill[- ]?defined")
+        margin := 0, mname := "smooth margins"
+    else
+        margin := 0, mname := "margins not stated"
+    foci := 0, fnames := ""
+    if RegExMatch(t, "i)microcalcification|punctate\s+(?:echogenic\s+foci|calcification)|psammoma")
+        foci += 3, fnames .= "punctate echogenic foci (3) "
+    if RegExMatch(t, "i)peripheral\s+(?:rim\s+)?calcification|rim\s+calcification|eggshell|peripheral\s+calcific")
+        foci += 2, fnames .= "peripheral calcifications (2) "
+    if RegExMatch(t, "i)macro-?\s?calcification|coarse\s+calcification|large\s+calcification")
+        foci += 1, fnames .= "macrocalcifications (1) "
+    if (fnames = "")
+        fnames := RegExMatch(t, "i)comet[- ]tail") ? "comet-tail artifacts (0) " : "no echogenic foci (0) "
+    total := comp + echo + shape + margin + foci
+    detail := cname " (" comp "), " ename " (" echo "), " sname " (" shape "), " mname " (" margin "), " Trim(fnames)
+    return {total: total, detail: detail, missing: Trim(missing)}
+}
+
+PE_TIRADSLevel(pts) {
+    return pts >= 7 ? 5 : pts >= 4 ? 4 : pts = 3 ? 3 : pts = 2 ? 2 : 1
+}
+PE_TIRADSName(tr) {
+    names := ["benign", "not suspicious", "mildly suspicious", "moderately suspicious", "highly suspicious"]
+    return names[tr]
+}
+
+PE_TIRADSRec(tr, cm) {
+    fna := [0, 0, 2.5, 1.5, 1.0], fu := [0, 0, 1.5, 1.0, 0.5]
+    when := ["", "", "ultrasound at 1, 3 and 5 years", "ultrasound at 1, 2, 3 and 5 years", "ultrasound annually for up to 5 years"]
+    if (tr <= 2)
+        return "No FNA."
+    if (cm >= fna[tr])
+        return "FNA recommended (TR" tr " nodule " PE_Fmt(fna[tr]) " cm or larger)."
+    if (cm >= fu[tr])
+        return "Follow-up " when[tr] " (TR" tr " nodule " PE_Fmt(fu[tr]) " cm or larger)."
+    return "No FNA or follow-up needed based on size."
+}
+
+PE_ThyroidLoc(s) {
+    loc := ""
+    if RegExMatch(s, "i)\bisthmus")
+        loc := "isthmus"
+    else if PE_RX(s, "i)\b(right|left)\b", m)
+        loc := PE_Lower(m[1]) " lobe"
+    if (PE_RX(s, "i)\b(upper|mid(?:dle)?|lower|inferior|superior)\s*(?:pole|portion|third)?", p) && loc != "isthmus")
+        loc := Trim(loc " " PE_Lower(p[1]) " pole")
+    return loc
+}
+
+; ================= OVARIAN CYST: O-RADS US + SRU =================
+PE_ORADS(text) {
+    t := RegExReplace(text, "\R", " ")
+    t := StrReplace(t, Chr(0xD7), "x")
+    cm := PE_TIRADSSize(t)
+    if (cm <= 0)
+        return PE_Fail("Could not find the cyst size.`n`nExample: Simple right ovarian cyst measuring 4.2 x 3.8 x 3.5 cm in a premenopausal patient.")
+    if RegExMatch(t, "i)papillary|solid\s+(?:component|nodule|portion|area)|mural\s+nodul|thick(?:ened)?\s+septa|irregular\s+(?:wall|septa)|internal\s+(?:blood\s+)?flow|vascular\s+(?:solid|septa)|multilocular|ascites")
+        return PE_Fail("This lesion has features that are not a classic benign cyst (solid component, papillary projection, thick/irregular septation, flow or multilocularity).`n`nUse the full O-RADS US lexicon (O-RADS 3-5); no automatic follow-up recommendation.")
+    type := ""
+    if RegExMatch(t, "i)dermoid|teratoma|echogenic\s+plug|dermoid\s+mesh|rokitansky")
+        type := "dermoid"
+    else if RegExMatch(t, "i)endometrioma|ground[- ]?glass|homogeneous\s+low[- ]level\s+echoes|chocolate")
+        type := "endometrioma"
+    else if RegExMatch(t, "i)hemorrhag|haemorrhag|reticular|lace-?like|fishnet|retract(?:ing|ile)\s+clot|cobweb")
+        type := "hemorrhagic"
+    else if RegExMatch(t, "i)\bsimple\b|anechoic|unilocular\s+(?:thin|smooth)|thin[- ]walled")
+        type := "simple"
+    if (type = "")
+        return PE_Fail("Found a " PE_Fmt(cm) " cm cyst but not its type.`n`nAdd a descriptor: simple / anechoic, hemorrhagic (reticular, retracting clot), endometrioma (ground-glass, low-level echoes) or dermoid (echogenic plug).")
+    meno := ""
+    if RegExMatch(t, "i)post-?\s?menopaus")
+        meno := "post"
+    else if RegExMatch(t, "i)pre-?\s?menopaus|reproductive[- ]age|\bLMP\b|last\s+menstrual|day\s+\d+\s+of\s+(?:her\s+)?cycle|pregnan")
+        meno := "pre"
+    else if PE_RX(t, "i)\b(\d{2})[- ]?(?:year|yr|y)[- ]?(?:old|o\b)", am) {
+        age := am[1] + 0
+        meno := age < 45 ? "pre" : age >= 55 ? "post" : ""
+    }
+    if (cm >= 10) {
+        cat := "O-RADS US 3 (low risk)"
+        rec := "Classic benign-appearing lesion 10 cm or larger: management by gynecologist; consider MRI (O-RADS MRI)."
+        res := "`n`nOvarian/adnexal cyst: " PE_Fmt(cm) " cm " type " cyst. " cat ". " rec
+    } else {
+        cat := (type = "simple" && cm <= 3 && meno != "post") ? "O-RADS US 1 (normal ovary, physiologic follicle)" : "O-RADS US 2 (almost certainly benign)"
+        if (meno = "")
+            rec := "Premenopausal: " PE_ORADSRec(type, cm, "pre") " Postmenopausal: " PE_ORADSRec(type, cm, "post")
+        else
+            rec := PE_ORADSRec(type, cm, meno)
+        if (type = "simple" && cm <= 3 && meno = "")
+            cat := "O-RADS US 1 if premenopausal (physiologic follicle), O-RADS US 2 if postmenopausal"
+        res := "`n`nOvarian/adnexal cyst: " PE_Fmt(cm) " cm " type " cyst" (meno != "" ? " in a " meno "menopausal patient" : "") ". " cat ". " rec
+    }
+    res .= "`nRef: O-RADS US v2022 (ACR); follow-up per SRU consensus (Levine et al. Radiology 2010;256:943-954 and 2019;293:359-371)."
+    vals := [["Size (largest)", PE_Fmt(cm) " cm"], ["Type", type], ["Menopausal status", meno = "" ? "not stated (both given)" : meno "menopausal"], ["Category", cat]]
+    return PE_Ok("Ovarian Cyst (O-RADS / SRU)", vals, res, meno = "" ? 75 : 90, true)
+}
+
+PE_ORADSRec(type, cm, meno) {
+    if (type = "simple") {
+        if (meno = "pre") {
+            if (cm <= 3)
+                return "Physiologic follicle; no follow-up."
+            if (cm <= 5)
+                return "No follow-up needed."
+            if (cm <= 7)
+                return "Follow-up ultrasound in 1 year."
+            return "MRI or surgical evaluation."
+        }
+        if (cm <= 1)
+            return "No follow-up needed."
+        if (cm <= 7)
+            return "Follow-up ultrasound in 1 year."
+        return "MRI or surgical evaluation."
+    }
+    if (type = "hemorrhagic") {
+        if (meno = "pre")
+            return cm <= 5 ? "No follow-up needed." : "Follow-up ultrasound in 6-12 weeks to confirm resolution."
+        return "Early postmenopause: follow-up ultrasound in 6-12 weeks to confirm resolution; late postmenopause: surgical evaluation."
+    }
+    if (type = "endometrioma")
+        return meno = "pre" ? "Follow-up ultrasound in 6-12 weeks, then yearly if not surgically removed." : "Surgical evaluation may be considered; otherwise follow-up ultrasound in 6-12 weeks, then yearly."
+    if (type = "dermoid")
+        return "Yearly follow-up ultrasound if not surgically removed."
+    return ""
+}
+
+; ================= BONE AGE (Greulich & Pyle) =================
+PE_AgeMonths(s) {
+    s := Trim(RegExReplace(s, "\s+", " "))
+    uY := "(?:years?|yrs?|y/?o|y\.?o\.?|y)"
+    uM := "(?:months?|mos?|m)"
+    if PE_RX(s, "^(\d+)\s*:\s*(\d+)$", m)
+        return m[1] * 12 + m[2]
+    if PE_RX(s, "^(\d+(?:\.\d+)?)$", m)
+        return Round(m[1] * 12)
+    if PE_RX(s, "i)(\d+)\s*-?\s*" uY "\.?\s*and\s+(?:a\s+)?half", m)
+        return m[1] * 12 + 6
+    if PE_RX(s, "i)(\d+)\s*-?\s*" uY "\.?(?:\s*(?:,|and|\+)?\s*(\d+(?:\.\d+)?)\s*-?\s*" uM "\b)", m)
+        return m[1] * 12 + Round(m[2] + 0)
+    if PE_RX(s, "i)(\d+)\s*(?:-|\s)\s*(\d+)\s*/\s*12\b", m)
+        return m[1] * 12 + m[2]
+    if PE_RX(s, "i)(\d+)\s*(?:and\s+(?:a\s+)?half|-?\s*1/2|" Chr(0xBD) ")", m)
+        return m[1] * 12 + 6
+    if PE_RX(s, "i)(\d+)\s*(?:and\s+(?:a\s+)?quarter|-?\s*1/4)", m)
+        return m[1] * 12 + 3
+    if PE_RX(s, "i)(\d+)\s*(?:and\s+three\s+quarters|-?\s*3/4)", m)
+        return m[1] * 12 + 9
+    if PE_RX(s, "i)(\d+(?:\.\d+)?)\s*-?\s*" uY "\b", m)
+        return Round(m[1] * 12)
+    if PE_RX(s, "i)(\d+)\s*-?\s*" uM "\b", m)
+        return m[1] + 0
+    return ""
+}
+
+PE_AgeText(months) {
+    months := Round(months)
+    y := months // 12, mo := Mod(months, 12)
+    return y " year" (y = 1 ? "" : "s") (mo ? " " mo " month" (mo = 1 ? "" : "s") : "")
+}
+
+PE_BoneAgeExtract(text) {
+    t := RegExReplace(text, "\R", " ")
+    r := {chrono: "", sex: "", bone: "", dob: "", examDate: ""}
+    if PE_RX(t, "i)bone\s+age\s*(?:is|of|:|=|estimated\s+(?:at|to\s+be)|approximately|approx\.?|consistent\s+with|corresponds\s+to)?\s*(?:approximately\s+|about\s+)?(.{1,40}?)(?:[.;,](?!\d)|\(|$|\s+(?:which|by|per|using|according)|\s+and\s+(?!(?:a\s+)?half|\d))", m)
+        r.bone := PE_AgeMonths(m[1])
+    if PE_RX(t, "i)(?:chronologic(?:al)?\s+age|actual\s+age|patient(?:'s)?\s+age|(?<!bone\s)(?<!bone)\bage)\s*(?:is|of|:|=)?\s*(.{1,30}?)(?:[.;,](?!\d)|\(|$|\s+(?:male|female|boy|girl|M\b|F\b))", m)
+        r.chrono := PE_AgeMonths(m[1])
+    if (r.chrono = "" && PE_RX(t, "i)(\d+)[- ](?:year|yr)[- ]?(?:s)?[- ](?:and[- ])?(\d+)[- ]month[- ]?(?:s)?[- ]old", m))
+        r.chrono := m[1] * 12 + m[2]
+    if (r.chrono = "" && PE_RX(t, "i)(\d+(?:\.\d+)?)[- ]?(?:year|yr)s?[- ]?old|(\d+(?:\.\d+)?)\s*(?:yo|y/o|y\.o\.)\b", m))
+        r.chrono := Round((m[1] != "" ? m[1] : m[2]) * 12)
+    if (r.chrono = "" && PE_RX(t, "i)(\d+)[- ]month[- ]old", m))
+        r.chrono := m[1] + 0
+    dateRe := "(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})"
+    if PE_RX(t, "i)(?:DOB|D\.O\.B\.|date\s+of\s+birth|birth\s*date|born)\s*:?\s*" dateRe, d) {
+        r.dob := PE_Ymd(d[1], d[2], d[3])
+        ex := ""
+        if PE_RX(t, "i)(?:exam(?:ination)?|study|service|procedure|scan|accession)\s*(?:date|dt)?\s*:?\s*" dateRe, e)
+            ex := PE_Ymd(e[1], e[2], e[3])
+        r.examDate := ex != "" ? ex : A_YYYY A_MM A_DD
+        if (r.dob != "" && r.dob < r.examDate)
+            r.chrono := PE_MonthsBetween(r.dob, r.examDate)
+    }
+    if (PE_RX(t, "i)\b(female|girl|f)\b(?!\.?\s*(?:u|/u))", sx) || PE_RX(t, "i)\b(male|boy|m)\b", sx))
+        r.sex := RegExMatch(sx[1], "i)^(?:female|girl|f)$") ? "Female" : "Male"
+    if PE_RX(t, "i)\b(?:sex|gender)\s*:?\s*(m|f|male|female)\b", sx)
+        r.sex := RegExMatch(sx[1], "i)^f") ? "Female" : "Male"
+    return r
+}
+
+PE_Ymd(mo, d, y) {
+    y := y + 0
+    if (y < 100)
+        y += (y > Mod(A_YYYY, 100) ? 1900 : 2000)
+    if (mo < 1 || mo > 12 || d < 1 || d > 31)
+        return ""
+    return Format("{:04}{:02}{:02}", y, mo, d)
+}
+
+PE_MonthsBetween(a, b) {
+    mo := (SubStr(b, 1, 4) - SubStr(a, 1, 4)) * 12 + (SubStr(b, 5, 2) - SubStr(a, 5, 2))
+    if (SubStr(b, 7, 2) + 0 < SubStr(a, 7, 2) + 0)
+        mo -= 1
+    return mo
+}
+
+PE_ParseDate(s) {
+    if PE_RX(s, "(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})", d)
+        return PE_Ymd(d[1], d[2], d[3])
+    return ""
+}
+
+; Greulich & Pyle SD (months) by chronological age (months); Brush Foundation data
+PE_GPSD(chronoMonths, sex) {
+    ages := [3, 6, 9, 12, 18, 24, 30, 36, 42, 48, 54, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168, 180, 192, 204]
+    male := [0.72, 1.13, 1.43, 1.97, 3.52, 3.92, 4.52, 5.08, 5.40, 6.66, 8.36, 8.79, 9.17, 8.91, 9.10, 11.00, 11.38, 10.77, 10.44, 10.72, 11.32, 12.86, 13.05, 13.84]
+    female := [0.72, 1.16, 1.36, 1.77, 3.49, 4.64, 5.37, 5.97, 7.48, 8.98, 10.73, 11.65, 10.23, 9.64, 10.23, 10.74, 11.73, 11.94, 10.24, 10.67, 11.30, 9.23, 7.31, 7.31]
+    sd := (sex = "Female") ? female : male
+    n := ages.Length()
+    if (chronoMonths <= ages[1])
+        return sd[1]
+    if (chronoMonths >= ages[n])
+        return sd[n]
+    Loop % n - 1 {
+        i := A_Index
+        if (chronoMonths <= ages[i + 1]) {
+            f := (chronoMonths - ages[i]) / (ages[i + 1] - ages[i])
+            return sd[i] + f * (sd[i + 1] - sd[i])
+        }
+    }
+    return sd[n]
+}
+
+PE_BoneAgeReport(boneMonths, chronoMonths, sex) {
+    if (boneMonths = "" || chronoMonths = "" || sex = "")
+        return PE_Fail("Need bone age, chronological age and sex.")
+    sd := PE_GPSD(chronoMonths, sex)
+    diff := boneMonths - chronoMonths
+    z := sd > 0 ? diff / sd : 0
+    if (Abs(z) <= 2)
+        interp := "The bone age is within normal limits (within 2 standard deviations of the chronological age)."
+    else if (z > 0)
+        interp := "The bone age is advanced (greater than 2 standard deviations above the chronological age)."
+    else
+        interp := "The bone age is delayed (greater than 2 standard deviations below the chronological age)."
+    who := (sex = "Female") ? "a girl" : "a boy"
+    r := " Using the standards of Greulich and Pyle, the bone age is estimated to be " PE_AgeText(boneMonths) "."
+    r .= " The chronological age is " PE_AgeText(chronoMonths) "."
+    r .= " The standard deviation for " who " of this chronological age is " PE_Fmt(sd, 1) " months."
+    r .= " The bone age is " (diff = 0 ? "equal to" : PE_Fmt(Abs(diff), 0) " month" (Abs(diff) = 1 ? "" : "s") (diff > 0 ? " greater than" : " less than")) " the chronological age (" (z >= 0 ? "+" : "-") PE_Fmt(Abs(z), 1) " SD). " interp
+    vals := [["Bone age", PE_AgeText(boneMonths)], ["Chronological age", PE_AgeText(chronoMonths)], ["Sex", sex], ["SD at this age", PE_Fmt(sd, 1) " months"], ["Difference", (diff >= 0 ? "+" : "") diff " months (" (z >= 0 ? "+" : "") PE_Fmt(z, 1) " SD)"]]
+    return PE_Ok("Bone Age (Greulich & Pyle)", vals, r, 90)
+}
+
+; ================= AUTO-DETECT =================
+PE_Auto(text) {
+    t := PE_Clean(text)
+    tried := [], tryOrder := [], huCount := 0, pos := 1
+    while (p := PE_RX(t, "i)\d\s*(?:HU\b|Hounsfield)", m, pos))
+        huCount++, pos := p + m.Len(0)
+    if (huCount >= 2)
+        tryOrder.Push("Adrenal")
+    if (RegExMatch(t, "i)\bRV\b|right\s+ventric|rvval") && RegExMatch(t, "i)\bLV\b|left\s+ventric|lvval"))
+        tryOrder.Push("RVLV")
+    if RegExMatch(t, "i)stenos|stenotic|narrow|residual\s+lumen|NASCET|minimal\s+lumen")
+        tryOrder.Push("Stenosis")
+    if (RegExMatch(t, "i)thyroid|\bTI-?RADS|isthmus|\b(?:right|left)\s+lobe\b") && RegExMatch(t, "i)nodul"))
+        tryOrder.Push("TIRADS")
+    if (RegExMatch(t, "i)ovar|adnex") && RegExMatch(t, "i)\bsimple\b|hemorrhag|endometrioma|dermoid|teratoma|reticular|ground[- ]?glass|low[- ]level\s+echoes|menopaus|O-?RADS"))
+        tryOrder.Push("ORADS")
+    if IsObject(PE_FindDims(t))
+        tryOrder.Push(RegExMatch(t, "i)hemorrhage|hematoma|\bICH\b|\bbleed|intraparenchymal|intracerebral") ? "ICH" : "Volume")
+    if RegExMatch(t, "i)nodul|\bGG[NO]|ground[- ]?glass")
+        tryOrder.Push("Fleischner")
+    if RegExMatch(t, "i)\b(?:\d+|one|two|three|four|six|twelve|an?)[\s-]*(?:days?|weeks?|months?|years?)\b(?![\s-]*old)")
+        tryOrder.Push("Date")
+    for _, name in tryOrder {
+        r := PE_ByName(name, text)
+        if (r.ok)
+            return r
+        tried.Push(name)
+    }
+    msg := "Could not recognize a calculation in the selected text."
+    if (tried.Length()) {
+        list := ""
+        for _, n in tried
+            list .= (list != "" ? ", " : "") n
+        msg .= "`n`nTried: " list
+    }
+    msg .= "`n`nSupported: 3-D volumes, ICH (ABC/2), RV/LV, NASCET / vessel stenosis, adrenal washout (HU), Fleischner nodules, thyroid TI-RADS, ovarian cysts (O-RADS/SRU), follow-up dates."
+    return PE_Fail(msg)
+}
+
+PE_ByName(name, text) {
+    if (name = "Volume")
+        return PE_Volume(text)
+    if (name = "ICH")
+        return PE_ICH(text)
+    if (name = "RVLV")
+        return PE_RVLV(text)
+    if (name = "NASCET")
+        return PE_NASCET(text)
+    if (name = "Stenosis")
+        return PE_Stenosis(text)
+    if (name = "Adrenal")
+        return PE_Adrenal(text)
+    if (name = "Fleischner")
+        return PE_Fleischner(text)
+    if (name = "Date")
+        return PE_Date(text)
+    if (name = "TIRADS")
+        return PE_TIRADS(text)
+    if (name = "ORADS")
+        return PE_ORADS(text)
+    return PE_Auto(text)
+}
+
+; ============================================================
+; UI: confirmation dialog, insert, bone age window, menus
+; ============================================================
+
+; Right-click menu entries (called from the host's CreateCustomMenu)
+SP_AddMenu(menuName, showTIRADS := true, showORADS := true, showBoneAge := false) {
+    Menu, SPAsMenu, Add
+    Menu, SPAsMenu, DeleteAll
+    Menu, SPAsMenu, Add, Volume (prostate graded), SP_MenuItem
+    Menu, SPAsMenu, Add, ICH Volume (ABC/2), SP_MenuItem
+    Menu, SPAsMenu, Add, RV/LV Ratio, SP_MenuItem
+    Menu, SPAsMenu, Add, NASCET (carotid), SP_MenuItem
+    Menu, SPAsMenu, Add, Vessel Stenosis (any vessel), SP_MenuItem
+    Menu, SPAsMenu, Add, Adrenal Washout, SP_MenuItem
+    Menu, SPAsMenu, Add, Fleischner Nodules, SP_MenuItem
+    Menu, SPAsMenu, Add, Follow-up Date, SP_MenuItem
+    if (showTIRADS || showORADS)
+        Menu, SPAsMenu, Add
+    if (showTIRADS)
+        Menu, SPAsMenu, Add, Thyroid ACR TI-RADS, SP_MenuItem
+    if (showORADS)
+        Menu, SPAsMenu, Add, Ovarian Cyst (O-RADS / SRU), SP_MenuItem
+    Menu, %menuName%, Add, Smart Parse (Auto-detect), SP_MenuAuto
+    Menu, %menuName%, Add, Smart Parse as..., :SPAsMenu
+    if (showBoneAge)
+        Menu, %menuName%, Add, Bone Age (Greulich && Pyle), SP_MenuBoneAge
+}
+
+; If the quick copy before the menu missed the highlighted text, copy it again now
+; (after the menu closed; the menu does not change the selection)
+SP_EnsureSel() {
+    if (g_SelectedText != "")
+        return
+    t := SP_TargetHwnd
+    if (t && WinExist("ahk_id " t)) {
+        WinWaitActive, ahk_id %t%, , 0.5
+        if (ErrorLevel)
+            SP_ActivateTarget()
+    }
+    Sleep, 30
+    saved := ClipboardAll
+    Loop, 2 {
+        Clipboard := ""
+        Send, {Shift up}^c
+        ClipWait, % (A_Index = 1 ? 0.6 : 1.2)
+        if (!ErrorLevel) {
+            g_SelectedText := Clipboard
+            break
+        }
+    }
+    Clipboard := saved
+    saved := ""
+}
+
+SP_MenuItem(itemName := "", itemPos := "", menuName := "") {
+    names := {"Volume (prostate graded)": "Volume", "ICH Volume (ABC/2)": "ICH", "RV/LV Ratio": "RVLV", "NASCET (carotid)": "NASCET"
+        , "Vessel Stenosis (any vessel)": "Stenosis", "Adrenal Washout": "Adrenal", "Fleischner Nodules": "Fleischner"
+        , "Follow-up Date": "Date", "Thyroid ACR TI-RADS": "TIRADS", "Ovarian Cyst (O-RADS / SRU)": "ORADS"}
+    SP_EnsureSel()
+    if (g_SelectedText = "") {
+        MsgBox, 262192, Smart Parse, % "Highlight the dictated text first, then right-click."
+        return
+    }
+    SP_Run(PE_ByName(names[itemName], g_SelectedText))
+}
+
+SP_MenuAuto(itemName := "", itemPos := "", menuName := "") {
+    SP_EnsureSel()
+    if (SP_ShowBoneAge && RegExMatch(g_SelectedText, "i)bone\s+age")) {
+        SP_ShowBoneAgeGui(g_SelectedText)
+        return
+    }
+    if (g_SelectedText = "") {
+        MsgBox, 262192, Smart Parse, % "Highlight the dictated sentence(s) first, then right-click > Smart Parse."
+        return
+    }
+    SP_Run(PE_Auto(g_SelectedText))
+}
+
+SP_MenuBoneAge(itemName := "", itemPos := "", menuName := "") {
+    SP_EnsureSel()
+    SP_ShowBoneAgeGui(g_SelectedText)
+}
+
+; Remember the report window to paste back into (host calls this on right-click)
+SP_SetTarget(hwnd) {
+    SP_TargetHwnd := hwnd
+}
+
+SP_Run(r) {
+    SP_Init()
+    if (!r.ok) {
+        MsgBox, 262192, Smart Parse, % r.err
+        return
+    }
+    SP_Result := r
+    SP_ShowConfirm(r)
+}
+
+SP_ShowConfirm(r) {
+    Critical
+    prevGui := A_DefaultGui
+    if (SP_ConfHwnd)
+        SP_CloseConfirm()
+    dark := DarkMode
+    bg := dark ? "1E1E1E" : "F0F0F0", fg := dark ? "E6E6E6" : "000000"
+    accent := dark ? "9CDCFE" : "1F4E79"
+    if (r.conf < 50)
+        conf := "[!] LOW CONFIDENCE - check the values", cc := dark ? "FF7070" : "C00000"
+    else if (r.conf < 80)
+        conf := "[~] Medium confidence", cc := dark ? "FFC060" : "A06000"
+    else
+        conf := "[OK] High confidence", cc := dark ? "70E070" : "008000"
+    found := ""
+    for _, pair in r.values
+        found .= (found != "" ? "`n" : "") pair[1] ": " pair[2]
+    preview := Trim(StrReplace(r.text, "`n", "`r`n"), "`r`n ")
+    lines := StrSplit(Trim(r.text, "`n "), "`n").Length()
+    rows := Min(14, Max(2, lines + 1))
+
+    Gui, SPConf:New, +AlwaysOnTop -MinimizeBox +HwndhC +LabelSPConf_, % "Confirm " r.title
+    Gui, SPConf:Color, %bg%, % dark ? "2D2D2D" : "FFFFFF"
+    Gui, SPConf:Font, s10 bold c%fg%, Segoe UI
+    Gui, SPConf:Add, Text, x10 y10 w440, % r.title
+    Gui, SPConf:Font, s10 norm c%fg%
+    Gui, SPConf:Add, Text, x10 y+6 w440, Found:
+    Gui, SPConf:Font, s10 bold c%accent%
+    Gui, SPConf:Add, Text, x20 y+2 w430, % found
+    Gui, SPConf:Font, s10 norm c%fg%
+    Gui, SPConf:Add, Text, x10 y+8 w440, Will insert:
+    Gui, SPConf:Add, Edit, x10 y+2 w440 r%rows% ReadOnly HwndhPrev, % preview
+    Gui, SPConf:Font, s10 norm c%cc%
+    Gui, SPConf:Add, Text, x10 y+8 w440, % conf
+    Gui, SPConf:Font, s10 norm c%fg%
+    Gui, SPConf:Add, Button, x10 y+10 w140 Default gSP_BtnInsert HwndhIns, Insert
+    Gui, SPConf:Add, Button, x+10 yp w140 gSP_BtnCopy, Copy
+    Gui, SPConf:Add, Button, x+10 yp w140 gSP_BtnCancel, Cancel
+    SP_ConfHwnd := hC
+    CoordMode, Mouse, Screen
+    MouseGetPos, mx, my
+    mx += 10, my += 10
+    Gui, SPConf:Show, x%mx% y%my% AutoSize
+    SendMessage, 0x115, 6, 0, , ahk_id %hPrev%        ; preview scrolled to the top
+    if (dark)
+        SP_DarkenGui(hC)
+    SP_Front(hC)
+    GuiControl, SPConf:Focus, %hIns%
+    fn := Func("SP_FrontIfNotActive").Bind(hC)
+    SetTimer, % fn, -150
+    fn2 := Func("SP_FrontIfNotActive").Bind(hC)
+    SetTimer, % fn2, -600
+    SetTimer, SP_KeepFront, 300
+    Gui, %prevGui%:Default
+    Critical, Off
+}
+
+SP_KeepFront() {
+    if (!SP_ConfHwnd || !WinExist("ahk_id " SP_ConfHwnd)) {
+        SetTimer, SP_KeepFront, Off
+        return
+    }
+    if SP_IsObscured(SP_ConfHwnd)
+        SP_RaiseTop(SP_ConfHwnd)
+}
+
+; Lift a window to the top of the always-on-top band without activating it
+SP_RaiseTop(h) {
+    DllCall("SetWindowPos", "Ptr", h, "Ptr", -2, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+    DllCall("SetWindowPos", "Ptr", h, "Ptr", -1, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+}
+
+; True if another application's window covers part of h (shell UI and our own windows ignored)
+SP_IsObscured(h) {
+    static shellCls := "i)^(Shell_TrayWnd|Shell_SecondaryTrayWnd|#32768|tooltips_class32|NotifyIconOverflowWindow|TopLevelWindowForOverflowXamlIsland|Windows\.UI\.Core\.CoreWindow|ForegroundStaging|MultitaskingViewFrame|XamlExplorerHostIslandWindow|TaskListThumbnailWnd|Progman|WorkerW)$"
+    WinGetPos, x, y, w, hh, ahk_id %h%
+    if (x = "")
+        return false
+    pts := [[x + w // 2, y + hh // 2], [x + 12, y + 12], [x + w - 12, y + 12], [x + 12, y + hh - 12], [x + w - 12, y + hh - 12]]
+    for _, p in pts {
+        hit := DllCall("WindowFromPoint", "Int64", (p[2] << 32) | (p[1] & 0xFFFFFFFF), "Ptr")
+        if (!hit)
+            continue
+        root := DllCall("GetAncestor", "Ptr", hit, "UInt", 2, "Ptr")
+        if (!root || root = h)
+            continue
+        WinGet, rpid, PID, ahk_id %root%
+        if (rpid = "" || rpid = SP_Pid)
+            continue
+        WinGetClass, cls, ahk_id %root%
+        if RegExMatch(cls, shellCls)
+            continue
+        return true
+    }
+    return false
+}
+
+SP_FrontIfNotActive(hwnd) {
+    if (WinExist("ahk_id " hwnd) && !WinActive("ahk_id " hwnd))
+        SP_Front(hwnd)
+}
+
+; Move a window fully onto the monitor under the mouse
+SP_FitOnMouseMonitor(hwnd) {
+    CoordMode, Mouse, Screen
+    MouseGetPos, mx, my
+    WinGetPos, x, y, w, h, ahk_id %hwnd%
+    if (x = "")
+        return
+    l := 0, t := 0, r := A_ScreenWidth, b := A_ScreenHeight
+    SysGet, cnt, MonitorCount
+    Loop, %cnt% {
+        SysGet, mon, MonitorWorkArea, %A_Index%
+        if (mx >= monLeft && mx < monRight && my >= monTop && my < monBottom)
+            l := monLeft, t := monTop, r := monRight, b := monBottom
+    }
+    nx := Max(l, Min(x, r - w)), ny := Max(t, Min(y, b - h))
+    if (nx != x || ny != y)
+        WinMove, ahk_id %hwnd%, , %nx%, %ny%
+}
+
+; Bring our window to the very front and give it focus (attach-thread-input trick)
+SP_Front(hwnd) {
+    SP_FitOnMouseMonitor(hwnd)
+    DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", -2, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+    DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", -1, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+    fg := DllCall("GetForegroundWindow", "Ptr")
+    fgThread := fg ? DllCall("GetWindowThreadProcessId", "Ptr", fg, "Ptr", 0, "UInt") : 0
+    myThread := DllCall("GetCurrentThreadId", "UInt")
+    attached := (fgThread && fgThread != myThread) ? DllCall("AttachThreadInput", "UInt", myThread, "UInt", fgThread, "Int", 1) : 0
+    DllCall("BringWindowToTop", "Ptr", hwnd)
+    DllCall("SetForegroundWindow", "Ptr", hwnd)
+    if (attached)
+        DllCall("AttachThreadInput", "UInt", myThread, "UInt", fgThread, "Int", 0)
+    WinActivate, ahk_id %hwnd%
+}
+
+; Give focus back to the report window before pasting
+SP_ActivateTarget() {
+    t := SP_TargetHwnd
+    if (!t || !WinExist("ahk_id " t))
+        return
+    WinWaitActive, ahk_id %t%, , 0.5
+    if (!ErrorLevel)
+        return
+    ; WHY: No AttachThreadInput here - it confused the right-click hotkey afterwards.
+    DllCall("SetForegroundWindow", "Ptr", t)
+    WinWaitActive, ahk_id %t%, , 2.5
+    if (ErrorLevel) {
+        WinActivate, ahk_id %t%
+        WinWaitActive, ahk_id %t%, , 1
+    }
+    Sleep, 50
+}
+
+; Paste text, then restore the user's clipboard. 700 ms: Windows 11 Notepad and
+; PowerScribe read the clipboard asynchronously (100 ms pasted the old clipboard).
+SP_Paste(text) {
+    saved := ClipboardAll
+    Clipboard := ""
+    Clipboard := text
+    ClipWait, 1
+    Send, {Shift up}{Ctrl up}^v
+    Sleep, 700
+    Clipboard := saved
+    saved := ""
+}
+
+SP_InsertAfterSelection(text) {
+    Send, {Right}
+    Sleep, 50
+    SP_Paste(text)
+    SP_Tip("Inserted", 1000)
+}
+
+; Tooltip offset from the cursor so it never sits under the mouse (the right-click
+; hotkey looks at the window under the mouse)
+SP_Tip(msg, ms := 1500) {
+    CoordMode, Mouse, Screen
+    CoordMode, ToolTip, Screen
+    MouseGetPos, mx, my
+    ToolTip, %msg%, % mx + 24, % my + 24
+    SetTimer, SP_TipOff, % -ms
+}
+
+; Fleischner / TI-RADS / O-RADS: end of the report (= end of the IMPRESSION)
+SP_InsertAtEnd(text) {
+    Send, ^{End}
+    Sleep, 80
+    SP_Paste(text)
+    SP_Tip("Inserted at end of report (after IMPRESSION)", 1500)
+}
+
+SP_TipOff() {
+    ToolTip
+}
+
+SP_BtnInsert(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    Critical
+    r := SP_Result
+    SetTimer, SP_KeepFront, Off
+    if !IsObject(r) {
+        SP_CloseConfirm()
+        return
+    }
+    ; Focus the report window BEFORE closing the dialog, otherwise Windows may
+    ; activate the always-on-top Quick Call panel and the paste goes nowhere.
+    Gui, SPConf:Hide          ; Windows usually hands focus straight back to the report
+    SP_ActivateTarget()       ; ...if not (e.g. it went to the Quick Call panel), ask for it
+    if (r.atImpression && SP_FleischnerAtEnd)
+        SP_InsertAtEnd(r.text)
+    else
+        SP_InsertAfterSelection(r.text)
+    SP_CloseConfirm()
+}
+
+SP_BtnCopy(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    if IsObject(SP_Result)
+        Clipboard := Trim(SP_Result.text, "`n ")
+    SP_Tip("Copied to clipboard")
+}
+
+SP_BtnCancel(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    SP_CloseConfirm()
+}
+SPConf_Close(GuiHwnd := 0) {
+    SP_CloseConfirm()
+}
+SPConf_Escape(GuiHwnd := 0) {
+    SP_CloseConfirm()
+}
+
+SP_CloseConfirm() {
+    SetTimer, SP_KeepFront, Off
+    Gui, SPConf:Destroy
+    SP_ConfHwnd := 0
+}
+
+; ---------------- Bone age window ----------------
+SP_ShowBoneAgeGui(prefill := "") {
+    SP_Init()
+    prevGui := A_DefaultGui
+    x := PE_BoneAgeExtract(prefill)
+    dark := DarkMode
+    bg := dark ? "1E1E1E" : "F0F0F0", fg := dark ? "E6E6E6" : "000000"
+    bone := x.bone != "" ? PE_AgeText(x.bone) : ""
+    chrono := (x.chrono != "" && x.dob = "") ? PE_AgeText(x.chrono) : ""
+    dob := x.dob != "" ? PE_FormatTime(x.dob, "M/d/yyyy") : ""
+    exam := x.examDate != "" ? PE_FormatTime(x.examDate, "M/d/yyyy") : PE_FormatTime(A_Now, "M/d/yyyy")
+    sexOpt := x.sex = "Male" ? "Choose1" : x.sex = "Female" ? "Choose2" : ""
+    Gui, SPBone:New, +AlwaysOnTop -MinimizeBox +HwndhB +LabelSPBone_, Bone Age (Greulich & Pyle)
+    Gui, SPBone:Color, %bg%, % dark ? "2D2D2D" : "FFFFFF"
+    Gui, SPBone:Font, s10 c%fg%, Segoe UI
+    Gui, SPBone:Add, Text, x10 y12 w160, Bone age (as read):
+    Gui, SPBone:Add, Edit, x175 y9 w230 vSPB_Bone gSPB_Update, %bone%
+    Gui, SPBone:Add, Text, x10 y+12 w160, Chronological age:
+    Gui, SPBone:Add, Edit, x175 yp-3 w230 vSPB_Chrono gSPB_Update, %chrono%
+    Gui, SPBone:Add, Text, x10 y+12 w160, or DOB  /  exam date:
+    Gui, SPBone:Add, Edit, x175 yp-3 w110 vSPB_Dob gSPB_Update, %dob%
+    Gui, SPBone:Add, Edit, x+10 yp w110 vSPB_Exam gSPB_Update, %exam%
+    Gui, SPBone:Add, Text, x10 y+12 w160, Sex:
+    Gui, SPBone:Add, DropDownList, x175 yp-3 w110 vSPB_Sex gSPB_Update %sexOpt%, Male|Female
+    Gui, SPBone:Add, Button, x295 yp-1 w110 gSPB_ReadReport, Read report
+    Gui, SPBone:Font, s8 c808080
+    Gui, SPBone:Add, Text, x10 y+8 w400, Any style works: 13 years 6 months, 13y6m, 13.5, 13 1/2, 13 6/12, 13:6, 162 months
+    Gui, SPBone:Font, s10 c%fg%
+    Gui, SPBone:Add, Edit, x10 y+6 w395 r7 ReadOnly vSPB_Preview
+    Gui, SPBone:Add, Button, x10 y+10 w125 Default gSPB_Insert, Insert
+    Gui, SPBone:Add, Button, x+10 yp w125 gSPB_Copy, Copy
+    Gui, SPBone:Add, Button, x+10 yp w125 gSPB_Cancel, Cancel
+    SP_BoneHwnd := hB
+    CoordMode, Mouse, Screen
+    MouseGetPos, mx, my
+    mx += 10, my += 10
+    Gui, SPBone:Show, x%mx% y%my% AutoSize
+    if (dark)
+        SP_DarkenGui(hB)
+    SP_Front(hB)
+    GuiControl, SPBone:Focus, SPB_Bone
+    SPB_Update()
+    Gui, %prevGui%:Default
+}
+
+SPB_Update(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    if (!SP_BoneHwnd)
+        return
+    Gui, SPBone:Submit, NoHide
+    bone := PE_AgeMonths(SPB_Bone)
+    dob := PE_ParseDate(SPB_Dob), exam := PE_ParseDate(SPB_Exam)
+    chrono := (dob != "" && exam != "" && dob < exam) ? PE_MonthsBetween(dob, exam) : PE_AgeMonths(SPB_Chrono)
+    SP_BoneText := ""
+    if (bone = "")
+        msg := "Type the bone age above."
+    else if (chrono = "")
+        msg := "Enter the chronological age, or DOB and exam date."
+    else if (SPB_Sex = "")
+        msg := "Select the sex."
+    else {
+        r := PE_BoneAgeReport(bone, chrono, SPB_Sex)
+        SP_BoneText := r.text
+        msg := Trim(r.text)
+    }
+    GuiControl, SPBone:, SPB_Preview, %msg%
+}
+
+SPB_ReadReport(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    SP_ActivateTarget()
+    saved := ClipboardAll
+    Clipboard := ""
+    Send, ^a
+    Sleep, 50
+    Send, ^c
+    ClipWait, 1
+    txt := ErrorLevel ? "" : Clipboard
+    Clipboard := saved
+    saved := ""
+    Send, {Right}
+    if (txt = "") {
+        MsgBox, 262192, Bone Age, Could not read the report text.
+        return
+    }
+    x := PE_BoneAgeExtract(txt)
+    if (x.dob != "") {
+        GuiControl, SPBone:, SPB_Dob, % PE_FormatTime(x.dob, "M/d/yyyy")
+        GuiControl, SPBone:, SPB_Exam, % PE_FormatTime(x.examDate, "M/d/yyyy")
+    } else if (x.chrono != "") {
+        GuiControl, SPBone:, SPB_Chrono, % PE_AgeText(x.chrono)
+    }
+    if (x.sex != "")
+        GuiControl, SPBone:Choose, SPB_Sex, % (x.sex = "Male" ? 1 : 2)
+    GuiControlGet, curBone, SPBone:, SPB_Bone
+    if (x.bone != "" && curBone = "")
+        GuiControl, SPBone:, SPB_Bone, % PE_AgeText(x.bone)
+    SP_Front(SP_BoneHwnd)
+    SPB_Update()
+}
+
+SPB_Insert(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    Critical
+    SPB_Update()
+    if (SP_BoneText = "") {
+        MsgBox, 262192, Bone Age, % "Fill in bone age, chronological age and sex first."
+        return
+    }
+    txt := SP_BoneText
+    SP_ActivateTarget()
+    Gui, SPBone:Hide
+    SP_InsertAfterSelection(txt)
+    SPB_Cancel()
+}
+
+SPB_Copy(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    SPB_Update()
+    if (SP_BoneText = "")
+        return
+    Clipboard := Trim(SP_BoneText)
+    SP_Tip("Copied to clipboard")
+}
+
+SPB_Cancel(CtrlHwnd := 0, GuiEvent := "", EventInfo := "", ErrLevel := "") {
+    Gui, SPBone:Destroy
+    SP_BoneHwnd := 0
+}
+SPBone_Close(GuiHwnd := 0) {
+    SPB_Cancel()
+}
+SPBone_Escape(GuiHwnd := 0) {
+    SPB_Cancel()
+}
+; <<< SMARTPARSE END
